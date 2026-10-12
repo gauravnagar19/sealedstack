@@ -1,0 +1,5 @@
+---
+# firewall role defaults. The mesh interface/port are set from the selected
+# mesh slot in the playbook, so the firewall is not hardwired to Tailscale.
+mesh_interface: tailscale0
+mesh_direct_port: "41641"

@@ -1,0 +1,34 @@
+---
+# platform_portainer role (registry platform.yaml): idempotently run Portainer
+# in Docker on a control server. Selected via the platform slot.
+
+- name: Configure the Portainer panel
+  when: server_role | default('worker') == 'control'
+  block:
+    - name: Ensure the platform_portainer compose directory exists
+      ansible.builtin.file:
+        path: "{{ platform_portainer_compose_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Render the platform_portainer compose file
+      ansible.builtin.template:
+        src: docker-compose.yml.j2
+        dest: "{{ platform_portainer_compose_dir }}/docker-compose.yml"
+        mode: "0640"
+      notify: Restart platform_portainer
+
+    - name: Ensure platform_portainer is running
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ platform_portainer_compose_dir }}"
+      register: platform_portainer_up
+      changed_when: >-
+        (platform_portainer_up.stdout ~ platform_portainer_up.stderr)
+        is search('Created|Started|Recreated|Recreate|Pulling|Built')
+
+    - name: Assert the Portainer container exists
+      ansible.builtin.command: docker ps -q -f name=platform-portainer
+      register: platform_portainer_ps
+      changed_when: false
+      failed_when: platform_portainer_ps.stdout | length == 0

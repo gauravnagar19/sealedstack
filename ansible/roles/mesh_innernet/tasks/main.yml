@@ -1,0 +1,47 @@
+---
+# mesh_innernet role (spec section 4): idempotently install and serve innernet.
+# Selected via the mesh slot; the playbook gates this role with
+# `when: slots.mesh == 'innernet'`.
+
+- name: Map the architecture to an innernet release target
+  ansible.builtin.set_fact:
+    mesh_innernet_target: >-
+      {{ 'x86_64-unknown-linux-musl' if ansible_architecture == 'x86_64' else
+         ('aarch64-unknown-linux-musl' if ansible_architecture == 'aarch64' else 'x86_64-unknown-linux-musl') }}
+
+- name: Download the innernet client and server releases
+  ansible.builtin.get_url:
+    url: "https://github.com/tonarino/innernet/releases/download/v{{ mesh_innernet_version }}/{{ item }}-{{ mesh_innernet_target }}.tar.gz"
+    dest: "/tmp/{{ item }}-{{ mesh_innernet_target }}.tar.gz"
+    mode: "0644"
+  loop:
+    - innernet
+    - innernet-server
+
+- name: Install the innernet binaries
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ item }}-{{ mesh_innernet_target }}.tar.gz"
+    dest: /usr/local/bin
+    remote_src: true
+    mode: "0755"
+    creates: "/usr/local/bin/{{ item }}"
+  loop:
+    - innernet
+    - innernet-server
+
+- name: Create the innernet network
+  ansible.builtin.command:
+    cmd: >-
+      innernet-server new
+      --network-name {{ mesh_innernet_network_name }}
+      --network-cidr {{ mesh_innernet_network_cidr }}
+      --external-endpoint {{ mesh_innernet_external_host }}:{{ mesh_innernet_listen_port }}
+      --listen-port {{ mesh_innernet_listen_port }}
+    creates: "{{ mesh_innernet_config_dir }}/{{ mesh_innernet_interface }}/config.toml"
+
+- name: Ensure the innernet server is enabled and running
+  ansible.builtin.systemd:
+    name: "innernet-server@{{ mesh_innernet_interface }}"
+    enabled: true
+    state: started
+    daemon_reload: true

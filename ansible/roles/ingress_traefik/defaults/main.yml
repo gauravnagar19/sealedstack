@@ -1,0 +1,13 @@
+---
+# ingress_traefik role (spec section 4): reverse proxy and load router with
+# ACME, run at the edge and joined to the dokploy-network.
+ingress_traefik_compose_dir: /opt/sealedstack/ingress_traefik
+ingress_traefik_image: docker.io/library/traefik
+ingress_traefik_image_tag: "v3.1"  # pinned; confirm the current tag before use
+ingress_traefik_http_port: 80
+ingress_traefik_https_port: 443
+ingress_traefik_server_url: ""
+ingress_traefik_hostnames: []
+ingress_traefik_upstream: "http://dokploy-traefik:80"
+ingress_traefik_email: ""
+ingress_traefik_network: dokploy-network

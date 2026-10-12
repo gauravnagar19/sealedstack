@@ -1,0 +1,8 @@
+---
+# platform_dokploy role (spec section 7.2, D-009/D-010).
+# Control servers run the Dokploy panel; workers run Docker only (Dokploy
+# provisions workers itself, spec section 9.2).
+# Keep this pin compatible with the `vanillauys/dokploy` provider (1.9.0);
+# bump both together and re-check against the provider's schema (H9).
+dokploy_version: "v0.30.8"
+dokploy_install_url: "https://dokploy.com/install.sh"

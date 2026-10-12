@@ -1,0 +1,27 @@
+slot: forge
+contract: "Read a file from an app repo; open a PR/MR; comment on/update a PR, MR or issue; set/read CI variables and secrets on an app repo; create or update the pinned Status issue (spec §5, M7)."
+implementations:
+  - id: github
+    name: GitHub
+    status: experimental
+    summary: GitHub REST via a user-owned GitHub App installation token; opens the Setup PR, posts the living checklist, pins the Status issue and publishes app-repo variables/secrets.
+    secrets: [SEALEDSTACK_BOT_APP_ID, SEALEDSTACK_BOT_PRIVATE_KEY, SEALEDSTACK_BOT_INSTALLATION_ID]
+    config: [owner]
+    impl: { adapter: engine/sealedstack/forge.py }
+    docs: https://docs.github.com/en/rest
+    notes: "bot: sealedstack-bot (user-owned GitHub App; manifest flow)"
+  - id: gitlab
+    name: GitLab
+    status: planned
+    summary: GitLab REST via a project/group access token; merge requests, comments, CI/CD variables and a pinned issue.
+    secrets: [GITLAB_TOKEN]
+    config: [project]
+    docs: https://docs.gitlab.com/ee/api/rest/
+  - id: mock
+    name: In-memory (tests)
+    status: supported
+    summary: An in-memory forge used by the M7 acceptance tests; no network, no real org.
+    secrets: []
+    config: []
+    impl: { adapter: engine/sealedstack/forge.py }
+    docs: https://sealedstack.dev/

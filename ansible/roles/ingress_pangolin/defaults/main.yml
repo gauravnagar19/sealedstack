@@ -1,0 +1,19 @@
+---
+# ingress_pangolin role (spec section 4): self-hosted Pangolin tunnel and reverse
+# proxy (pangolin + gerbil/WireGuard + Traefik). Joined to the dokploy-network so
+# it can reach app containers. Selected via the ingress slot; the playbook gates
+# this role with `when: slots.ingress == 'pangolin'`.
+ingress_pangolin_compose_dir: /opt/sealedstack/ingress_pangolin
+ingress_pangolin_image: docker.io/fosrl/pangolin
+ingress_pangolin_image_tag: "1.4.1"  # pinned; confirm the current tag before use
+ingress_pangolin_gerbil_image: docker.io/fosrl/gerbil
+ingress_pangolin_gerbil_image_tag: "1.4.1"  # pinned; confirm the current tag before use
+ingress_pangolin_traefik_image: docker.io/library/traefik
+ingress_pangolin_traefik_image_tag: "v3.7.7"  # pinned; confirm the current tag before use
+ingress_pangolin_dashboard_domain: "pangolin.example.com"
+ingress_pangolin_base_domain: "example.com"
+ingress_pangolin_server_url: "https://pangolin.example.com"
+ingress_pangolin_email: "ops@example.com"
+ingress_pangolin_wireguard_port: 51820
+ingress_pangolin_network: dokploy-network
+# Required (no default): ingress_pangolin_server_secret -> PANGOLIN_API_KEY

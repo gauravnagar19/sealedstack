@@ -1,0 +1,16 @@
+---
+# Portainer CE manages the local Docker engine; the panel is served over HTTPS
+# on :9443 with a self-signed certificate created on first run.
+services:
+  portainer:
+    image: "{{ platform_portainer_image }}:{{ platform_portainer_image_tag }}"
+    restart: unless-stopped
+    ports:
+      - "{{ platform_portainer_bind_address }}:{{ platform_portainer_https_port }}:9443"
+      - "{{ platform_portainer_bind_address }}:{{ platform_portainer_edge_port }}:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  portainer_data:

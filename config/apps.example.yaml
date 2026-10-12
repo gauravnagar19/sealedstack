@@ -1,0 +1,20 @@
+# sealedstack apps config — copy to apps.yaml and fill in.
+# Placement and exposure. No secrets, no IPs (spec section 5.3).
+apps:
+  hello:
+    source: { image: traefik/whoami:v1.10.3 }   # a smoke-test app needs no repo
+    servers: [web-1]
+    hostnames: [hello.example.com]
+    access: owner-only                          # a policy from stack.yaml, or public
+
+  # A real app from a repo with a sealedstack.yaml manifest:
+  # shop:
+  #   source: { repo: you/shop, ref: main }
+  #   servers: [web-1]
+  #   hostnames: [example.com, www.example.com]
+  #   redirects: { www.example.com: example.com }
+  #   # Secret key overrides (D-050); default source key is `<app>.<NAME>`:
+  #   secrets:
+  #     CLERK_SECRET_KEY: shop.CLERK_SECRET_KEY
+  #   access: public                              # in-app auth (Clerk)
+  #   user_auth: clerk

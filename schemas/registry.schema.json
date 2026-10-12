@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealedstack.dev/schemas/registry.schema.json",
+  "title": "sealedstack provider registry (one file per slot)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "slot",
+    "contract",
+    "implementations"
+  ],
+  "properties": {
+    "slot": {
+      "enum": [
+        "compute",
+        "mesh",
+        "ingress",
+        "gate",
+        "secrets",
+        "backup",
+        "platform",
+        "user_auth",
+        "ci",
+        "registry",
+        "forge"
+      ]
+    },
+    "contract": {
+      "type": "string",
+      "minLength": 1
+    },
+    "implementations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "status",
+          "summary"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "supported",
+              "experimental",
+              "planned"
+            ],
+            "description": "supported = passed the live acceptance suite (verification.md); experimental = code exists, not live-tested; planned = no implementation (moved to contrib/)"
+          },
+          "creates_server": {
+            "type": "boolean",
+            "default": false,
+            "description": "The implementation can create the server (so `just server-up` can provision it and discover the IP)."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "firewall": {
+            "enum": [
+              "native",
+              "api",
+              "manual",
+              "none"
+            ]
+          },
+          "secrets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "config": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "impl": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tofu_module": {
+                "type": "string"
+              },
+              "tofu_stack": {
+                "type": "string"
+              },
+              "stack": {
+                "type": "string"
+              },
+              "ansible_role": {
+                "type": "string"
+              },
+              "adapter": {
+                "type": "string"
+              }
+            }
+          },
+          "docs": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

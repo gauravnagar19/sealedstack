@@ -1,0 +1,44 @@
+---
+# ingress_caddy role (spec section 4): idempotently deploy Caddy at the edge.
+# Selected via the ingress slot; the playbook gates this role with
+# `when: ingress == 'caddy'`.
+
+- name: Ensure the ingress_caddy compose directory exists
+  ansible.builtin.file:
+    path: "{{ ingress_caddy_compose_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ ingress_caddy_network }}
+  register: ingress_caddy_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ ingress_caddy_network }}
+  when: ingress_caddy_net.rc != 0
+  changed_when: true
+
+- name: Render the Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ ingress_caddy_compose_dir }}/Caddyfile"
+    mode: "0640"
+  notify: Restart ingress_caddy
+
+- name: Render the ingress_caddy compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ ingress_caddy_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart ingress_caddy
+
+- name: Ensure ingress_caddy is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ ingress_caddy_compose_dir }}"
+  register: ingress_caddy_up
+  changed_when: >-
+    (ingress_caddy_up.stdout ~ ingress_caddy_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

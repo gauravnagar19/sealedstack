@@ -1,0 +1,16 @@
+# authentik OIDC adapter (registry user_auth: authentik).
+#
+# Copy to config/providers/user_auth_authentik.yaml. sealedstack.userauth reads
+# these values, resolves the secret from Secrets Manager (project `prod`, key
+# `<app>.AUTHENTIK_CLIENT_SECRET`) and injects into .build/env.json:
+#
+#   AUTHENTIK_ISSUER        <- issuer
+#   AUTHENTIK_CLIENT_ID     <- client_id
+#   AUTHENTIK_CLIENT_SECRET <- secret
+#
+# Create an OAuth2/OIDC provider + application in authentik and register the
+# callback URLs sealedstack.userauth prints. Non-secret values may also live
+# under `providers.user_auth_authentik` in config/stack.yaml.
+
+issuer: https://auth.example.com/application/o/<slug>/
+client_id: <authentik-client-id>

@@ -1,0 +1,16 @@
+# WorkOS adapter (registry user_auth: workos).
+#
+# Copy to config/providers/user_auth_workos.yaml. sealedstack.userauth reads
+# these values, resolves the secret from Secrets Manager (project `prod`, key
+# `<app>.WORKOS_API_KEY`) and injects into .build/env.json:
+#
+#   WORKOS_CLIENT_ID     <- client_id
+#   WORKOS_REDIRECT_URI  <- redirect_uri
+#   WORKOS_API_KEY       <- secret
+#
+# Configure an SSO connection in the WorkOS dashboard and register the redirect
+# URI (sealedstack.userauth prints the app callbacks). Non-secret values may
+# also live under `providers.user_auth_workos` in config/stack.yaml.
+
+client_id: client_<workos-client-id>
+redirect_uri: https://app.example.com/auth/callback

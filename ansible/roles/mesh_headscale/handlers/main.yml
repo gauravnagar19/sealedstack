@@ -1,0 +1,6 @@
+---
+- name: Restart mesh_headscale
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ mesh_headscale_compose_dir }}"
+  changed_when: true

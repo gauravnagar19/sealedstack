@@ -1,0 +1,15 @@
+{
+    email {{ ingress_caddy_email }}
+    acme_ca {{ ingress_caddy_acme_ca }}
+}
+
+{% for hostname in ingress_caddy_hostnames %}
+{{ hostname }} {
+    reverse_proxy {{ ingress_caddy_upstream }}
+}
+{% endfor %}
+{% if ingress_caddy_hostnames | length == 0 %}
+:{{ ingress_caddy_http_port }} {
+    respond "sealedstack ingress: no hostnames configured" 200
+}
+{% endif %}

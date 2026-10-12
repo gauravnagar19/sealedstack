@@ -1,0 +1,16 @@
+# Keycloak OIDC adapter (registry user_auth: keycloak).
+#
+# Copy to config/providers/user_auth_keycloak.yaml. sealedstack.userauth reads
+# these values, resolves the secret from Secrets Manager (project `prod`, key
+# `<app>.KEYCLOAK_CLIENT_SECRET`) and injects into .build/env.json:
+#
+#   KEYCLOAK_ISSUER        <- issuer
+#   KEYCLOAK_CLIENT_ID     <- client_id
+#   KEYCLOAK_CLIENT_SECRET <- secret
+#
+# Create a confidential client in your realm and register the callback URLs
+# sealedstack.userauth prints. Non-secret values may also live under
+# `providers.user_auth_keycloak` in config/stack.yaml.
+
+issuer: https://auth.example.com/realms/<realm>
+client_id: <keycloak-client-id>

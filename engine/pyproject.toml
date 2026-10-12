@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sealedstack-engine"
+version = "0.5.0"
+description = "sealedstack engine CLI: preflight, local-run rules and orchestration"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "pyyaml",
+    "jsonschema",
+]
+
+[project.scripts]
+sealedstack = "sealedstack.cli:main"
+
+[tool.setuptools]
+packages = ["sealedstack"]

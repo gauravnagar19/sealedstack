@@ -1,0 +1,26 @@
+---
+services:
+  oauth2-proxy:
+    image: "{{ gate_oauth2_proxy_image }}:{{ gate_oauth2_proxy_image_tag }}"
+    restart: unless-stopped
+    environment:
+      OAUTH2_PROXY_PROVIDER: "{{ gate_oauth2_proxy_provider }}"
+      OAUTH2_PROXY_CLIENT_ID: "{{ gate_oauth2_proxy_client_id }}"
+      OAUTH2_PROXY_CLIENT_SECRET: "{{ gate_oauth2_proxy_client_secret }}"
+      OAUTH2_PROXY_COOKIE_SECRET: "{{ gate_oauth2_proxy_cookie_secret }}"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_EMAIL_DOMAINS: "{{ gate_oauth2_proxy_email_domains | join(',') }}"
+      OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:{{ gate_oauth2_proxy_port }}"
+      OAUTH2_PROXY_REDIRECT_URL: "{{ gate_oauth2_proxy_server_url }}/oauth2/callback"
+      OAUTH2_PROXY_UPSTREAMS: "{{ gate_oauth2_proxy_upstream }}"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
+    ports:
+      - "{{ gate_oauth2_proxy_bind_address }}:{{ gate_oauth2_proxy_port }}:{{ gate_oauth2_proxy_port }}"
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true

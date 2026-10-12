@@ -1,0 +1,37 @@
+---
+# platform_caprover role (registry platform.yaml): idempotently run CapRover in
+# Docker on a control server. Selected via the platform slot.
+
+- name: Configure the CapRover panel
+  when: server_role | default('worker') == 'control'
+  block:
+    - name: Ensure the platform_caprover compose directory exists
+      ansible.builtin.file:
+        path: "{{ platform_caprover_compose_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Render the platform_caprover compose file
+      ansible.builtin.template:
+        src: docker-compose.yml.j2
+        dest: "{{ platform_caprover_compose_dir }}/docker-compose.yml"
+        mode: "0640"
+      notify: Restart platform_caprover
+
+    - name: Ensure platform_caprover is running
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ platform_caprover_compose_dir }}"
+      register: platform_caprover_up
+      changed_when: >-
+        (platform_caprover_up.stdout ~ platform_caprover_up.stderr)
+        is search('Created|Started|Recreated|Recreate|Pulling|Built')
+
+    - name: Wait for the CapRover panel to answer
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ platform_caprover_admin_port }}"
+        status_code: [200, 301, 302, 307, 308]
+      register: platform_caprover_health
+      until: platform_caprover_health is succeeded
+      retries: 60
+      delay: 5

@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Lint app compose files against sealedstack's rules (spec section 5.4, 4.2).
+
+Rules:
+  - No ``ports:`` on any service. Traffic arrives through Traefik on
+    ``dokploy-network``.
+  - No database service inside the compose file when that database is declared
+    under ``needs:``.
+  - ``build.mode: ci`` (the default, D-030): every service with ``build:`` must
+    also pin ``image: <registry>/<owner>/<repo>-<service>:${APP_VERSION}`` so the
+    built image exists in the registry and Dokploy never builds. ``build.mode:
+    server`` leaves ``build:`` open (Dokploy builds) and ``image:`` optional.
+"""
+from __future__ import annotations
+
+import copy
+
+
+def _services(compose: dict | None) -> dict:
+    return (compose or {}).get("services") or {}
+
+
+def expected_image(registry: str, owner: str, repo: str, service: str) -> str:
+    """The image ref a ``ci``-mode service must pin (spec 4.2)."""
+    return f"{registry}/{owner}/{repo}-{service}:${{APP_VERSION}}"
+
+
+def lint(compose: dict, needs: dict | None = None) -> list[str]:
+    needs = needs or {}
+    problems: list[str] = []
+    services = _services(compose)
+
+    for service, spec in services.items():
+        if isinstance(spec, dict) and "ports" in spec:
+            problems.append(
+                f"service '{service}': has 'ports:' — route through Traefik instead"
+            )
+
+    if "postgres" in needs:
+        for service, spec in services.items():
+            image = str((spec or {}).get("image", ""))
+            if "postgres" in image:
+                problems.append(
+                    f"service '{service}': postgres is declared under needs: — remove it from compose"
+                )
+
+    return problems
+
+
+def lint_build(
+    compose: dict | None,
+    mode: str,
+    *,
+    registry: str = "",
+    owner: str = "",
+    repo: str = "",
+) -> list[str]:
+    """The per-mode build/image rule (spec 4.2).
+
+    Only ``ci`` constrains the compose. In ``server`` mode ``build:`` is allowed
+    and ``image:`` optional, so there is nothing to enforce here.
+    """
+    problems: list[str] = []
+    if mode != "ci":
+        return problems
+
+    for service, spec in _services(compose).items():
+        if not isinstance(spec, dict) or "build" not in spec:
+            continue
+        image = str(spec.get("image", ""))
+        if not image:
+            problems.append(
+                f"service '{service}': build.mode is 'ci' so it must also set "
+                f"image: <registry>/<owner>/<repo>-{service}:${{APP_VERSION}}"
+            )
+            continue
+        if registry and owner and repo:
+            want = expected_image(registry, owner, repo, service)
+            if image != want:
+                problems.append(
+                    f"service '{service}': image '{image}' must be '{want}' "
+                    "in build.mode 'ci'"
+                )
+    return problems
+
+
+def strip_build(compose: dict | None) -> dict:
+    """A copy of ``compose`` with every ``build:`` key removed (the deploy
+    compose Dokploy pulls in ``ci`` mode; it never clones or builds)."""
+    out = copy.deepcopy(compose or {})
+    for spec in _services(out).values():
+        if isinstance(spec, dict):
+            spec.pop("build", None)
+    return out

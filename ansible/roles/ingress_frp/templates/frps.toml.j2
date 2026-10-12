@@ -1,0 +1,8 @@
+# frps server configuration (spec section 4).
+bindPort = {{ ingress_frp_bind_port }}
+auth.method = "token"
+auth.token = "{{ ingress_frp_token }}"
+webServer.addr = "0.0.0.0"
+webServer.port = {{ ingress_frp_dashboard_port }}
+vhostHTTPPort = {{ ingress_frp_vhost_http_port }}
+subDomainHost = "{{ ingress_frp_subdomain_host }}"

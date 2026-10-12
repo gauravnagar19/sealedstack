@@ -1,0 +1,12 @@
+[Unit]
+Description=sealedstack backup to Hetzner Storage Box
+After=network-online.target
+
+[Service]
+Type=oneshot
+{% if hetzner_storage_box_ssh_key | length > 0 %}
+ExecStartPre=/bin/sh -c 'mkdir -p {{ hetzner_storage_box_local_path }}'
+ExecStart=/usr/bin/rsync {{ hetzner_storage_box_rsync_opts }} -e "ssh -i /etc/sealedstack/storagebox_ed25519 -p {{ hetzner_storage_box_port }} -o StrictHostKeyChecking=accept-new" {{ hetzner_storage_box_local_path }}/ {{ hetzner_storage_box_user }}@{{ hetzner_storage_box_host }}:{{ hetzner_storage_box_path }}/
+{% else %}
+ExecStart=/usr/bin/rsync {{ hetzner_storage_box_rsync_opts }} -e "ssh -p {{ hetzner_storage_box_port }} -o StrictHostKeyChecking=accept-new" {{ hetzner_storage_box_local_path }}/ {{ hetzner_storage_box_user }}@{{ hetzner_storage_box_host }}:{{ hetzner_storage_box_path }}/
+{% endif %}

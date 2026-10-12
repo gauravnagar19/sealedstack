@@ -1,0 +1,11 @@
+---
+# mesh_innernet role (spec section 4): a WireGuard-based private network run by
+# the `innernet-server` coordination server. Installs the binaries, creates the
+# network once, then serves it under systemd.
+mesh_innernet_version: "1.6.1"  # pinned; confirm the current release before use
+mesh_innernet_network_name: sealedstack
+mesh_innernet_network_cidr: "10.60.0.0/16"
+mesh_innernet_external_host: "198.51.100.10"
+mesh_innernet_listen_port: 51820
+mesh_innernet_interface: "{{ mesh_innernet_network_name }}"
+mesh_innernet_config_dir: /etc/innernet-server

@@ -1,0 +1,27 @@
+---
+# mesh_tailscale_ssh role (spec section 7.2, revisits D-016): bring the node up
+# with Tailscale SSH enabled so admins authenticate through the tailnet instead
+# of distributing SSH keys. Requires the tailnet ACL to grant `ssh` to the
+# admins (and tag:ci for the release path).
+#
+# NOTE: D-016 chose OpenSSH over the mesh for admin access; enabling this
+# implementation is the explicit reversal of that decision.
+
+- name: Ensure tailscaled is enabled and running
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Read the tailscale backend state
+  ansible.builtin.command: tailscale status --json
+  register: mesh_tailscale_ssh_status
+  changed_when: false
+  failed_when: false
+
+- name: Ensure the node is up with Tailscale SSH enabled
+  ansible.builtin.command: tailscale up --ssh --hostname={{ inventory_hostname }}
+  when: >-
+    mesh_tailscale_ssh_status.rc != 0 or
+    ((mesh_tailscale_ssh_status.stdout | from_json).BackendState | default('')) != 'Running'
+  changed_when: true

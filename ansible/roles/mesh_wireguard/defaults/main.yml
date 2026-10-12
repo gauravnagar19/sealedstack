@@ -1,0 +1,15 @@
+---
+# mesh_wireguard role (spec section 4): plain WireGuard with no controller.
+# Generates the server key, renders the interface config from the peer list,
+# and brings up wg-quick@<interface>. The peer.conf.j2 template is the shape
+# handed to each client.
+mesh_wireguard_interface: wg0
+mesh_wireguard_address: "10.66.0.1/24"
+mesh_wireguard_listen_port: 51820
+mesh_wireguard_endpoint: "198.51.100.10:51820"
+mesh_wireguard_dns: ""
+mesh_wireguard_config_dir: /etc/wireguard
+mesh_wireguard_private_key_file: "{{ mesh_wireguard_config_dir }}/{{ mesh_wireguard_interface }}.key"
+mesh_wireguard_peers: []
+# Required (no default): WIREGUARD_PRIVATE_KEY is the server private key for
+# recovery; it is generated here if absent, then stored in Bitwarden.

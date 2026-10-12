@@ -1,0 +1,441 @@
+# Reusable app release workflow, shipped by sealedstack (spec 4.3, D-030).
+#
+# An app repo calls this pinned to a sealedstack version:
+#
+#   jobs:
+#     sealedstack:
+#       uses: <owner>/sealedstack/.github/workflows/app.yml@v0.5.0
+#       with:
+#         event: ${{ github.event_name }}
+#         tag: ${{ inputs.tag }}
+#       secrets: inherit
+#       permissions: { contents: write, packages: write, id-token: write, actions: write }
+#
+# On push: mint the next v0.0.X tag and build/push each `build:` service to
+#          $SEALEDSTACK_REGISTRY, then prune old images.
+# On workflow_dispatch: deploy an existing tag (no rebuild), joining the tailnet
+#          as tag:ci and updating only release-owned Dokploy fields (D-032).
+name: app-release
+
+on:
+  workflow_call:
+    inputs:
+      event:
+        description: The caller's github.event_name (push or workflow_dispatch).
+        required: true
+        type: string
+      tag:
+        description: The version to release (workflow_dispatch), e.g. v0.0.12.
+        required: false
+        type: string
+        default: ""
+      promote_on_push:
+        description: Deploy automatically after a push build (default false).
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  actions: write
+
+# F5: serialise releases per repository so two close pushes cannot mint the same
+# v0.0.N. Do not cancel an in-flight release.
+concurrency:
+  group: sealedstack-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  # Resolve the version and the matrix of services that have `build:`.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      matrix: ${{ steps.services.outputs.matrix }}
+      count: ${{ steps.services.outputs.count }}
+      mode: ${{ steps.services.outputs.mode }}
+      package: ${{ steps.repo.outputs.package }}
+      registry: ${{ steps.registry.outputs.prefix }}
+      registry_host: ${{ steps.registry.outputs.host }}
+      short_sha: ${{ steps.sha.outputs.short }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the version
+        id: version
+        env:
+          EVENT: ${{ inputs.event }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT}" = "workflow_dispatch" ]; then
+            if [ -z "${INPUT_TAG}" ]; then
+              echo "::error::workflow_dispatch requires a 'tag' input"
+              exit 1
+            fi
+            echo "version=${INPUT_TAG}" >> "$GITHUB_OUTPUT"
+          else
+            latest="$(git tag -l 'v0.0.*' | sed 's/^v//' | sort -t. -k3 -n | tail -n1)"
+            last="${latest##*.}"
+            case "${last}" in '' | *[!0-9]*) last=-1 ;; esac
+            echo "version=v0.0.$(( last + 1 ))" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Short commit SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Repository slug
+        id: repo
+        run: echo "package=${GITHUB_REPOSITORY##*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the registry from config
+        # `publish-app-settings` writes SEALEDSTACK_REGISTRY (e.g.
+        # ghcr.io/<owner>) from the rendered registry slot (D-033). Never
+        # hardcode the host here.
+        id: registry
+        env:
+          SEALEDSTACK_REGISTRY: ${{ vars.SEALEDSTACK_REGISTRY }}
+        run: |
+          set -euo pipefail
+          prefix="${SEALEDSTACK_REGISTRY:?SEALEDSTACK_REGISTRY is not set; run sealedstack publish-app-settings}"
+          echo "prefix=${prefix}" >> "$GITHUB_OUTPUT"
+          echo "host=${prefix%%/*}" >> "$GITHUB_OUTPUT"
+
+      - name: "Services with build:"
+        id: services
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import yaml
+          manifest = yaml.safe_load(open("sealedstack.yaml", encoding="utf-8")) or {}
+          print("mode=" + ((manifest.get("build") or {}).get("mode") or "ci"))
+          compose = yaml.safe_load(open(manifest.get("compose", "docker-compose.yml"), encoding="utf-8")) or {}
+          include = []
+          for name, spec in (compose.get("services") or {}).items():
+              if not isinstance(spec, dict) or "build" not in spec:
+                  continue
+              build = spec["build"]
+              if isinstance(build, dict):
+                  context = build.get("context", ".")
+                  dockerfile = build.get("dockerfile", "")
+                  target = build.get("target", "")
+              else:
+                  context, dockerfile, target = (build or "."), "", ""
+              include.append({"service": name, "context": context, "dockerfile": dockerfile, "target": target})
+          print("matrix=" + json.dumps({"include": include}))
+          print("count=" + str(len(include)))
+          PY
+
+  # Build and push every built service in parallel with the GitHub Actions cache.
+  build:
+    needs: setup
+    if: >-
+      ${{ inputs.event == 'push' && needs.setup.outputs.mode != 'server'
+          && needs.setup.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.setup.outputs.registry_host }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Platforms
+        id: platforms
+        run: |
+          set -euo pipefail
+          value="$(python3 -c 'import yaml; print(",".join((yaml.safe_load(open("sealedstack.yaml")) or {}).get("build", {}).get("platforms") or ["linux/amd64"]))')"
+          echo "platforms=${value}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: ${{ steps.platforms.outputs.platforms }}
+          push: true
+          tags: |
+            ${{ needs.setup.outputs.registry }}/${{ needs.setup.outputs.package }}-${{ matrix.service }}:${{ needs.setup.outputs.version }}
+            ${{ needs.setup.outputs.registry }}/${{ needs.setup.outputs.package }}-${{ matrix.service }}:sha-${{ needs.setup.outputs.short_sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  # Mint the git tag once every image is pushed. Runs even when there are no
+  # built services (F8), so server-mode and no-build apps still get a version.
+  tag:
+    needs: [setup, build]
+    if: ${{ always() && inputs.event == 'push' && needs.setup.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create the version tag
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          set -euo pipefail
+          git tag "${VERSION}"
+          git push origin "${VERSION}"
+
+  # Retention (spec 4.3): keep the last 30 version tags, delete everything else
+  # tagged, and delete untagged images older than 7 days. Best-effort.
+  prune:
+    needs: [setup, tag]
+    if: ${{ always() && inputs.event == 'push' && needs.setup.result == 'success' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PACKAGE: ${{ needs.setup.outputs.package }}
+      TTL_DAYS: "7"
+      # Keep the currently-deployed version in addition to the last 30 (F8).
+      DEPLOYED_VERSION: ${{ vars.SEALEDSTACK_RELEASED_VERSION }}
+      DOKPLOY_URL: ${{ vars.SEALEDSTACK_DOKPLOY_URL }}
+      DOKPLOY_KEY: ${{ secrets.SEALEDSTACK_DOKPLOY_API_KEY }}
+      COMPOSE_IDS: ${{ vars.SEALEDSTACK_COMPOSE_IDS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prune old image versions
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"
+          # F8: packages can be user- or org-owned; pick the right API scope.
+          if gh api "/orgs/${owner}" >/dev/null 2>&1; then
+            scope="/orgs/${owner}"
+          else
+            scope="/users/${owner}"
+          fi
+          # The deployed version comes from the recorded variable, falling back
+          # to the APP_VERSION in Dokploy when that is not available.
+          deployed="${DEPLOYED_VERSION:-}"
+          if [ -z "${deployed}" ] && [ -n "${DOKPLOY_URL:-}" ] && [ -n "${COMPOSE_IDS:-}" ]; then
+            deployed="$(python3 - <<'PY' || true
+          import json
+          import os
+          import urllib.request
+
+          url = (os.environ.get("DOKPLOY_URL") or "").rstrip("/")
+          key = os.environ.get("DOKPLOY_KEY") or ""
+          try:
+              ids = json.loads(os.environ.get("COMPOSE_IDS") or "{}")
+          except ValueError:
+              ids = {}
+          for compose_id in ids.values():
+              request = urllib.request.Request(
+                  f"{url}/api/compose.one?composeId={compose_id}",
+                  headers={"x-api-key": key},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=15) as response:
+                      data = json.loads(response.read() or b"{}")
+              except Exception:
+                  continue
+              for line in (data.get("env") or "").split("\n"):
+                  if line.startswith("APP_VERSION="):
+                      print(line.split("=", 1)[1].strip())
+                      raise SystemExit(0)
+          PY
+          )"
+          fi
+          kept="$( { git tag -l 'v0.0.*' | sort -t. -k3 -n | tail -n30; if [ -n "${deployed}" ]; then echo "${deployed}"; fi; } )"
+          cutoff="$(date -u -d "${TTL_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-"${TTL_DAYS}"d +%Y-%m-%dT%H:%M:%SZ)"
+          packages="$(gh api "${scope}/packages?package_type=container" --paginate --jq '.[].name' | grep "^${PACKAGE}-" || true)"
+          while IFS= read -r pkg; do
+            [ -n "${pkg}" ] || continue
+            while IFS=$'\t' read -r id created tags; do
+              [ -n "${id}" ] || continue
+              keep=0
+              if [ -n "${tags}" ]; then
+                IFS=',' read -r -a arr <<< "${tags}"
+                for t in "${arr[@]}"; do
+                  for k in ${kept}; do [ "${t}" = "${k}" ] && keep=1; done
+                done
+                [ "${keep}" -eq 1 ] || gh api --method DELETE "${scope}/packages/container/${pkg}/versions/${id}" || true
+              elif [[ "${created}" < "${cutoff}" ]]; then
+                gh api --method DELETE "${scope}/packages/container/${pkg}/versions/${id}" || true
+              fi
+            done < <(gh api "${scope}/packages/container/${pkg}/versions" --paginate \
+              --jq '.[] | "\(.id)\t\(.created_at)\t\([.metadata.container.tags[]?] | join(","))"')
+          done <<< "${packages}"
+
+  # Release: deploy an existing tag. Refuse if the images are missing (no
+  # rebuild), then update only the release-owned fields and wait for a NEW
+  # deployment id to reach `done` (spec 4.3, N5).
+  release:
+    needs: [setup, build, tag]
+    if: >-
+      ${{ always() && (inputs.event == 'workflow_dispatch' ||
+          (inputs.promote_on_push &&
+            (needs.build.result == 'success' || needs.setup.outputs.mode == 'server'))) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # F6: on the push path the version tag may not exist yet (it is minted
+          # in `tag`, in parallel); check out the commit that was built.
+          ref: ${{ inputs.event == 'workflow_dispatch' && inputs.tag || github.sha }}
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.setup.outputs.registry_host }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Refuse a tag whose images do not exist
+        if: needs.setup.outputs.mode != 'server'
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+          PACKAGE: ${{ needs.setup.outputs.package }}
+          REGISTRY: ${{ needs.setup.outputs.registry }}
+        run: |
+          set -euo pipefail
+          missing=0
+          # F8: read the compose path from the manifest, not a hardcoded name.
+          services="$(python3 -c 'import yaml; m=yaml.safe_load(open("sealedstack.yaml")) or {}; c=yaml.safe_load(open(m.get("compose","docker-compose.yml"))) or {}; print(" ".join(n for n,s in (c.get("services") or {}).items() if isinstance(s,dict) and "build" in s))')"
+          for service in ${services}; do
+            ref="${REGISTRY}/${PACKAGE}-${service}:${VERSION}"
+            if ! docker buildx imagetools inspect "${ref}" >/dev/null 2>&1; then
+              echo "::error::missing image ${ref}"
+              missing=1
+            fi
+          done
+          [ "${missing}" -eq 0 ] || exit 1
+
+      - name: Join the tailnet as tag:ci
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
+          audience: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}
+          tags: tag:ci
+
+      - name: Render the deploy compose at the tag
+        if: needs.setup.outputs.mode != 'server'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import yaml
+          manifest = yaml.safe_load(open("sealedstack.yaml", encoding="utf-8")) or {}
+          compose = yaml.safe_load(open(manifest.get("compose", "docker-compose.yml"), encoding="utf-8")) or {}
+          for spec in (compose.get("services") or {}).values():
+              if isinstance(spec, dict):
+                  spec.pop("build", None)
+          os.makedirs(".build", exist_ok=True)
+          with open(".build/deploy-compose.yml", "w", encoding="utf-8") as handle:
+              yaml.safe_dump(compose, handle, sort_keys=False)
+          PY
+          echo "rendered .build/deploy-compose.yml"
+
+      - name: Update release-owned fields and deploy
+        env:
+          DOKPLOY_URL: ${{ vars.SEALEDSTACK_DOKPLOY_URL }}
+          DOKPLOY_KEY: ${{ secrets.SEALEDSTACK_DOKPLOY_API_KEY }}
+          COMPOSE_IDS: ${{ vars.SEALEDSTACK_COMPOSE_IDS }}
+          VERSION: ${{ needs.setup.outputs.version }}
+          MODE: ${{ needs.setup.outputs.mode }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          url = os.environ["DOKPLOY_URL"].rstrip("/")
+          key = os.environ["DOKPLOY_KEY"]
+          version = os.environ["VERSION"]
+          mode = os.environ.get("MODE", "ci")
+          ids = json.loads(os.environ["COMPOSE_IDS"] or "{}")
+          compose_file = ""
+          if mode != "server":
+              with open(".build/deploy-compose.yml", encoding="utf-8") as handle:
+                  compose_file = handle.read()
+
+          def api(path, method="GET", body=None):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(
+                  url + path, data=data, method=method,
+                  headers={"x-api-key": key, "Content-Type": "application/json"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  raw = resp.read()
+              return json.loads(raw) if raw else None
+
+          def deploy_ids(compose_id):
+              rows = api(f"/api/deployment.allByCompose?composeId={compose_id}") or []
+              return {str(row.get("deploymentId")) for row in rows}
+
+          for server, compose_id in ids.items():
+              current = api(f"/api/compose.one?composeId={compose_id}") or {}
+              lines = [ln for ln in (current.get("env") or "").split("\n") if ln and not ln.startswith("#")]
+              found = False
+              out = []
+              for line in lines:
+                  if line.startswith("APP_VERSION="):
+                      out.append(f"APP_VERSION={version}")
+                      found = True
+                  else:
+                      out.append(line)
+              if not found:
+                  out.append(f"APP_VERSION={version}")
+              body = {"composeId": compose_id, "env": "\n".join(out)}
+              if mode == "server":
+                  # server mode: Dokploy builds from the git ref; release only
+                  # moves the branch to the version tag (spec 4.4).
+                  body["branch"] = version
+              else:
+                  body["composeFile"] = compose_file
+              api("/api/compose.update", "POST", body)
+              before = deploy_ids(compose_id)
+              api("/api/compose.deploy", "POST", {"composeId": compose_id})
+              deadline = time.time() + 600
+              new_id, status = None, None
+              while time.time() < deadline:
+                  rows = api(f"/api/deployment.allByCompose?composeId={compose_id}") or []
+                  new = [r for r in rows if str(r.get("deploymentId")) not in before]
+                  if new:
+                      row = sorted(new, key=lambda r: r.get("createdAt") or "")[-1]
+                      new_id, status = row.get("deploymentId"), row.get("status")
+                      if status == "done":
+                          break
+                      if status in ("error", "unknown", "timeout"):
+                          raise SystemExit(f"{server}: deployment {new_id} {status}")
+                  time.sleep(5)
+              if status != "done":
+                  raise SystemExit(f"{server}: deployment {new_id or 'unknown'} did not reach done (status={status})")
+              print(f"{server}: deployment {new_id} done")
+          PY
+
+      - name: Record the released version for rebuild recovery
+        # F7: a server rebuild recreates the compose without APP_VERSION. Keep
+        # the last released version in a repository variable so the infra repo
+        # can redeploy it after a rebuild instead of waiting for a re-release.
+        # Writing a repo variable needs `actions: write`; the built-in
+        # GITHUB_TOKEN cannot, so use the bot identity (D-039) and FAIL loudly if
+        # recording fails (a silent failure means a rebuild comes back empty).
+        env:
+          GH_TOKEN: ${{ secrets.SEALEDSTACK_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh variable set SEALEDSTACK_RELEASED_VERSION \
+            --repo "${GITHUB_REPOSITORY}" --body "${VERSION}"
+          echo "recorded SEALEDSTACK_RELEASED_VERSION=${VERSION}"
+

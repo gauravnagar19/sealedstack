@@ -1,0 +1,38 @@
+# Release CI for an app repo (D-015): the app owns releases, sealedstack owns
+# placement. This is the GitLab equivalent of the GitHub release workflow: the
+# job joins the Tailscale tailnet as tag:ci and calls the Dokploy API.
+#
+# Set these CI/CD variables (Settings -> CI/CD -> Variables), masked:
+#   TS_AUTHKEY                                      tagged, ephemeral key for tag:ci
+#   DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID
+#
+# Prefer OIDC federation over TS_AUTHKEY where possible; see docs/ci-cd.md.
+stages: [deploy]
+
+deploy:
+  stage: deploy
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  image: tailscale/tailscale:latest
+  variables:
+    TS_STATE_DIR: /tmp/tailscale-state
+    TS_SOCKET: /tmp/tailscaled.sock
+  script:
+    - mkdir -p "$TS_STATE_DIR"
+    # userspace networking lets this run in an unprivileged container.
+    - tailscaled --state="$TS_STATE_DIR/state" --socket="$TS_SOCKET" --tun=userspace-networking &
+    - sleep 3
+    - >
+      tailscale --socket="$TS_SOCKET" up
+      --authkey="$TS_AUTHKEY"
+      --hostname="ci-$CI_PROJECT_NAME-$CI_PIPELINE_IID"
+      --advertise-tags=tag:ci
+    - tailscale --socket="$TS_SOCKET" status
+    - |
+      curl -fsS -X POST \
+        -H "x-api-key: $DOKPLOY_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "{\"composeId\":\"$DOKPLOY_APP_ID\"}" \
+        "$DOKPLOY_URL/api/compose.deploy"
+  after_script:
+    - tailscale --socket="$TS_SOCKET" down || true

@@ -1,0 +1,129 @@
+"""db port (Task 4.9 / D-047)."""
+from __future__ import annotations
+
+import io
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+
+from sealedstack import config as config_mod, db as dbmod, secrets as secrets_mod
+from sealedstack.secrets import SecretResult
+
+
+class FakeSource(secrets_mod.SecretSource):
+    kind = "fake"
+
+    def __init__(self, data: dict):
+        self.data = data
+
+    def get(self, name: str) -> SecretResult:
+        if name in self.data:
+            return SecretResult(name, "found", self.data[name])
+        return SecretResult(name, "missing", detail="not in fake source")
+
+
+class FakeState:
+    def __init__(self, urls, names, compose_ids):
+        self._data = {"database_urls": urls, "database_names": names, "compose_ids": compose_ids}
+
+    def output(self, name):
+        return self._data.get(name, {})
+
+
+class FakeClient:
+    def __init__(self, deployments=None):
+        self._deployments = deployments or {}
+        self.posts: list[tuple] = []
+
+    def deployments(self, compose_id):
+        return self._deployments.get(compose_id, [])
+
+    def post(self, path, body=None):
+        self.posts.append((path, body))
+        return {}
+
+
+class FakeTransport:
+    def __init__(self, psql_value="3"):
+        self.psql_value = psql_value
+        self.calls: list[tuple] = []
+
+    def ssh(self, server, remote_cmd, stdin=None):
+        self.calls.append((server, remote_cmd, stdin))
+        if "cat > " in remote_cmd:  # write the remote env file
+            return 0, b"/tmp/sst\n"
+        if "pg_isready" in remote_cmd:
+            return 0, b""
+        if "psql" in remote_cmd and "-tA" in remote_cmd:
+            return 0, (self.psql_value + "\n").encode()
+        if "psql" in remote_cmd:
+            return 0, b""
+        if "pg_restore" in remote_cmd:
+            return 0, b""
+        if "rm -rf" in remote_cmd:
+            return 0, b""
+        return 0, b""
+
+    def aws(self, args, stdin=None):
+        self.calls.append(("aws", args, stdin))
+        return 0, b""
+
+
+def make_config(tmp_path: Path) -> config_mod.Config:
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    (cfg_dir / "stack.yaml").write_text(
+        yaml.safe_dump({"name": "example-infra", "cloudflare": {"account_id": "acct"}, "slots": {"secrets": "env"}})
+    )
+    (cfg_dir / "apps.yaml").write_text("{}\n")
+    (cfg_dir / "servers.yaml").write_text("servers: {}\n")
+    apps = tmp_path / ".build" / "apps"
+    apps.mkdir(parents=True)
+    (apps / "shop.json").write_text(json.dumps({"name": "shop", "servers": ["web-1"], "manifest": {"needs": {"postgres": {"version": 16}}}}))
+    return config_mod.load_config(config_dir=cfg_dir, code_root=tmp_path, env={})
+
+
+def make_db(tmp_path, *, psql_value="3", source=None, deployments=None):
+    config = make_config(tmp_path)
+    state = FakeState(
+        {"shop": "postgres://u:p@db:5432/shop"},
+        {"shop": "shop"},
+        {"shop": {"web-1": "compose-1"}},
+    )
+    return dbmod.Db(
+        config,
+        {},
+        source=source or FakeSource({}),
+        state=state,
+        client=FakeClient(deployments),
+        transport=FakeTransport(psql_value),
+        out=io.StringIO(),
+    )
+
+
+def test_pg_env_content():
+    assert dbmod.pg_env_content("postgres://u:p@db:5432/shop") == (
+        "PGHOST=db\nPGPORT=5432\nPGUSER=u\nPGPASSWORD=p\nPGDATABASE=shop"
+    )
+    with pytest.raises(dbmod.DbError):
+        dbmod.pg_env_content("not-a-url")
+
+
+def test_latest_backup_key(tmp_path):
+    db = make_db(tmp_path)
+    db.t.aws = lambda args, stdin=None: (0, b"2026-10-11 03:00:00  10  a.dump\n2026-10-12 03:00:00  10  b.dump\n")
+    assert db.latest_backup_key("shop/shop/") == "b.dump"
+
+
+def test_restore_refuses_nonempty_without_force(tmp_path):
+    db = make_db(tmp_path, psql_value="3")
+    with pytest.raises(dbmod.DbError) as exc:
+        db.restore("shop")
+    assert "not empty" in str(exc.value)
+
+
+def test_restore_on_create_skips_nonempty(tmp_path):
+    db = make_db(tmp_path, psql_value="3")
+    assert db.restore("shop", restore_on_create=True) == 0

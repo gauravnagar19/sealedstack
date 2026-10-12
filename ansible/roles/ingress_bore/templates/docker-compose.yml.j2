@@ -1,0 +1,39 @@
+---
+services:
+{% if ingress_bore_server_enabled %}
+  bore-server:
+    image: "{{ ingress_bore_image }}:{{ ingress_bore_image_tag }}"
+    restart: unless-stopped
+    command:
+      - server
+{% if ingress_bore_secret | default('') | length > 0 %}
+      - "--secret"
+      - "{{ ingress_bore_secret }}"
+{% endif %}
+    ports:
+      - "{{ ingress_bore_server_port }}:{{ ingress_bore_server_port }}"
+    networks:
+      - dokploy-network
+{% endif %}
+{% for client in ingress_bore_clients %}
+  bore-{{ client.name }}:
+    image: "{{ ingress_bore_image }}:{{ ingress_bore_image_tag }}"
+    restart: unless-stopped
+    command:
+      - local
+      - "{{ client.local_port }}"
+      - "--to"
+      - "{{ ingress_bore_server_addr }}"
+      - "--port"
+      - "{{ client.remote_port }}"
+{% if ingress_bore_secret | default('') | length > 0 %}
+      - "--secret"
+      - "{{ ingress_bore_secret }}"
+{% endif %}
+    networks:
+      - dokploy-network
+{% endfor %}
+
+networks:
+  dokploy-network:
+    external: true

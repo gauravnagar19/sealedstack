@@ -1,0 +1,13 @@
+---
+# mesh_headscale role (spec section 4): self-hosted, Tailscale-compatible
+# control server. Runs headscale in a container joined to the dokploy-network;
+# clients are pointed at it with `tailscale up --login-server <controller_url>`.
+mesh_headscale_compose_dir: /opt/sealedstack/mesh_headscale
+mesh_headscale_image: docker.io/headscale/headscale
+mesh_headscale_image_tag: "0.22.3"  # pinned; confirm the current tag before use
+mesh_headscale_server_url: "https://headscale.example.com"
+mesh_headscale_listen_port: 8080
+mesh_headscale_metrics_port: 9090
+mesh_headscale_network: dokploy-network
+mesh_headscale_base_domain: ""
+mesh_headscale_nameservers: []

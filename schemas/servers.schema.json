@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealedstack.dev/schemas/servers.schema.json",
+  "title": "sealedstack servers.yaml",
+  "description": "Where things can run. The server key doubles as its Tailscale MagicDNS hostname (spec section 5.2, D-008).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "servers"
+  ],
+  "properties": {
+    "servers": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "role",
+            "os"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "description": "A compute implementation id from the registry (registry/compute.yaml). Validated by `just validate`."
+            },
+            "role": {
+              "enum": [
+                "control",
+                "worker"
+              ],
+              "description": "control runs the Dokploy panel (exactly one); worker is a remote server."
+            },
+            "os": {
+              "enum": [
+                "ubuntu-24.04",
+                "debian-12",
+                "debian-13",
+                "rocky-9",
+                "alma-9"
+              ]
+            },
+            "arch": {
+              "enum": [
+                "amd64",
+                "arm64"
+              ],
+              "description": "CPU architecture. Defaults to amd64 when omitted."
+            },
+            "external_id": {
+              "type": "string",
+              "description": "Provider-native server id (Netcup SCP name, etc.)."
+            },
+            "server_type": {
+              "type": "string",
+              "description": "Provider size/plan slug (Hetzner cx22, DO s-1vcpu-2gb, Vultr vc2-1c-2gb)."
+            },
+            "memory_gb": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "RAM in GB, used by the build.mode 'server' OOM warning (spec 4.2). Optional when the instance slug is well known."
+            },
+            "ram_gb": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Alias for memory_gb."
+            },
+            "location": {
+              "type": "string",
+              "description": "Region or datacentre."
+            },
+            "image": {
+              "type": "string",
+              "description": "Image slug for providers that take one."
+            },
+            "os_id": {
+              "type": [
+                "integer",
+                "string"
+              ],
+              "description": "Numeric OS id for providers that take one (Vultr)."
+            },
+            "plan": {
+              "type": "string",
+              "description": "Hostinger VPS plan."
+            },
+            "template_id": {
+              "type": "string",
+              "description": "Hostinger OS template id."
+            },
+            "data_center_id": {
+              "type": "string",
+              "description": "Hostinger data centre id."
+            },
+            "compartment_id": {
+              "type": "string",
+              "description": "OCI compartment id (oracle)."
+            },
+            "service_name": {
+              "type": "string",
+              "description": "OVH cloud project / service name."
+            },
+            "bootstrap": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "First-login secrets for an existing machine (D-049): the public IP and root password live in the secret source, not in config.",
+              "properties": {
+                "method": {
+                  "enum": [
+                    "password",
+                    "key"
+                  ]
+                },
+                "ip_secret": {
+                  "type": "string",
+                  "description": "Source key holding the public IP (default SERVER_IP_<NAME>)."
+                },
+                "password_secret": {
+                  "type": "string",
+                  "description": "Source key holding the root password (default ROOT_PASSWORD_<NAME>)."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

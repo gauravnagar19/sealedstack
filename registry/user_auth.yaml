@@ -1,0 +1,93 @@
+slot: user_auth
+contract: "app -> env keys injected, required DNS records, webhook paths exempted from gate (spec section 4)."
+implementations:
+  - id: clerk
+    name: Clerk
+    status: experimental
+    summary: Managed user auth; secrets injected and webhook paths bypass the gate (D-003).
+    secrets: [CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, CLERK_WEBHOOK_SECRET]
+    config: []
+    impl: {}
+    docs: https://clerk.com/
+    notes: "config-only: the app's manifest declares the `clerk` env keys, which the secrets slot injects; no sealedstack code."
+  - id: oidc
+    name: Generic OIDC
+    status: experimental
+    summary: Any OIDC provider; injects issuer/client/secret and exempts webhook paths.
+    secrets: [OIDC_CLIENT_SECRET]
+    config: [issuer, client_id]
+    impl: {}
+    docs: https://openid.net/connect/
+    notes: "config-only: the app's manifest declares the OIDC env keys; no sealedstack code."
+  - id: better_auth
+    name: Better Auth
+    status: experimental
+    summary: In-app auth library; the adapter injects BETTER_AUTH_SECRET/URL and reports the webhook paths the gate must exempt.
+    secrets: [BETTER_AUTH_SECRET]
+    config: [url]
+    impl: { adapter: engine/sealedstack/userauth.py }
+    docs: https://www.better-auth.com/
+  - id: zitadel
+    name: Zitadel
+    status: experimental
+    summary: Self-hosted OIDC IdP; injects issuer/client/secret env and exempts webhook paths.
+    secrets: [ZITADEL_CLIENT_SECRET]
+    config: [issuer, client_id]
+    impl: { adapter: engine/sealedstack/userauth.py }
+    docs: https://zitadel.com/
+  - id: logto
+    name: Logto
+    status: experimental
+    summary: Self-hosted OIDC IdP; injects issuer/client/secret env and exempts webhook paths.
+    secrets: [LOGTO_CLIENT_SECRET]
+    config: [issuer, client_id]
+    impl: { adapter: engine/sealedstack/userauth.py }
+    docs: https://logto.io/
+  - id: authentik
+    name: authentik
+    status: experimental
+    summary: Self-hosted OIDC IdP; injects issuer/client/secret env and exempts webhook paths.
+    secrets: [AUTHENTIK_CLIENT_SECRET]
+    config: [issuer, client_id]
+    impl: { adapter: engine/sealedstack/userauth.py }
+    docs: https://goauthentik.io/
+  - id: keycloak
+    name: Keycloak
+    status: experimental
+    summary: Self-hosted OIDC IdP; injects issuer/client/secret env and exempts webhook paths.
+    secrets: [KEYCLOAK_CLIENT_SECRET]
+    config: [issuer, client_id]
+    impl: { adapter: engine/sealedstack/userauth.py }
+    docs: https://www.keycloak.org/
+  - id: supabase
+    name: Supabase Auth
+    status: experimental
+    summary: Managed auth bundled with Postgres; injects project URL, anon and service-role keys.
+    secrets: [SUPABASE_SERVICE_ROLE_KEY]
+    config: [project_url, anon_key]
+    impl: { adapter: engine/sealedstack/userauth.py }
+    docs: https://supabase.com/docs/guides/auth
+  - id: firebase
+    name: Firebase Auth
+    status: experimental
+    summary: Managed auth by Google; injects project id and the service-account JSON.
+    secrets: [FIREBASE_SERVICE_ACCOUNT]
+    config: [project_id]
+    impl: { adapter: engine/sealedstack/userauth.py }
+    docs: https://firebase.google.com/docs/auth
+  - id: workos
+    name: WorkOS
+    status: experimental
+    summary: Enterprise SSO and directory sync; injects client id, redirect URI and API key.
+    secrets: [WORKOS_API_KEY]
+    config: [client_id, redirect_uri]
+    impl: { adapter: engine/sealedstack/userauth.py }
+    docs: https://workos.com/
+  - id: auth0
+    name: Auth0
+    status: experimental
+    summary: Managed OIDC identity platform; injects domain/client/secret env and exempts webhook paths.
+    secrets: [AUTH0_CLIENT_SECRET]
+    config: [domain, client_id]
+    impl: { adapter: engine/sealedstack/userauth.py }
+    docs: https://auth0.com/

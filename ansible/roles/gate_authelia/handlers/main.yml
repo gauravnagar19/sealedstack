@@ -1,0 +1,6 @@
+---
+- name: Restart gate_authelia
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ gate_authelia_compose_dir }}"
+  changed_when: true

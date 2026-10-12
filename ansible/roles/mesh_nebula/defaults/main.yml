@@ -1,0 +1,17 @@
+---
+# mesh_nebula role (spec section 4): a controller-less overlay with its own CA.
+# Installs the nebula binary and nebula-cert, creates a CA (once), signs this
+# host's certificate, renders the config and runs it under systemd. The first
+# host is usually the lighthouse; store the generated ca.key somewhere safe.
+mesh_nebula_version: "1.9.4"  # pinned; confirm the current release before use
+mesh_nebula_base_dir: /etc/nebula
+mesh_nebula_interface: nebula1
+mesh_nebula_port: 4242
+mesh_nebula_am_lighthouse: false
+mesh_nebula_ip: "192.168.100.2/24"
+mesh_nebula_lighthouse_hosts: []
+mesh_nebula_static_host_map: {}
+mesh_nebula_ca_name: "sealedstack"
+mesh_nebula_ca_duration: "8760h"
+# Required (no default): NEBULA_CA_KEY holds the generated CA private key for
+# recovery. Keep it out of git, in Bitwarden.

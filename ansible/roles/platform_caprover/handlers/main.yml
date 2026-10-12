@@ -1,0 +1,6 @@
+---
+- name: Restart platform_caprover
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ platform_caprover_compose_dir }}"
+  changed_when: true

@@ -1,0 +1,15 @@
+# Better Auth adapter (registry user_auth: better_auth).
+#
+# Better Auth is an in-app library, not a hosted IdP, so there is no dashboard
+# to configure. sealedstack.userauth reads these values, resolves the secret
+# from Secrets Manager (project `prod`, key `<app>.BETTER_AUTH_SECRET`) and
+# injects into .build/env.json:
+#
+#   BETTER_AUTH_URL    <- url (the app's public base URL)
+#   BETTER_AUTH_SECRET <- secret (signs sessions/cookies; 32+ random bytes)
+#
+# Generate the secret with `openssl rand -base64 32` and store it as
+# `<app>.BETTER_AUTH_SECRET`. Non-secret values may also live under
+# `providers.user_auth_better_auth` in config/stack.yaml.
+
+url: https://app.example.com

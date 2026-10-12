@@ -1,0 +1,57 @@
+---
+services:
+  pangolin:
+    image: "{{ ingress_pangolin_image }}:{{ ingress_pangolin_image_tag }}"
+    restart: unless-stopped
+    volumes:
+      - "{{ ingress_pangolin_compose_dir }}/config:/app/config"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks:
+      - pangolin
+      - dokploy-network
+
+  gerbil:
+    image: "{{ ingress_pangolin_gerbil_image }}:{{ ingress_pangolin_gerbil_image_tag }}"
+    restart: unless-stopped
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    command:
+      - --reachableAt=http://gerbil:3004
+      - --generateAndSaveKeyTo=/var/config/key
+      - --remoteConfig=http://pangolin:3001/api/v1/
+    volumes:
+      - "{{ ingress_pangolin_compose_dir }}/config:/var/config"
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    ports:
+      - "{{ ingress_pangolin_wireguard_port }}:{{ ingress_pangolin_wireguard_port }}/udp"
+      - "21820:21820/udp"
+      - "443:443"
+      - "80:80"
+    networks:
+      - pangolin
+      - dokploy-network
+
+  traefik:
+    image: "{{ ingress_pangolin_traefik_image }}:{{ ingress_pangolin_traefik_image_tag }}"
+    restart: unless-stopped
+    network_mode: service:gerbil
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    command:
+      - --configFile=/etc/traefik/traefik_config.yml
+    volumes:
+      - "{{ ingress_pangolin_compose_dir }}/config/traefik:/etc/traefik:ro"
+      - "{{ ingress_pangolin_compose_dir }}/config/letsencrypt:/letsencrypt"
+
+networks:
+  pangolin:
+  dokploy-network:
+    external: true

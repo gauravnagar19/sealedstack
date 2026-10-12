@@ -1,0 +1,6 @@
+---
+- name: Restart ingress_nginx
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ ingress_nginx_compose_dir }}"
+  changed_when: true

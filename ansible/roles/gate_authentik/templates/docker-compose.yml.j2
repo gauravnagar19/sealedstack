@@ -1,0 +1,90 @@
+---
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: "{{ gate_authentik_pg_password }}"
+      POSTGRES_USER: "{{ gate_authentik_pg_user }}"
+      POSTGRES_DB: "{{ gate_authentik_pg_database }}"
+    volumes:
+      - database:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    restart: unless-stopped
+    command: --save 60 1 --loglevel warning
+    volumes:
+      - redis:/data
+    networks:
+      - internal
+
+  server:
+    image: "{{ gate_authentik_image }}:{{ gate_authentik_image_tag }}"
+    command: server
+    restart: unless-stopped
+    environment:
+      AUTHENTIK_SECRET_KEY: "{{ gate_authentik_secret_key }}"
+      AUTHENTIK_WEB__BASE_URL: "{{ gate_authentik_server_url }}"
+      AUTHENTIK_POSTGRESQL__HOST: "{{ gate_authentik_pg_host }}"
+      AUTHENTIK_POSTGRESQL__USER: "{{ gate_authentik_pg_user }}"
+      AUTHENTIK_POSTGRESQL__NAME: "{{ gate_authentik_pg_database }}"
+      AUTHENTIK_POSTGRESQL__PASSWORD: "{{ gate_authentik_pg_password }}"
+      AUTHENTIK_REDIS__HOST: "{{ gate_authentik_redis_host }}"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "{{ gate_authentik_error_reporting | string | lower }}"
+      AUTHENTIK_BOOTSTRAP_TOKEN: "{{ gate_authentik_bootstrap_token }}"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - media:/media
+      - templates:/templates
+    ports:
+      - "{{ gate_authentik_bind_address }}:{{ gate_authentik_port }}:9000"
+    networks:
+      - internal
+      - dokploy-network
+
+  worker:
+    image: "{{ gate_authentik_image }}:{{ gate_authentik_image_tag }}"
+    command: worker
+    restart: unless-stopped
+    environment:
+      AUTHENTIK_SECRET_KEY: "{{ gate_authentik_secret_key }}"
+      AUTHENTIK_POSTGRESQL__HOST: "{{ gate_authentik_pg_host }}"
+      AUTHENTIK_POSTGRESQL__USER: "{{ gate_authentik_pg_user }}"
+      AUTHENTIK_POSTGRESQL__NAME: "{{ gate_authentik_pg_database }}"
+      AUTHENTIK_POSTGRESQL__PASSWORD: "{{ gate_authentik_pg_password }}"
+      AUTHENTIK_REDIS__HOST: "{{ gate_authentik_redis_host }}"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - media:/media
+      - templates:/templates
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - internal
+
+  proxy:
+    image: "{{ gate_authentik_proxy_image }}:{{ gate_authentik_image_tag }}"
+    restart: unless-stopped
+    environment:
+      AUTHENTIK_HOST: "{{ gate_authentik_server_url }}"
+      AUTHENTIK_INSECURE: "false"
+      AUTHENTIK_TOKEN: "{{ gate_authentik_token }}"
+    networks:
+      - dokploy-network
+
+volumes:
+  database:
+  redis:
+  media:
+  templates:
+
+networks:
+  internal:
+  dokploy-network:
+    external: true

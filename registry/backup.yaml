@@ -1,0 +1,149 @@
+slot: backup
+contract: "app, db -> S3 endpoint, bucket, prefix, credentials (spec section 4)."
+implementations:
+  - id: r2
+    name: Cloudflare R2
+    status: experimental
+    summary: Free up to 10 GB; the MVP default.
+    secrets: [R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY]
+    config: [account_id, bucket]
+    impl: { tofu_module: backup_r2 }
+    docs: https://developers.cloudflare.com/r2/
+  - id: s3
+    name: Amazon S3 (generic S3)
+    status: experimental
+    summary: Any S3-compatible store, configured entirely with endpoint, region and bucket.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://docs.aws.amazon.com/s3/
+  - id: b2
+    name: Backblaze B2
+    status: experimental
+    summary: Cheap S3-compatible storage.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://www.backblaze.com/cloud-storage
+  - id: wasabi
+    name: Wasabi
+    status: experimental
+    summary: S3-compatible with no egress fees.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://wasabi.com/
+  - id: spaces
+    name: DigitalOcean Spaces
+    status: experimental
+    summary: S3-compatible object storage.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://www.digitalocean.com/products/spaces/
+  - id: minio
+    name: MinIO (self-hosted)
+    status: experimental
+    summary: Self-hosted S3-compatible store.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://min.io/
+  - id: storj
+    name: Storj
+    status: experimental
+    summary: Decentralised S3-compatible storage.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://www.storj.io/
+  - id: linode
+    name: Linode Object Storage
+    status: experimental
+    summary: S3-compatible object storage.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://www.linode.com/products/object-storage/
+  - id: scaleway
+    name: Scaleway Object Storage
+    status: experimental
+    summary: S3-compatible object storage.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://www.scaleway.com/en/object-storage/
+  - id: idrive_e2
+    name: IDrive e2
+    status: experimental
+    summary: S3-compatible object storage.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://www.idrive.com/e2/
+  - id: filebase
+    name: Filebase
+    status: experimental
+    summary: S3-compatible object storage.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://filebase.com/
+  - id: tigris
+    name: Tigris
+    status: experimental
+    summary: Globally distributed S3-compatible storage.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://www.tigrisdata.com/
+  - id: garage
+    name: Garage (self-hosted)
+    status: experimental
+    summary: Self-hosted S3-compatible store.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://garagehq.deuxfleurs.fr/
+  - id: seaweedfs
+    name: SeaweedFS (self-hosted)
+    status: experimental
+    summary: Self-hosted S3-compatible store.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://seaweedfs.com/
+  - id: vultr_object
+    name: Vultr Object Storage
+    status: experimental
+    summary: S3-compatible object storage.
+    secrets: [S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    config: [endpoint, region, bucket]
+    impl: { tofu_module: backup_s3 }
+    docs: https://www.vultr.com/products/object-storage/
+  - id: gcs
+    name: Google Cloud Storage
+    status: experimental
+    summary: GCS with S3-compatible HMAC keys or the native provider.
+    secrets: [GOOGLE_CREDENTIALS]
+    config: [project, location, bucket]
+    impl: { tofu_module: backup_gcs }
+    docs: https://registry.opentofu.org/providers/hashicorp/google
+    notes: "Owns a private, uniform-access bucket; reports the S3-compatible XML endpoint."
+  - id: hetzner_storage_box
+    name: Hetzner Storage Box
+    status: experimental
+    summary: Not S3; rsync/SFTP backups on a schedule via a systemd timer.
+    secrets: [STORAGE_BOX_PASSWORD]
+    config: [host, username, path]
+    impl: { ansible_role: backup_hetzner_storage_box }
+    docs: https://www.hetzner.com/storage/storage-box/
+  - id: azure_blob
+    name: Azure Blob Storage
+    status: experimental
+    summary: Blob containers via the azurerm provider.
+    secrets: [ARM_CLIENT_ID, ARM_CLIENT_SECRET]
+    config: [storage_account, resource_group, container]
+    impl: { tofu_module: backup_azure }
+    docs: https://registry.opentofu.org/providers/hashicorp/azurerm
+    notes: "The storage account is pre-created by the operator; the module owns the private container."

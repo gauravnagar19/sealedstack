@@ -1,0 +1,167 @@
+slot: compute
+contract: "server name, bootstrap IP -> SSH-reachable host; provider firewall applied or printed (spec section 4)."
+implementations:
+  - id: any-ssh
+    name: Any SSH-reachable server
+    status: experimental
+    creates_server: false
+    summary: The server already exists and the firewall is applied by hand.
+    firewall: manual
+    config: [os]
+    impl: { tofu_module: compute_any_ssh, stack: compute }
+    docs: docs/netcup-firewall.md
+  - id: netcup
+    name: Netcup (SCP REST API)
+    status: experimental
+    creates_server: false
+    summary: Existing VPS; the SCP REST adapter applies the rule table once config/providers/netcup.yaml is filled in, otherwise apply it by hand.
+    firewall: manual
+    secrets: [NETCUP_API_USERNAME, NETCUP_API_PASSWORD]
+    config: [external_id]
+    impl: { tofu_module: compute_netcup, stack: compute }
+    docs: docs/netcup-firewall.md
+    notes: "H5: the SCP REST API uses OAuth2 device flow and per-interface firewall policies; the earlier basic-auth adapter did not match. Until config/providers/netcup.yaml is filled in, apply the rule table by hand (docs/netcup-firewall.md)."
+
+  - id: hetzner
+    name: Hetzner Cloud
+    status: experimental
+    creates_server: true
+    summary: Creates a server and a stateful hcloud_firewall.
+    firewall: native
+    secrets: [HCLOUD_TOKEN]
+    config: [server_type, location, image]
+    impl: { tofu_module: compute_hetzner, stack: compute }
+    docs: https://registry.opentofu.org/providers/hetznercloud/hcloud
+  - id: hostinger
+    name: Hostinger VPS
+    status: experimental
+    creates_server: true
+    summary: Creates a VPS via the official provider; no API firewall, UFW protects the origin.
+    firewall: none
+    secrets: [HOSTINGER_TOKEN]
+    config: [plan, template_id, data_center_id]
+    impl: { tofu_module: compute_hostinger, stack: compute }
+    docs: https://developers.hostinger.com/
+  - id: digitalocean
+    name: DigitalOcean
+    status: experimental
+    creates_server: true
+    summary: Creates a droplet and a cloud firewall.
+    firewall: native
+    secrets: [DIGITALOCEAN_TOKEN]
+    config: [server_type, location, image]
+    impl: { tofu_module: compute_digitalocean, stack: compute }
+    docs: https://registry.opentofu.org/providers/digitalocean/digitalocean
+  - id: vultr
+    name: Vultr
+    status: experimental
+    creates_server: true
+    summary: Creates an instance and a firewall group.
+    firewall: native
+    secrets: [VULTR_API_KEY]
+    config: [server_type, location, os_id]
+    impl: { tofu_module: compute_vultr, stack: compute }
+    docs: https://registry.opentofu.org/providers/vultr/vultr
+  - id: linode
+    name: Akamai / Linode
+    status: experimental
+    creates_server: true
+    summary: Linode instances and cloud firewalls.
+    firewall: native
+    secrets: [LINODE_TOKEN]
+    config: [server_type, location, image]
+    impl: { tofu_module: compute_linode, stack: compute }
+    docs: https://registry.opentofu.org/providers/linode/linode
+  - id: aws
+    name: AWS EC2
+    status: experimental
+    creates_server: true
+    summary: EC2 instance plus a stateful security group; any Ubuntu AMI resolved by name.
+    firewall: native
+    secrets: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
+    config: [server_type, location, image]
+    impl: { tofu_module: compute_aws, stack: compute }
+    docs: https://registry.opentofu.org/providers/hashicorp/aws
+  - id: gcp
+    name: Google Cloud
+    status: experimental
+    creates_server: true
+    summary: Compute Engine instance on its own VPC plus a stateful firewall.
+    firewall: native
+    secrets: [GOOGLE_CREDENTIALS]
+    config: [server_type, location, image]
+    impl: { tofu_module: compute_gcp, stack: compute }
+    docs: https://registry.opentofu.org/providers/hashicorp/google
+  - id: azure
+    name: Microsoft Azure
+    status: experimental
+    creates_server: true
+    summary: Linux VM with networking and a stateful network security group.
+    firewall: native
+    secrets: [ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_SUBSCRIPTION_ID, ARM_TENANT_ID]
+    config: [server_type, location, image]
+    impl: { tofu_module: compute_azure, stack: compute }
+    docs: https://registry.opentofu.org/providers/hashicorp/azurerm
+  - id: oracle
+    name: Oracle Cloud
+    status: experimental
+    creates_server: true
+    summary: OCI instance plus a security list (free Ampere ARM tier).
+    firewall: native
+    secrets: [OCI_TENANCY_OCID, OCI_PRIVATE_KEY]
+    config: [server_type, location, image, compartment_id]
+    impl: { tofu_module: compute_oracle, stack: compute }
+    docs: https://registry.opentofu.org/providers/oracle/oci
+    notes: "Compartment OCID and shape (VM.Standard.A1.Flex) are per-server; the provider handles free-tier ARM."
+  - id: upcloud
+    name: UpCloud
+    status: experimental
+    creates_server: true
+    summary: Server plus a firewall.
+    firewall: native
+    secrets: [UPCLOUD_USERNAME, UPCLOUD_PASSWORD]
+    config: [server_type, location, image]
+    impl: { tofu_module: compute_upcloud, stack: compute }
+    docs: https://registry.opentofu.org/providers/UpCloudLtd/upcloud
+  - id: scaleway
+    name: Scaleway
+    status: experimental
+    creates_server: true
+    summary: Instance plus a security group.
+    firewall: native
+    secrets: [SCW_ACCESS_KEY, SCW_SECRET_KEY]
+    config: [server_type, location, image]
+    impl: { tofu_module: compute_scaleway, stack: compute }
+    docs: https://registry.opentofu.org/providers/scaleway/scaleway
+  - id: ovh
+    name: OVHcloud
+    status: experimental
+    creates_server: true
+    summary: Public Cloud instance plus a security group.
+    firewall: native
+    secrets: [OVH_APPLICATION_KEY, OVH_APPLICATION_SECRET]
+    config: [server_type, location, image, service_name]
+    impl: { tofu_module: compute_ovh, stack: compute }
+    docs: https://registry.opentofu.org/providers/ovh/ovh
+    notes: "service_name is the Public Cloud project id; flavor/image are resolved by name."
+  - id: contabo
+    name: Contabo
+    status: experimental
+    creates_server: false
+    summary: Existing VPS; the REST adapter applies the rule table once config/providers/contabo.yaml is filled in, otherwise apply it by hand.
+    firewall: manual
+    secrets: [CONTABO_CLIENT_ID, CONTABO_CLIENT_SECRET]
+    config: [external_id]
+    impl: { tofu_module: compute_contabo, stack: compute }
+    docs: https://api.contabo.com/
+    notes: "No OpenTofu provider; apply the rule table by hand (config/providers/contabo.yaml) until the adapter is live-tested."
+  - id: civo
+    name: Civo
+    status: experimental
+    creates_server: true
+    summary: Instance plus a firewall.
+    firewall: native
+    secrets: [CIVO_TOKEN]
+    config: [server_type, location, image]
+    impl: { tofu_module: compute_civo, stack: compute }
+    docs: https://registry.opentofu.org/providers/civo/civo

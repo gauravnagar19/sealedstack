@@ -1,0 +1,18 @@
+---
+# gate_oauth2_proxy role (spec section 4): a reverse-proxy gate for any OIDC
+# provider. The cookie secret is generated once on the host; the client secret
+# comes from Bitwarden (OAUTH2_PROXY_CLIENT_SECRET).
+gate_oauth2_proxy_compose_dir: /opt/sealedstack/gate_oauth2_proxy
+gate_oauth2_proxy_image: quay.io/oauth2-proxy/oauth2-proxy
+gate_oauth2_proxy_image_tag: "v7.6.0"  # pinned; confirm the current tag before use
+gate_oauth2_proxy_port: 4180
+# Publish the host port on the mesh/localhost, never the WAN (M8).
+gate_oauth2_proxy_bind_address: "{{ mesh_bind_address | default('127.0.0.1') }}"
+gate_oauth2_proxy_provider: oidc
+gate_oauth2_proxy_client_id: ""
+gate_oauth2_proxy_server_url: "https://auth.example.com"
+gate_oauth2_proxy_upstream: "http://dokploy-traefik:80"
+gate_oauth2_proxy_email_domains: ["*"]
+gate_oauth2_proxy_network: dokploy-network
+gate_oauth2_proxy_cookie_secret_file: "{{ gate_oauth2_proxy_compose_dir }}/secrets/cookie"
+# Required (no default): gate_oauth2_proxy_client_secret -> OAUTH2_PROXY_CLIENT_SECRET

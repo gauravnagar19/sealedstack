@@ -1,0 +1,15 @@
+# Google Cloud Storage backup module (registry backup: gcs).
+#
+# Copy to config/providers/backup_gcs.yaml. The edge stack creates a private,
+# uniform-bucket-level-access bucket and reports its S3-compatible (XML API)
+# endpoint for the platform's backup job. The credentials below come from the
+# selected secrets slot:
+#
+#   GOOGLE_CREDENTIALS   service-account JSON (Bitwarden / secrets slot)
+#
+# Non-secret values may also live under `providers.backup_gcs` in
+# config/stack.yaml.
+
+project: my-gcp-project
+location: EU                 # US | EU | <region>
+bucket: sealedstack-backups

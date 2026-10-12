@@ -1,0 +1,118 @@
+"""server up/sync port (Task 4.9 / D-047)."""
+from __future__ import annotations
+
+import json
+import stat
+from pathlib import Path
+
+import pytest
+import yaml
+
+from sealedstack import config as config_mod, secrets as secrets_mod, server
+from sealedstack.secrets import SecretResult
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+class FakeSource(secrets_mod.SecretSource):
+    kind = "fake"
+
+    def __init__(self, data: dict):
+        self.data = data
+
+    def get(self, name: str) -> SecretResult:
+        if name in self.data:
+            return SecretResult(name, "found", self.data[name])
+        return SecretResult(name, "missing", detail="not in fake source")
+
+
+class FakeIO(server.ServerIO):
+    def __init__(self, captures=None):
+        self.runs: list[list] = []
+        self.captures: list[list] = []
+        self.prompts: list[str] = []
+        self._captures = captures or {}
+
+    def _match(self, argv):
+        for needle, out in self._captures.items():
+            if argv and needle in argv[0]:
+                return out
+        return ""
+
+    def run(self, argv, env):
+        self.runs.append(list(argv))
+        return 0
+
+    def capture(self, argv, env):
+        self.captures.append(list(argv))
+        return 0, self._match(argv)
+
+    def prompt(self, message):
+        self.prompts.append(message)
+        return ""
+
+
+def make_config(tmp_path: Path, provider: str = "netcup") -> config_mod.Config:
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    (cfg_dir / "stack.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "example-infra",
+                "admin_user": "admin",
+                "admin": {"ssh_keys": ["ssh-ed25519 AAAA you@example.com"]},
+                "slots": {"secrets": "bitwarden", "mesh": "tailscale"},
+            }
+        )
+    )
+    (cfg_dir / "servers.yaml").write_text(
+        yaml.safe_dump({"servers": {"web-1": {"provider": provider, "role": "control"}}})
+    )
+    (cfg_dir / "apps.yaml").write_text("{}\n")
+    return config_mod.load_config(config_dir=cfg_dir, code_root=REPO, env={})
+
+
+def test_creates_server_reads_registry():
+    assert server.creates_server(REPO, "hetzner") is True
+    assert server.creates_server(REPO, "netcup") is False
+
+
+def test_write_vars_drops_empty_and_is_0600(tmp_path):
+    path = tmp_path / "vars.json"
+    server.write_vars(path, {"a": "1", "b": ""})
+    assert json.loads(path.read_text()) == {"a": "1"}
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_up_existing_machine_bootstraps_then_sites(tmp_path, capsys):
+    config = make_config(tmp_path, provider="netcup")
+    io = FakeIO(
+        captures={
+            "sealedstack.tailscalekey": "tskey-auth-xyz",
+            "sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy",
+        }
+    )
+    source = FakeSource(
+        {
+            "SERVER_IP_WEB_1": "203.0.113.10",
+            "ROOT_PASSWORD_WEB_1": "rootpw",
+            "admin_sudo_password": "sudopw",
+            "TAILSCALE_OAUTH_CLIENT_ID": "id",
+            "TAILSCALE_OAUTH_CLIENT_SECRET": "sec",
+        }
+    )
+
+    msg = server.up(config, {}, "web-1", source=source, io=io)
+
+    joined = [" ".join(r) for r in io.runs]
+    assert any("bootstrap.yml" in x and "-u root" in x for x in joined)
+    assert any("site.yml" in x and "--limit web-1" in x for x in joined)
+    # netcup firewall is manual -> prompt, no compute call
+    assert io.prompts and not any("sealedstack.compute" in x for x in joined)
+    assert "web-1" in msg
+
+
+def test_up_missing_admin_password_errors(tmp_path):
+    config = make_config(tmp_path)
+    with pytest.raises(config_mod.ConfigError):
+        server.up(config, {}, "web-1", source=FakeSource({"SERVER_IP_WEB_1": "x", "ROOT_PASSWORD_WEB_1": "y"}), io=FakeIO())

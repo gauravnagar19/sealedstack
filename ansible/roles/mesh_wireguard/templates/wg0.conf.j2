@@ -1,0 +1,18 @@
+[Interface]
+Address = {{ mesh_wireguard_address }}
+ListenPort = {{ mesh_wireguard_listen_port }}
+PrivateKey = {{ mesh_wireguard_private_key }}
+{% if mesh_wireguard_dns %}
+DNS = {{ mesh_wireguard_dns }}
+{% endif %}
+
+{% for peer in mesh_wireguard_peers %}
+[Peer]
+# {{ peer.name }}
+PublicKey = {{ peer.public_key }}
+AllowedIPs = {{ peer.allowed_ips | default(mesh_wireguard_address) }}
+{% if peer.preshared_key is defined %}
+PresharedKey = {{ peer.preshared_key }}
+{% endif %}
+
+{% endfor %}

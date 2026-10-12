@@ -1,0 +1,6 @@
+---
+- name: Restart mesh_netbird
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ mesh_netbird_compose_dir }}"
+  changed_when: true

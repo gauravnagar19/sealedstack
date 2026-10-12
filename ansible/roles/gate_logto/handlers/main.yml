@@ -1,0 +1,6 @@
+---
+- name: Restart gate_logto
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ gate_logto_compose_dir }}"
+  changed_when: true

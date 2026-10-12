@@ -1,0 +1,13 @@
+[Unit]
+Description=Nebula overlay network
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/nebula -config {{ mesh_nebula_base_dir }}/config.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+slot: registry
+contract: "app image -> a registry the platform can pull from; push and pull credentials (spec 4.5, D-033)."
+implementations:
+  - id: ghcr
+    name: GitHub Container Registry
+    status: experimental
+    summary: Push with the CI GITHUB_TOKEN (packages:write); pull with a read-only token registered in Dokploy.
+    secrets: [REGISTRY_PULL_TOKEN]
+    config: [owner]
+    impl: {}
+    docs: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry
+    notes: "Golden path (D-033). Pull token is a classic PAT with read:packages (check whether fine-grained tokens can read GHCR yet, Q-B)."
+  - id: dockerhub
+    name: Docker Hub
+    status: planned
+    summary: Push/pull from Docker Hub.
+    secrets: [DOCKERHUB_USERNAME, DOCKERHUB_TOKEN]
+    config: [namespace]
+    docs: https://hub.docker.com/
+  - id: quay
+    name: Red Hat Quay
+    status: planned
+    summary: Push/pull from Quay.
+    secrets: [QUAY_ROBOT_NAME, QUAY_ROBOT_TOKEN]
+    config: [namespace]
+    docs: https://quay.io/
+  - id: oci
+    name: Generic OCI registry
+    status: planned
+    summary: Any registry that speaks the Docker/OCI registry API.
+    secrets: [REGISTRY_USERNAME, REGISTRY_PASSWORD]
+    config: [url, namespace]
+    docs: https://github.com/opencontainers/distribution-spec

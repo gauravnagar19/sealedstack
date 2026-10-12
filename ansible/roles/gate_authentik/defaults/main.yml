@@ -1,0 +1,23 @@
+---
+# gate_authentik role (spec section 4): self-hosted authentik IdP plus the
+# proxy outpost that enforces login at the edge. The outpost is joined to the
+# dokploy-network so it can front app containers.
+gate_authentik_compose_dir: /opt/sealedstack/gate_authentik
+gate_authentik_image: ghcr.io/goauthentik/server
+gate_authentik_proxy_image: ghcr.io/goauthentik/proxy
+gate_authentik_image_tag: "2024.10.5"  # pinned; confirm the current tag before use
+gate_authentik_port: 9000              # host port for the server UI / API
+# Publish the host port on the mesh/localhost, never the WAN (M8).
+gate_authentik_bind_address: "{{ mesh_bind_address | default('127.0.0.1') }}"
+gate_authentik_server_url: "https://auth.example.com"
+gate_authentik_pg_user: authentik
+gate_authentik_pg_database: authentik
+gate_authentik_pg_host: postgres
+gate_authentik_redis_host: redis
+gate_authentik_error_reporting: false
+gate_authentik_network: dokploy-network
+# Required (no default): provide from Bitwarden.
+#   gate_authentik_secret_key        -> AUTHENTIK_SECRET_KEY
+#   gate_authentik_pg_password       -> AUTHENTIK_POSTGRESQL__PASSWORD
+#   gate_authentik_bootstrap_token   -> AUTHENTIK_BOOTSTRAP_TOKEN  (AUTHENTIK_TOKEN)
+#   gate_authentik_token             -> AUTHENTIK_TOKEN for the proxy outpost

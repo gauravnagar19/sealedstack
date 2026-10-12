@@ -1,0 +1,50 @@
+---
+# crowdsec role defaults (spec section 13; roadmap "Security hardening").
+#
+# Installs CrowdSec and the iptables firewall bouncer as Docker Compose
+# services on a host that already runs Docker (the `docker` role).
+#
+# WHY THIS IS OPT-IN, AND MOSTLY REDUNDANT:
+# A sealed origin has zero inbound ports (provider firewall + UFW +
+# DOCKER-USER, spec section 13 and D-005), so CrowdSec only ever sees traffic
+# that already reached the host, which by design should be none. It is offered
+# for defence in depth and source-IP reputation, not as a primary control. It
+# is therefore disabled by default; enable it deliberately.
+crowdsec_enabled: false
+
+# Where the compose file and generated secrets live.
+crowdsec_compose_dir: /opt/sealedstack/crowdsec
+crowdsec_bouncer_dir: "{{ crowdsec_compose_dir }}/bouncer"
+crowdsec_bouncer_config_file: "{{ crowdsec_bouncer_dir }}/crowdsec-firewall-bouncer.yaml"
+crowdsec_bouncer_key_file: "{{ crowdsec_bouncer_dir }}/bouncer.key"
+
+# Docker network the detection agent shares with the rest of the host.
+crowdsec_network: dokploy-network
+
+# Images, pinned to exact tags (spec section 13, supply chain). Bump these
+# through Renovate, never to a floating tag.
+crowdsec_image: crowdsecurity/crowdsec
+crowdsec_image_tag: "v1.6.4"
+crowdsec_bouncer_image: crowdsecurity/cs-firewall-bouncer
+crowdsec_bouncer_image_tag: "v0.0.32"
+
+# Container and service names.
+crowdsec_service: crowdsec
+crowdsec_bouncer_service: crowdsec-firewall-bouncer
+crowdsec_container_name: crowdsec
+crowdsec_bouncer_container_name: crowdsec-firewall-bouncer
+
+# Bouncer registration name inside CrowdSec.
+crowdsec_bouncer_name: sealedstack-firewall
+
+crowdsec_log_level: info
+
+# Collections installed on first boot by the official image (COLLECTIONS env).
+crowdsec_collections:
+  - crowdsecurity/linux
+  - crowdsecurity/sshd
+
+# The Local API listens on localhost only. The firewall bouncer shares the
+# host network namespace and reaches it there.
+crowdsec_lapi_bind: "127.0.0.1:8080"
+crowdsec_lapi_url: http://127.0.0.1:8080

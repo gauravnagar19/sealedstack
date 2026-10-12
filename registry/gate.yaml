@@ -1,0 +1,83 @@
+slot: gate
+contract: "hostname, policy name -> login enforced at the edge; app-ID claim the connector can check (spec section 4)."
+implementations:
+  - id: cloudflare_access
+    name: Cloudflare Access
+    status: experimental
+    summary: Reusable policies, a self-hosted app per hostname, a deny catch-all and webhook bypass.
+    secrets: [CLOUDFLARE_API_TOKEN]
+    config: [account_id, team_name]
+    impl: { tofu_module: gate_cloudflare_access }
+    docs: https://developers.cloudflare.com/cloudflare-one/policies/access/
+  - id: authentik
+    name: authentik
+    status: experimental
+    summary: Self-hosted IdP and proxy outpost.
+    secrets: [AUTHENTIK_TOKEN]
+    config: [server_url]
+    impl: { ansible_role: gate_authentik }
+    docs: https://goauthentik.io/
+  - id: authelia
+    name: Authelia
+    status: experimental
+    summary: Self-hosted 2FA portal in front of a reverse proxy.
+    secrets: []
+    config: [server_url]
+    impl: { ansible_role: gate_authelia }
+    docs: https://www.authelia.com/
+  - id: pomerium
+    name: Pomerium
+    status: experimental
+    summary: Identity-aware proxy with per-route policies.
+    secrets: [POMERIUM_SHARED_SECRET, POMERIUM_CLIENT_SECRET]
+    config: [server_url, idp_provider, client_id]
+    impl: { ansible_role: gate_pomerium }
+    docs: https://www.pomerium.com/
+  - id: oauth2-proxy
+    name: oauth2-proxy
+    status: experimental
+    summary: Reverse-proxy gate for any OIDC provider.
+    secrets: [OAUTH2_PROXY_CLIENT_SECRET]
+    config: [provider, client_id]
+    impl: { ansible_role: gate_oauth2_proxy }
+    docs: https://oauth2-proxy.github.io/oauth2-proxy/
+  - id: keycloak
+    name: Keycloak
+    status: experimental
+    summary: Self-hosted identity and access management.
+    secrets: [KEYCLOAK_ADMIN_PASSWORD]
+    config: [server_url, realm]
+    impl: { ansible_role: gate_keycloak }
+    docs: https://www.keycloak.org/
+  - id: zitadel
+    name: Zitadel
+    status: experimental
+    summary: Self-hosted identity provider; also a user_auth option.
+    secrets: [ZITADEL_MASTERKEY, ZITADEL_ADMIN_PASSWORD]
+    config: [server_url]
+    impl: { ansible_role: gate_zitadel }
+    docs: https://zitadel.com/
+  - id: logto
+    name: Logto
+    status: experimental
+    summary: Self-hosted identity provider; also a user_auth option.
+    secrets: []
+    config: [server_url]
+    impl: { ansible_role: gate_logto }
+    docs: https://logto.io/
+  - id: okta
+    name: Okta
+    status: experimental
+    summary: Managed SSO; wire the edge gate to Okta via OIDC.
+    secrets: [OKTA_CLIENT_SECRET]
+    config: [org_url, client_id, gate_hostname]
+    impl: { adapter: engine/sealedstack/gateoidc.py }
+    docs: https://www.okta.com/
+  - id: auth0
+    name: Auth0
+    status: experimental
+    summary: Managed SSO; wire the edge gate to Auth0 via OIDC.
+    secrets: [AUTH0_CLIENT_SECRET]
+    config: [domain, client_id, gate_hostname]
+    impl: { adapter: engine/sealedstack/gateoidc.py }
+    docs: https://auth0.com/

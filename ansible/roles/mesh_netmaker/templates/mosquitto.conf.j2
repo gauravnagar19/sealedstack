@@ -1,0 +1,11 @@
+# NetMaker MQTT broker (mesh slot, netmaker implementation).
+# Terminate TLS (broker.<domain>) in front of the websockets listener.
+persistence true
+persistence_location /mosquitto/data/
+
+listener {{ mesh_netmaker_mqtt_port }}
+allow_anonymous true
+
+listener {{ mesh_netmaker_mqtt_ws_port }}
+protocol websockets
+allow_anonymous true

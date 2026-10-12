@@ -1,0 +1,14 @@
+---
+# ingress_tailscale_funnel role (spec section 4): serve a local service publicly
+# through Tailscale Funnel. Funnel reuses the tailscaled instance installed by
+# the mesh slot, so there is no extra daemon or connector to run. Selected via
+# the ingress slot; the playbook gates this role with
+# `when: slots.ingress == 'tailscale-funnel'`.
+#
+# Funnel only listens on 443, 8443 and 10000, and the tailnet ACL must grant the
+# `funnel` node attribute to this host.
+ingress_tailscale_funnel_command: tailscale
+ingress_tailscale_funnel_https_port: 443
+ingress_tailscale_funnel_upstream: "http://127.0.0.1:80"
+# Optional; sets the tailnet node name (and therefore the *.ts.net hostname).
+ingress_tailscale_funnel_hostname: ""

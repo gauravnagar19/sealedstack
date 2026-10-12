@@ -1,0 +1,14 @@
+---
+# ingress_caddy role (spec section 4): reverse proxy with automatic TLS,
+# run at the edge and joined to the dokploy-network so it can reach apps.
+ingress_caddy_compose_dir: /opt/sealedstack/ingress_caddy
+ingress_caddy_image: docker.io/library/caddy
+ingress_caddy_image_tag: "2.8-alpine"  # pinned; confirm the current tag before use
+ingress_caddy_http_port: 80
+ingress_caddy_https_port: 443
+ingress_caddy_server_url: ""
+ingress_caddy_hostnames: []
+ingress_caddy_upstream: "http://dokploy-traefik:80"
+ingress_caddy_email: ""
+ingress_caddy_acme_ca: "https://acme-v02.api.letsencrypt.org/directory"
+ingress_caddy_network: dokploy-network

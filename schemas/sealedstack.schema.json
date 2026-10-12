@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealedstack.dev/schemas/sealedstack.schema.json",
+  "title": "sealedstack app manifest (sealedstack.yaml)",
+  "description": "The portable intent of an app, living in the app repo. No servers, no domains, no secret values (spec section 5.4, D-017).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "web"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+    },
+    "compose": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path to the compose file in the app repo. Omitted for image-only apps."
+    },
+    "web": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service",
+        "port"
+      ],
+      "properties": {
+        "service": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "health": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "needs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "postgres": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "database",
+            "env"
+          ],
+          "properties": {
+            "provider": {
+              "enum": [
+                "dokploy",
+                "neon"
+              ],
+              "description": "dokploy = managed on servers[0]; neon = external managed Postgres."
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]+)?$"
+            },
+            "database": {
+              "type": "string",
+              "minLength": 1
+            },
+            "env": {
+              "type": "string",
+              "minLength": 1
+            },
+            "backup": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "every",
+                "keep"
+              ],
+              "properties": {
+                "every": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(m|h|d)$"
+                },
+                "keep": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "restore_on_create": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "redis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "env"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]+)?$"
+            },
+            "env": {
+              "type": "string",
+              "minLength": 1
+            },
+            "env_host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "env_port": {
+              "type": "string",
+              "minLength": 1
+            },
+            "env_password": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "object_storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "env"
+          ],
+          "properties": {
+            "env": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "description": "Env-var prefix. The platform creates an R2 bucket and injects <env>_ENDPOINT, <env>_REGION, <env>_BUCKET, <env>_ACCESS_KEY_ID and <env>_SECRET_ACCESS_KEY."
+            },
+            "bucket": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+              "description": "R2 bucket name. Defaults to sealedstack-<app>."
+            },
+            "region": {
+              "type": "string",
+              "minLength": 1,
+              "default": "auto",
+              "description": "S3 region reported to the app. R2 uses 'auto'."
+            },
+            "prefix": {
+              "type": "string",
+              "description": "Object-key prefix the app should write under; injected as <env>_PREFIX when set."
+            }
+          }
+        },
+        "volumes": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Docker volumes to archive on a schedule (the 3-2-1 coverage for stateful services that a logical dump cannot cover).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "volume",
+              "service"
+            ],
+            "properties": {
+              "volume": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Docker volume name as Docker sees it. Compose prefixes it with the project name, so list the full name if unsure."
+              },
+              "service": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Compose service that mounts the volume."
+              },
+              "every": {
+                "type": "string",
+                "pattern": "^[0-9]+(m|h|d)$",
+                "default": "1d",
+                "description": "Backup interval. Defaults to 1d."
+              },
+              "keep": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 14,
+                "description": "Number of archives to keep. Defaults to 14."
+              }
+            }
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      }
+    },
+    "user_auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "webhook_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^/"
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How the app is built and released (spec 4.2, D-030).",
+      "properties": {
+        "mode": {
+          "enum": [
+            "ci",
+            "server"
+          ],
+          "default": "ci",
+          "description": "ci = build in CI and deploy the prebuilt image (default); server = Dokploy builds on the host."
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Image platforms to build, e.g. [linux/amd64]. Derived from the servers if omitted."
+        }
+      }
+    }
+  }
+}

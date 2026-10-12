@@ -1,0 +1,79 @@
+---
+# gate_authelia role (spec section 4): idempotently deploy Authelia + Redis.
+# Selected via the gate slot; the playbook gates this role with
+# `when: gate == 'authelia'`.
+
+- name: Ensure the gate_authelia directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ gate_authelia_compose_dir }}"
+    - "{{ gate_authelia_compose_dir }}/secrets"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ gate_authelia_network }}
+  register: gate_authelia_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ gate_authelia_network }}
+  when: gate_authelia_net.rc != 0
+  changed_when: true
+
+- name: Generate the Authelia session secret
+  ansible.builtin.shell:
+    cmd: umask 077 && openssl rand -hex 32 > "{{ gate_authelia_session_secret_file }}"
+    creates: "{{ gate_authelia_session_secret_file }}"
+
+- name: Generate the Authelia storage encryption key
+  ansible.builtin.shell:
+    cmd: umask 077 && openssl rand -hex 32 > "{{ gate_authelia_storage_key_file }}"
+    creates: "{{ gate_authelia_storage_key_file }}"
+
+- name: Read the generated Authelia secrets
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - "{{ gate_authelia_session_secret_file }}"
+    - "{{ gate_authelia_storage_key_file }}"
+  register: gate_authelia_secrets
+  no_log: true
+
+- name: Record the Authelia secrets
+  ansible.builtin.set_fact:
+    gate_authelia_session_secret: "{{ gate_authelia_secrets.results[0].content | b64decode | trim }}"
+    gate_authelia_storage_key: "{{ gate_authelia_secrets.results[1].content | b64decode | trim }}"
+  no_log: true
+
+- name: Render the Authelia configuration
+  ansible.builtin.template:
+    src: configuration.yml.j2
+    dest: "{{ gate_authelia_compose_dir }}/configuration.yml"
+    mode: "0640"
+  notify: Restart gate_authelia
+
+- name: Render the Authelia users database
+  ansible.builtin.template:
+    src: users_database.yml.j2
+    dest: "{{ gate_authelia_compose_dir }}/users_database.yml"
+    mode: "0640"
+  notify: Restart gate_authelia
+
+- name: Render the gate_authelia compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ gate_authelia_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart gate_authelia
+
+- name: Ensure gate_authelia is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ gate_authelia_compose_dir }}"
+  register: gate_authelia_up
+  changed_when: >-
+    (gate_authelia_up.stdout ~ gate_authelia_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

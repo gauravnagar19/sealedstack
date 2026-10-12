@@ -1,0 +1,44 @@
+---
+services:
+  db:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "{{ gate_keycloak_db_name }}"
+      POSTGRES_USER: "{{ gate_keycloak_db_user }}"
+      POSTGRES_PASSWORD: "{{ gate_keycloak_db_password }}"
+    volumes:
+      - database:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  keycloak:
+    image: "{{ gate_keycloak_image }}:{{ gate_keycloak_image_tag }}"
+    restart: unless-stopped
+    command: ["start", "--http-enabled=true", "--proxy-headers=xforwarded"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://db:5432/{{ gate_keycloak_db_name }}"
+      KC_DB_USERNAME: "{{ gate_keycloak_db_user }}"
+      KC_DB_PASSWORD: "{{ gate_keycloak_db_password }}"
+      KC_HOSTNAME: "{{ gate_keycloak_server_url }}"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: "{{ gate_keycloak_admin_user }}"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "{{ gate_keycloak_admin_password }}"
+    depends_on:
+      - db
+    ports:
+      - "{{ gate_keycloak_bind_address }}:{{ gate_keycloak_http_port }}:8080"
+    networks:
+      - internal
+      - dokploy-network
+
+volumes:
+  database:
+
+networks:
+  internal:
+  dokploy-network:
+    external: true

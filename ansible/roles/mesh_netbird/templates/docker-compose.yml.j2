@@ -1,0 +1,35 @@
+---
+# NetBird control plane (mesh slot, netbird implementation). Bind the HTTP
+# ports to localhost and put the sealedstack edge proxy in front of them.
+services:
+  netbird-server:
+    image: "{{ mesh_netbird_server_image }}:{{ mesh_netbird_server_tag }}"
+    command: ["--config", "/etc/netbird/config.yaml"]
+    restart: unless-stopped
+    volumes:
+      - netbird-data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml:ro
+    ports:
+      - "{{ mesh_netbird_bind_address }}:{{ mesh_netbird_management_port }}:80"
+      - "{{ mesh_netbird_stun_port }}:{{ mesh_netbird_stun_port }}/udp"
+    networks:
+      - dokploy-network
+
+  dashboard:
+    image: "{{ mesh_netbird_dashboard_image }}:{{ mesh_netbird_dashboard_tag }}"
+    restart: unless-stopped
+    env_file:
+      - ./dashboard.env
+    ports:
+      - "{{ mesh_netbird_bind_address }}:{{ mesh_netbird_dashboard_port }}:80"
+    depends_on:
+      - netbird-server
+    networks:
+      - dokploy-network
+
+volumes:
+  netbird-data:
+
+networks:
+  dokploy-network:
+    external: true

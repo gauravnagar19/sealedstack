@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically upload backups to a Hetzner Storage Box
+
+[Timer]
+OnBootSec=15min
+OnCalendar={{ backup_hetzner_storage_box_interval }}
+Persistent=true
+Unit={{ backup_hetzner_storage_box_unit }}.service
+
+[Install]
+WantedBy=timers.target

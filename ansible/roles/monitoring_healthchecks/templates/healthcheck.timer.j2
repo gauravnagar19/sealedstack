@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically ping the sealedstack healthchecks.io check
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec={{ monitoring_healthchecks_interval }}
+Persistent=true
+Unit={{ monitoring_healthchecks_unit }}.service
+
+[Install]
+WantedBy=timers.target

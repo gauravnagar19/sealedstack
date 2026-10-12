@@ -1,0 +1,6 @@
+---
+- name: Restart mesh_firezone
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ mesh_firezone_compose_dir }}"
+  changed_when: true

@@ -1,0 +1,17 @@
+---
+# mesh_netmaker role (spec section 4): self-hosted NetMaker, a WireGuard mesh
+# with a management server, UI and an MQTT broker for client config pushes.
+mesh_netmaker_compose_dir: /opt/sealedstack/mesh_netmaker
+mesh_netmaker_server_image: docker.io/gravitl/netmaker
+mesh_netmaker_server_tag: "v0.24.2"  # pinned; confirm the current tag before use
+mesh_netmaker_ui_image: docker.io/gravitl/netmaker-ui
+mesh_netmaker_ui_tag: "v0.24.2"  # pinned; confirm the current tag before use
+mesh_netmaker_domain: "netmaker.example.com"
+mesh_netmaker_server_host: "198.51.100.10"
+mesh_netmaker_api_port: 8081
+mesh_netmaker_ui_port: 8082
+mesh_netmaker_mqtt_port: 1883
+mesh_netmaker_mqtt_ws_port: 8083
+mesh_netmaker_network: dokploy-network
+# Required (no default): NETMAKER_TOKEN is the server API token clients use,
+# read from Bitwarden.

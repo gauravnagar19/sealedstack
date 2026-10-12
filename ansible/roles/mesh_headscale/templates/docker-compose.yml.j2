@@ -1,0 +1,22 @@
+---
+# headscale control server (mesh slot, headscale implementation).
+services:
+  headscale:
+    image: "{{ mesh_headscale_image }}:{{ mesh_headscale_image_tag }}"
+    command: serve
+    restart: unless-stopped
+    volumes:
+      - ./config:/etc/headscale
+      - headscale-data:/var/lib/headscale
+    ports:
+      - "{{ mesh_headscale_listen_port }}:8080"
+      - "{{ mesh_headscale_metrics_port }}:9090"
+    networks:
+      - dokploy-network
+
+volumes:
+  headscale-data:
+
+networks:
+  dokploy-network:
+    external: true

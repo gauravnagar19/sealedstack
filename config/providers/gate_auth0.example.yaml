@@ -1,0 +1,19 @@
+# Auth0 OIDC adapter (registry gate: auth0).
+#
+# Auth0 is a managed IdP, so there is nothing to deploy on the host: this file
+# describes how the edge gate is wired to it. Copy to
+# config/providers/gate_auth0.yaml, create a Regular Web Application in Auth0
+# with the redirect URI below, then store the client secret as
+# AUTH0_CLIENT_SECRET via the selected secrets slot.
+#
+# Validate:  engine/sealedstack/gateoidc.py auth0 [--check]
+#
+#   AUTH0_CLIENT_SECRET  supplied by the selected secrets slot
+
+provider: auth0
+domain: <your-tenant>.us.auth0.com
+issuer: https://<your-tenant>.us.auth0.com/
+client_id: <auth0-client-id>
+scopes: [openid, profile, email]
+audience: ""                    # optional: API audience for access tokens
+gate_hostname: app.example.com  # hostname the gate is published on

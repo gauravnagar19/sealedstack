@@ -1,0 +1,41 @@
+---
+# ingress_tailscale_funnel role (spec section 4): idempotently point Tailscale
+# Funnel at the local upstream. Funnel is a per-node singleton, so re-enabling
+# it with the same target is a no-op and a different target replaces it.
+# Selected via the ingress slot; the playbook gates this role with
+# `when: slots.ingress == 'tailscale-funnel'`.
+
+- name: Read the current Tailscale Funnel status
+  ansible.builtin.command: "{{ ingress_tailscale_funnel_command }} funnel status"
+  register: ingress_tailscale_funnel_status
+  changed_when: false
+  failed_when: false
+
+- name: Require the tailscale CLI
+  ansible.builtin.assert:
+    that:
+      - ingress_tailscale_funnel_status.rc == 0
+    fail_msg: >-
+      The tailscale CLI is required for ingress: tailscale-funnel. Select the
+      tailscale mesh slot (or install Tailscale) before enabling this ingress.
+
+- name: Set the tailnet node name
+  ansible.builtin.command:
+    argv:
+      - "{{ ingress_tailscale_funnel_command }}"
+      - set
+      - "--hostname={{ ingress_tailscale_funnel_hostname }}"
+  when: ingress_tailscale_funnel_hostname | length > 0
+  changed_when: false
+  failed_when: false
+
+- name: Enable the Tailscale Funnel mapping
+  ansible.builtin.command:
+    argv:
+      - "{{ ingress_tailscale_funnel_command }}"
+      - funnel
+      - "--bg"
+      - "--https={{ ingress_tailscale_funnel_https_port }}"
+      - "{{ ingress_tailscale_funnel_upstream }}"
+  when: ingress_tailscale_funnel_upstream not in ingress_tailscale_funnel_status.stdout
+  changed_when: true

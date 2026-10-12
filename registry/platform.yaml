@@ -1,0 +1,83 @@
+slot: platform
+contract: "app manifest, server -> running compose, domain routing, DB with scheduled backups (spec section 4)."
+implementations:
+  - id: dokploy
+    name: Dokploy
+    status: experimental
+    summary: Compose deploys, Traefik, managed databases, backups, monitoring and worker servers.
+    secrets: [DOKPLOY_API_KEY]
+    config: [endpoint]
+    impl: { tofu_module: platform_dokploy, tofu_stack: platform }
+    docs: https://dokploy.com/
+  - id: coolify
+    name: Coolify
+    status: experimental
+    summary: Self-hosted PaaS; an alternative to Dokploy.
+    secrets: [COOLIFY_API_TOKEN]
+    config: [endpoint]
+    impl: { ansible_role: platform_coolify }
+    docs: https://coolify.io/
+  - id: kamal
+    name: Kamal
+    status: planned
+    summary: Deploy containers over SSH; no database or backup management.
+    secrets: []
+    config: [servers]
+    docs: https://kamal-deploy.org/
+    notes: "Out of scope: deploy-only (spec section 1). Needs a separate platform implementation (no DB/backup contract)."
+  - id: caprover
+    name: CapRover
+    status: experimental
+    summary: Self-hosted PaaS on Docker Swarm.
+    secrets: [CAPROVER_API_TOKEN]
+    config: [endpoint]
+    impl: { ansible_role: platform_caprover }
+    docs: https://caprover.com/
+  - id: kubernetes
+    name: Kubernetes
+    status: planned
+    summary: Out of MVP scope (spec section 1); recorded for completeness.
+    secrets: [KUBECONFIG]
+    config: [context]
+    docs: https://kubernetes.io/
+    notes: "Out of scope (spec section 1). Needs a separate platform implementation for the compose/DB/backup contract."
+  - id: nomad
+    name: Nomad
+    status: planned
+    summary: HashiCorp scheduler.
+    secrets: [NOMAD_TOKEN]
+    config: [addr]
+    docs: https://www.nomadproject.io/
+    notes: "Out of scope (spec section 1). Needs a separate platform implementation for the compose/DB/backup contract."
+  - id: portainer
+    name: Portainer
+    status: experimental
+    summary: Container UI with stacks.
+    secrets: [PORTAINER_API_KEY]
+    config: [endpoint]
+    impl: { ansible_role: platform_portainer }
+    docs: https://www.portainer.io/
+  - id: fly
+    name: Fly.io
+    status: planned
+    summary: Managed container platform.
+    secrets: [FLY_API_TOKEN]
+    config: [org, app]
+    docs: https://fly.io/
+    notes: "Out of scope: managed platform, not a self-hosted origin (spec section 1). Needs a separate implementation."
+  - id: render
+    name: Render
+    status: planned
+    summary: Managed container platform.
+    secrets: [RENDER_API_KEY]
+    config: [owner_id]
+    docs: https://render.com/
+    notes: "Out of scope: managed platform, not a self-hosted origin (spec section 1). Needs a separate implementation."
+  - id: railway
+    name: Railway
+    status: planned
+    summary: Managed container platform.
+    secrets: [RAILWAY_TOKEN]
+    config: [project]
+    docs: https://railway.app/
+    notes: "Out of scope: managed platform, not a self-hosted origin (spec section 1). Needs a separate implementation."

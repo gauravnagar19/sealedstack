@@ -1,0 +1,22 @@
+---
+# gate_zitadel role (spec section 4): self-hosted ZITADEL identity provider on
+# PostgreSQL. Joined to the dokploy-network. Selected via the gate slot; the
+# playbook gates this role with `when: slots.gate == 'zitadel'`.
+gate_zitadel_compose_dir: /opt/sealedstack/gate_zitadel
+gate_zitadel_image: ghcr.io/zitadel/zitadel
+gate_zitadel_image_tag: "v2.68.3"  # pinned; confirm the current tag before use
+gate_zitadel_port: 8080           # host port for the console / OIDC
+# Publish the host port on the mesh/localhost, never the WAN (M8).
+gate_zitadel_bind_address: "{{ mesh_bind_address | default('127.0.0.1') }}"
+gate_zitadel_server_url: "https://auth.example.com"
+gate_zitadel_domain: auth.example.com
+gate_zitadel_external_port: 443
+gate_zitadel_admin_user: admin
+gate_zitadel_admin_email: "admin@example.com"
+gate_zitadel_db_user: postgres
+gate_zitadel_db_name: zitadel
+gate_zitadel_network: dokploy-network
+gate_zitadel_db_password_file: "{{ gate_zitadel_compose_dir }}/secrets/db_password"
+# Required (no default); provide from Bitwarden:
+#   gate_zitadel_masterkey      -> ZITADEL_MASTERKEY       (exactly 32 characters)
+#   gate_zitadel_admin_password -> ZITADEL_ADMIN_PASSWORD

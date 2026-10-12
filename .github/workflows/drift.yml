@@ -1,0 +1,92 @@
+name: drift
+
+# Scheduled `tofu plan` against the real accounts. Requires its OWN machine
+# account / tokens with read access to `infra` (do not reuse the app-CI account,
+# which reads `prod` only — spec §6). Configure these repository secrets:
+#   TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET  (Tailscale OAuth client, tag:ci)
+#   BWS_ACCESS_TOKEN, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+#   TAILSCALE_API_KEY, state_passphrase
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  plan:
+    name: tofu plan (edge + platform)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Join the tailnet as tag:ci
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the toolbox
+        run: docker build -t sealedstack-toolbox:ci toolbox
+
+      - name: Plan each stack with -detailed-exitcode
+        id: plan
+        continue-on-error: true
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TAILSCALE_API_KEY: ${{ secrets.TAILSCALE_API_KEY }}
+          TF_VAR_state_passphrase: ${{ secrets.state_passphrase }}
+        run: |
+          set -euo pipefail
+          rm -f .drift-plan
+          # `--network host` so the container can resolve the mesh names that the
+          # tailscale action joined on the runner.
+          docker run --rm --network host -v "$PWD:/work" -w /work \
+            -e BWS_ACCESS_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ACCOUNT_ID \
+            -e TAILSCALE_API_KEY -e TF_VAR_state_passphrase \
+            sealedstack-toolbox:ci bash -lc '
+              set -euo pipefail
+              python3 scripts/render.py
+              python3 scripts/mesh-policy.py
+              scripts/build-env.sh
+              scripts/user-auth.sh
+              drift=0
+              stacks=""
+              for stack in edge platform; do
+                set +e
+                # Exit code 2 means "changes present" (drift); 0 means none.
+                TF_CLI_ARGS_plan="-detailed-exitcode -no-color" \
+                  scripts/${stack}.sh plan
+                rc=$?
+                set -e
+                echo "${stack}: plan exit ${rc}"
+                case "${rc}" in
+                  0) ;;
+                  2) drift=1; stacks="${stacks}${stacks:+,}${stack}" ;;
+                  *) exit "${rc}" ;;
+                esac
+              done
+              printf "drift=%s\nstacks=%s\n" "${drift}" "${stacks}" > /work/.drift-plan
+            '
+          cat .drift-plan >> "$GITHUB_OUTPUT"
+
+      - name: Open an issue on drift
+        if: always() && steps.plan.outputs.drift == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const stacks = "${{ steps.plan.outputs.stacks }}" || "unknown";
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Drift detected on ${new Date().toISOString().slice(0, 10)}`,
+              body: `\`tofu plan -detailed-exitcode\` reported changes for: ${stacks}.\n\nRun \`just plan\` locally and reconcile.`,
+              labels: ["drift"],
+            });

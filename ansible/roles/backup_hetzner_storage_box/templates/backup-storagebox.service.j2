@@ -1,0 +1,9 @@
+[Unit]
+Description=sealedstack Hetzner Storage Box backup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-{{ backup_hetzner_storage_box_env }}
+ExecStart={{ backup_hetzner_storage_box_script }}

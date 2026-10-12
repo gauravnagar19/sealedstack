@@ -1,0 +1,19 @@
+---
+# gate_keycloak role (spec section 4): self-hosted Keycloak identity and access
+# management on PostgreSQL. Joined to the dokploy-network to front apps.
+# Selected via the gate slot; the playbook gates this role with
+# `when: slots.gate == 'keycloak'`.
+gate_keycloak_compose_dir: /opt/sealedstack/gate_keycloak
+gate_keycloak_image: quay.io/keycloak/keycloak
+gate_keycloak_image_tag: "26.0.8"  # pinned; confirm the current tag before use
+gate_keycloak_http_port: 8080      # host port for the admin console / OIDC
+# Publish the host port on the mesh/localhost, never the WAN (M8).
+gate_keycloak_bind_address: "{{ mesh_bind_address | default('127.0.0.1') }}"
+gate_keycloak_server_url: "https://auth.example.com"
+gate_keycloak_realm: sealedstack
+gate_keycloak_admin_user: keycloak
+gate_keycloak_db_user: keycloak
+gate_keycloak_db_name: keycloak
+gate_keycloak_network: dokploy-network
+gate_keycloak_db_password_file: "{{ gate_keycloak_compose_dir }}/secrets/db_password"
+# Required (no default): gate_keycloak_admin_password -> KEYCLOAK_ADMIN_PASSWORD

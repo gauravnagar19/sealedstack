@@ -1,0 +1,14 @@
+---
+# ingress_frp role (spec section 4): self-hosted frp server (frps) that receives
+# outbound connections from frpc connectors next to apps. Joined to the
+# dokploy-network. Selected via the ingress slot; the playbook gates this role
+# with `when: slots.ingress == 'frp'`.
+ingress_frp_compose_dir: /opt/sealedstack/ingress_frp
+ingress_frp_image: docker.io/fatedier/frps
+ingress_frp_image_tag: "v0.61.1"  # pinned; confirm the current tag before use
+ingress_frp_bind_port: 7000       # frpc control connection
+ingress_frp_dashboard_port: 7500  # frps admin dashboard
+ingress_frp_vhost_http_port: 8080 # HTTP vhost entrypoint for proxy-type tunnels
+ingress_frp_subdomain_host: example.com
+ingress_frp_network: dokploy-network
+# Required (no default): ingress_frp_token -> FRP_TOKEN

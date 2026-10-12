@@ -1,0 +1,25 @@
+---
+# ansible-lint configuration.
+profile: production
+exclude_paths:
+  - .build/
+  - .github/
+  - docs/
+  - examples/
+  - internal/
+  - registry/
+  - schemas/
+  - scripts/
+  - tofu/
+  - config/
+warn_list:
+  - command-instead-of-module
+  - risky-file-permissions
+skip_list:
+  - var-naming[no-role-prefix]
+  - name[casing]
+kinds:
+  - playbook: "**/playbooks/*.yml"
+  - tasks: "**/roles/*/tasks/*.yml"
+  - handlers: "**/roles/*/handlers/*.yml"
+  - defaults: "**/roles/*/defaults/*.yml"

@@ -1,0 +1,18 @@
+---
+# CapRover manages its own Docker Swarm and its nginx router.
+services:
+  caprover:
+    image: "{{ platform_caprover_image }}:{{ platform_caprover_image_tag }}"
+    restart: unless-stopped
+    environment:
+      ACCEPTED_TERMS: "true"
+    ports:
+      - "{{ platform_caprover_bind_address }}:{{ platform_caprover_http_port }}:80"
+      - "{{ platform_caprover_bind_address }}:{{ platform_caprover_https_port }}:443"
+      - "{{ platform_caprover_bind_address }}:{{ platform_caprover_admin_port }}:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - caprover_data:/captain
+
+volumes:
+  caprover_data:

@@ -1,0 +1,50 @@
+---
+services:
+  zrok-init:
+    image: docker.io/library/busybox
+    command: chown -Rc 2171:2171 /mnt/
+    user: root
+    volumes:
+      - zrok_env:/mnt
+
+  zrok-enable:
+    image: "{{ ingress_zrok_image }}:{{ ingress_zrok_image_tag }}"
+    depends_on:
+      zrok-init:
+        condition: service_completed_successfully
+    entrypoint: zrok-enable.bash
+    volumes:
+      - zrok_env:/mnt
+    environment:
+      HOME: /mnt
+      ZROK_ENABLE_TOKEN: "{{ ingress_zrok_enable_token }}"
+      ZROK_ENVIRONMENT_NAME: "{{ ingress_zrok_environment_name }}"
+
+  zrok-share:
+    image: "{{ ingress_zrok_image }}:{{ ingress_zrok_image_tag }}"
+    restart: unless-stopped
+    entrypoint: zrok-share.bash
+    depends_on:
+      zrok-enable:
+        condition: service_completed_successfully
+    volumes:
+      - zrok_env:/mnt
+    environment:
+      HOME: /mnt
+      ZROK_UNIQUE_NAME: "{{ ingress_zrok_unique_name }}"
+      ZROK_BACKEND_MODE: "{{ ingress_zrok_backend_mode }}"
+      ZROK_TARGET: "{{ ingress_zrok_target }}"
+      ZROK_OAUTH_PROVIDER: "{{ ingress_zrok_oauth_provider }}"
+      ZROK_OAUTH_EMAILS: "{{ ingress_zrok_oauth_emails }}"
+      ZROK_BASIC_AUTH: "{{ ingress_zrok_basic_auth }}"
+      ZROK_FRONTENDS: "{{ ingress_zrok_frontends }}"
+      PFXLOG_NO_JSON: "true"
+    networks:
+      - dokploy-network
+
+volumes:
+  zrok_env:
+
+networks:
+  dokploy-network:
+    external: true

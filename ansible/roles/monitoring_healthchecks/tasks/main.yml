@@ -1,0 +1,32 @@
+---
+# monitoring_healthchecks role: idempotently install a systemd timer that curls
+# a healthchecks.io ping URL. Selected in site.yml behind a config gate.
+
+- name: Require a healthchecks.io ping URL
+  ansible.builtin.assert:
+    that:
+      - monitoring_healthchecks_url | length > 0
+    fail_msg: >-
+      Set monitoring_healthchecks_url (e.g. https://hc-ping.com/<uuid>) to
+      enable external uptime alerting.
+
+- name: Install the healthcheck systemd service
+  ansible.builtin.template:
+    src: healthcheck.service.j2
+    dest: "/etc/systemd/system/{{ monitoring_healthchecks_unit }}.service"
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install the healthcheck systemd timer
+  ansible.builtin.template:
+    src: healthcheck.timer.j2
+    dest: "/etc/systemd/system/{{ monitoring_healthchecks_unit }}.timer"
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start the healthcheck timer
+  ansible.builtin.systemd:
+    name: "{{ monitoring_healthchecks_unit }}.timer"
+    enabled: "{{ monitoring_healthchecks_start_on_boot }}"
+    state: started
+    daemon_reload: true

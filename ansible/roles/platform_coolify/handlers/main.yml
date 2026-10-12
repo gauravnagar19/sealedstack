@@ -1,0 +1,6 @@
+---
+- name: Restart platform_coolify
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ platform_coolify_source_dir }}"
+  changed_when: true

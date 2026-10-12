@@ -1,0 +1,17 @@
+---
+# ingress_nginx role (spec section 4): reverse proxy with nginx and certbot,
+# run at the edge and joined to the dokploy-network.
+ingress_nginx_compose_dir: /opt/sealedstack/ingress_nginx
+ingress_nginx_image: docker.io/library/nginx
+ingress_nginx_image_tag: "1.27-alpine"  # pinned; confirm the current tag before use
+ingress_nginx_certbot_image: docker.io/certbot/certbot
+ingress_nginx_certbot_image_tag: "v3.1.0"  # pinned; confirm the current tag before use
+ingress_nginx_http_port: 80
+ingress_nginx_https_port: 443
+ingress_nginx_hostnames: []
+ingress_nginx_upstream: "http://dokploy-traefik:80"
+ingress_nginx_email: ""
+ingress_nginx_acme_ca: "https://acme-v02.api.letsencrypt.org/directory"
+ingress_nginx_staging: false
+ingress_nginx_certbot_renew_interval: 12h
+ingress_nginx_network: dokploy-network

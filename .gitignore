@@ -1,0 +1,18 @@
+.build/
+*.tfstate*
+.terraform/
+**/backend.hcl
+config/secrets/
+# User-specific config: only the *.example.yaml samples are committed (F4).
+config/stack.yaml
+config/servers.yaml
+config/apps.yaml
+config/tailscale-policy.hujson
+.env
+.DS_Store
+__pycache__/
+*.pyc
+*.pdf
+internal/
+site/
+.sealedstack/

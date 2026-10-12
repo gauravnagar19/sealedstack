@@ -1,0 +1,16 @@
+---
+# Host baseline defaults (spec section 7.2, base role).
+base_timezone: UTC
+base_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+  - rsync
+  - ufw
+  - unattended-upgrades
+# Add a swapfile when the box has less RAM than this (MB).
+base_swap_threshold_mb: 4096
+base_swapfile_size_mb: 2048
+base_auto_reboot: "true"
+base_auto_reboot_time: "04:00"

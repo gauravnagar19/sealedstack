@@ -1,0 +1,94 @@
+---
+# Base role (spec section 7.2): updates, security-only unattended upgrades,
+# timezone + NTP, and swap when RAM is low.
+
+- name: Update the apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Upgrade installed packages
+  ansible.builtin.apt:
+    upgrade: safe
+    autoremove: true
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+
+- name: Enable periodic apt updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Configure security-only unattended upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/51unattended-upgrades-sealedstack
+    mode: "0644"
+    content: |
+      Unattended-Upgrade::Allowed-Origins {
+        "${distro_id}:${distro_codename}-security";
+      };
+      Unattended-Upgrade::Automatic-Reboot "{{ base_auto_reboot }}";
+      Unattended-Upgrade::Automatic-Reboot-Time "{{ base_auto_reboot_time }}";
+
+- name: Read the current timezone
+  ansible.builtin.command: timedatectl show --property=Timezone --value
+  register: base_timezone_current
+  changed_when: false
+
+- name: Set the timezone
+  ansible.builtin.command: timedatectl set-timezone {{ base_timezone }}
+  when: base_timezone_current.stdout != base_timezone
+  changed_when: true
+
+- name: Ensure systemd-timesyncd is running
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    enabled: true
+    state: started
+
+- name: Check current swap devices
+  ansible.builtin.command: swapon --show=NAME --noheadings
+  register: base_swapon
+  changed_when: false
+
+- name: Add swap when RAM is low
+  when: ansible_memtotal_mb < base_swap_threshold_mb
+  block:
+    - name: Check for an existing swapfile
+      ansible.builtin.stat:
+        path: /swapfile
+      register: base_swapfile
+
+    - name: Create the swapfile
+      ansible.builtin.command: fallocate -l {{ base_swapfile_size_mb }}M /swapfile
+      when: not base_swapfile.stat.exists
+      changed_when: true
+
+    - name: Secure the swapfile
+      ansible.builtin.file:
+        path: /swapfile
+        mode: "0600"
+        owner: root
+        group: root
+
+    - name: Format the swapfile
+      ansible.builtin.command: mkswap /swapfile
+      when: not base_swapfile.stat.exists
+      changed_when: true
+
+    - name: Enable the swapfile now
+      ansible.builtin.command: swapon /swapfile
+      when: "'/swapfile' not in base_swapon.stdout"
+      changed_when: true
+
+    - name: Persist the swapfile
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "/swapfile none swap sw 0 0"
+        state: present

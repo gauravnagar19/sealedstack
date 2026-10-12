@@ -1,0 +1,32 @@
+---
+# Firezone Gateway (mesh slot, firezone implementation).
+services:
+  firezone-gateway:
+    image: "{{ mesh_firezone_image }}:{{ mesh_firezone_image_tag }}"
+    restart: unless-stopped
+    environment:
+      FIREZONE_TOKEN: "{{ mesh_firezone_token }}"
+      FIREZONE_ID: "{{ mesh_firezone_gateway_id }}"
+      RUST_LOG: info
+    volumes:
+      - firezone-data:/var/lib/firezone
+    cap_add:
+      - NET_ADMIN
+    init: true
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+      - net.ipv6.conf.default.forwarding=1
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      - dokploy-network
+
+volumes:
+  firezone-data:
+
+networks:
+  dokploy-network:
+    external: true

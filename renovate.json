@@ -1,0 +1,71 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard", ":semanticCommits"],
+  "timezone": "UTC",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    { "matchManagers": ["github-actions"], "groupName": "github actions" },
+    { "matchManagers": ["terraform"], "groupName": "opentofu providers" },
+    { "matchManagers": ["pip_requirements"], "groupName": "toolbox python tools" },
+    { "matchDatasources": ["docker"], "groupName": "toolbox docker images" }
+  ],
+  "terraform": { "enabled": true },
+  "regexManagers": [
+    {
+      "fileMatch": ["^toolbox/Dockerfile$"],
+      "matchStrings": ["ARG JUST_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "casey/just",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "fileMatch": ["^toolbox/Dockerfile$"],
+      "matchStrings": ["ARG TOFU_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "opentofu/opentofu",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "fileMatch": ["^toolbox/Dockerfile$"],
+      "matchStrings": ["ARG YQ_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "mikefarah/yq",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "fileMatch": ["^toolbox/Dockerfile$"],
+      "matchStrings": ["ARG BWS_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "bitwarden/sdk-sm",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "fileMatch": ["^toolbox/Dockerfile$"],
+      "matchStrings": ["ARG SOPS_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "getsops/sops",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "fileMatch": ["^toolbox/Dockerfile$"],
+      "matchStrings": ["ARG GITLEAKS_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "gitleaks/gitleaks",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "fileMatch": ["^toolbox/Dockerfile$"],
+      "matchStrings": ["ARG ANSIBLE_CORE_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "ansible-core",
+      "datasourceTemplate": "pypi"
+    },
+    {
+      "fileMatch": ["^toolbox/Dockerfile$"],
+      "matchStrings": ["ARG ANSIBLE_LINT_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "ansible-lint",
+      "datasourceTemplate": "pypi"
+    },
+    {
+      "fileMatch": ["^toolbox/Dockerfile$"],
+      "matchStrings": ["ARG CHECK_JSONSCHEMA_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "check-jsonschema",
+      "datasourceTemplate": "pypi"
+    }
+  ]
+}

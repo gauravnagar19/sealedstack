@@ -1,0 +1,76 @@
+---
+# gate_pomerium role (spec section 4): idempotently deploy Pomerium all-in-one.
+# Selected via the gate slot; the playbook gates this role with
+# `when: slots.gate == 'pomerium'`.
+
+- name: Ensure the gate_pomerium directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ gate_pomerium_compose_dir }}"
+    - "{{ gate_pomerium_compose_dir }}/secrets"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ gate_pomerium_network }}
+  register: gate_pomerium_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ gate_pomerium_network }}
+  when: gate_pomerium_net.rc != 0
+  changed_when: true
+
+- name: Generate the Pomerium cookie secret
+  ansible.builtin.shell:
+    cmd: umask 077 && openssl rand -base64 32 > "{{ gate_pomerium_cookie_secret_file }}"
+    creates: "{{ gate_pomerium_cookie_secret_file }}"
+
+- name: Generate the Pomerium signing key
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail && umask 077 && openssl ecparam -genkey -name prime256v1 -noout
+      | openssl pkcs8 -topk8 -nocrypt -outform DER | base64 -w0
+      > "{{ gate_pomerium_signing_key_file }}"
+    executable: /bin/bash
+    creates: "{{ gate_pomerium_signing_key_file }}"
+
+- name: Read the generated Pomerium secrets
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - "{{ gate_pomerium_cookie_secret_file }}"
+    - "{{ gate_pomerium_signing_key_file }}"
+  register: gate_pomerium_secrets
+  no_log: true
+
+- name: Record the Pomerium secrets
+  ansible.builtin.set_fact:
+    gate_pomerium_cookie_secret: "{{ gate_pomerium_secrets.results[0].content | b64decode | trim }}"
+    gate_pomerium_signing_key: "{{ gate_pomerium_secrets.results[1].content | b64decode | trim }}"
+  no_log: true
+
+- name: Render the Pomerium configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ gate_pomerium_compose_dir }}/config.yaml"
+    mode: "0640"
+  notify: Restart gate_pomerium
+
+- name: Render the gate_pomerium compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ gate_pomerium_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart gate_pomerium
+
+- name: Ensure gate_pomerium is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ gate_pomerium_compose_dir }}"
+  register: gate_pomerium_up
+  changed_when: >-
+    (gate_pomerium_up.stdout ~ gate_pomerium_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

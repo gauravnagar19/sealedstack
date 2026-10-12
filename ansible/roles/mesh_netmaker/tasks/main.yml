@@ -1,0 +1,44 @@
+---
+# mesh_netmaker role (spec section 4): idempotently deploy the NetMaker server.
+# Selected via the mesh slot; the playbook gates this role with
+# `when: slots.mesh == 'netmaker'`.
+
+- name: Ensure the mesh_netmaker compose directory exists
+  ansible.builtin.file:
+    path: "{{ mesh_netmaker_compose_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ mesh_netmaker_network }}
+  register: mesh_netmaker_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ mesh_netmaker_network }}
+  when: mesh_netmaker_net.rc != 0
+  changed_when: true
+
+- name: Render the NetMaker mosquitto config
+  ansible.builtin.template:
+    src: mosquitto.conf.j2
+    dest: "{{ mesh_netmaker_compose_dir }}/mosquitto.conf"
+    mode: "0640"
+  notify: Restart mesh_netmaker
+
+- name: Render the NetMaker compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ mesh_netmaker_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart mesh_netmaker
+
+- name: Ensure mesh_netmaker is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ mesh_netmaker_compose_dir }}"
+  register: mesh_netmaker_up
+  changed_when: >-
+    (mesh_netmaker_up.stdout ~ mesh_netmaker_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

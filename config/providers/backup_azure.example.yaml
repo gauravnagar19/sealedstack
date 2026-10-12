@@ -1,0 +1,15 @@
+# Azure Blob Storage backup module (registry backup: azure_blob).
+#
+# Copy to config/providers/backup_azure.yaml. The storage account is created by
+# the operator (as with the S3 family); this module owns the private container
+# and reports the account's blob service endpoint. Credentials come from the
+# selected secrets slot:
+#
+#   ARM_CLIENT_ID / ARM_CLIENT_SECRET / ARM_SUBSCRIPTION_ID / ARM_TENANT_ID
+#
+# Non-secret values may also live under `providers.backup_azure` in
+# config/stack.yaml.
+
+storage_account: sealedstackbackups
+resource_group: sealedstack
+container: sealedstack-backups

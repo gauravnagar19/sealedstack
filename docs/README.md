@@ -1,0 +1,36 @@
+# Documentation
+
+User and design documentation. See the project [README](../README.md) to get
+started, and [AGENTS.md](../AGENTS.md) if you are extending the project.
+
+## Get started
+
+- [Getting started](getting-started.md) — accounts, credentials and the first run.
+- [Prerequisites](prerequisites.md) — the checklist and environment variables.
+- [Known limitations and caveats](limitations.md) — what does not work yet, and why.
+
+## Configure and operate
+
+- [Adopting existing resources](adopt.md) — import an existing tunnel/DNS/rules/tailnet.
+
+- [Providers](providers.md) — the slot registry and how to plug in a provider.
+- [Config repository](config-repo.md) — keep `config/` in a private repo (`SEALEDSTACK_CONFIG`).
+- [Infra repo and the tool image](infra-repo.md) — the three-repo model, `bin/sealedstack`, upgrades.
+- [CI/CD](ci-cd.md) — releases from GitHub, GitLab, Gitea and others.
+- [Operations](operations.md) — status of scaling, backups and hardening.
+- [Security hardening](security-hardening.md) — CIS baseline, SBOM, audit, FIDO2.
+- [Monitoring](monitoring.md) — uptime heartbeat and Dokploy monitoring.
+- [Staging](staging.md) and [preview environments](preview-environments.md).
+- [Full rebuild drill](rebuild-drill.md) · [Netcup firewall](netcup-firewall.md).
+
+## Design
+
+- [Architecture](architecture.md) — the detailed implementation-level design.
+- [Design spec](spec.md) — the original architecture and contracts.
+- [Decision log](decisions.md) — what was decided and why.
+- [User experience (final)](user-experience.md) — every journey, with mockups, commands and defaults.
+- [Spec: infra repos, build modes and releases](spec-infra-repo-and-release.md) — the next build track (M0–M9).
+
+## Contributing
+
+- [Development](development.md) — repo layout, tooling and the CI pipeline.

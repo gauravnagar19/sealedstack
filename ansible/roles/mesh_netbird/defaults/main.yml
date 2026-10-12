@@ -1,0 +1,20 @@
+---
+# mesh_netbird role (spec section 4): self-hosted NetBird control plane. The
+# combined server image provides management, signal, relay and STUN; the
+# dashboard provides the UI. Clients register with a setup key minted here.
+mesh_netbird_compose_dir: /opt/sealedstack/mesh_netbird
+mesh_netbird_server_image: docker.io/netbirdio/netbird-server
+mesh_netbird_server_tag: "0.43.0"  # pinned; confirm the current tag before use
+mesh_netbird_dashboard_image: docker.io/netbirdio/dashboard
+mesh_netbird_dashboard_tag: "2.8.0"  # pinned; confirm the current tag before use
+mesh_netbird_server_url: "https://netbird.example.com"
+mesh_netbird_bind_address: 127.0.0.1
+mesh_netbird_dashboard_port: 8080
+mesh_netbird_management_port: 8081
+mesh_netbird_stun_port: 3478
+mesh_netbird_network: dokploy-network
+mesh_netbird_auth_secret_file: "{{ mesh_netbird_compose_dir }}/secrets/auth_secret"
+mesh_netbird_datastore_key_file: "{{ mesh_netbird_compose_dir }}/secrets/datastore_key"
+mesh_netbird_session_key_file: "{{ mesh_netbird_compose_dir }}/secrets/session_key"
+# Required (no default): NETBIRD_TOKEN is the setup key used to register each
+# host with this server (`netbird up --setup-key <key>`), read from Bitwarden.

@@ -1,0 +1,28 @@
+# Pangolin configuration (spec section 4). See https://docs.pangolin.net/.
+gerbil:
+    start_port: {{ ingress_pangolin_wireguard_port }}
+    base_endpoint: "{{ ingress_pangolin_dashboard_domain }}"
+
+app:
+    dashboard_url: "https://{{ ingress_pangolin_dashboard_domain }}"
+    log_level: "info"
+    telemetry:
+        anonymous_usage: false
+
+domains:
+    domain1:
+        base_domain: "{{ ingress_pangolin_base_domain }}"
+
+server:
+    secret: "{{ ingress_pangolin_server_secret }}"
+    cors:
+        origins: ["https://{{ ingress_pangolin_dashboard_domain }}"]
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+        allowed_headers: ["X-CSRF-Token", "Content-Type"]
+        credentials: false
+
+flags:
+    require_email_verification: false
+    disable_signup_without_invite: true
+    disable_user_create_org: false
+    allow_raw_resources: true

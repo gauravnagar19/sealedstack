@@ -1,0 +1,40 @@
+---
+# Nebula host config (mesh slot, nebula implementation).
+pki:
+  ca: {{ mesh_nebula_base_dir }}/ca.crt
+  cert: {{ mesh_nebula_base_dir }}/host.crt
+  key: {{ mesh_nebula_base_dir }}/host.key
+
+static_host_map:
+{% for host_ip, endpoint in mesh_nebula_static_host_map.items() %}
+  "{{ host_ip }}": ["{{ endpoint }}"]
+{% endfor %}
+
+lighthouse:
+  am_lighthouse: {{ mesh_nebula_am_lighthouse | lower }}
+  interval: 60
+  hosts:
+{% for host in mesh_nebula_lighthouse_hosts %}
+    - "{{ host }}"
+{% endfor %}
+
+listen:
+  host: 0.0.0.0
+  port: {{ mesh_nebula_port }}
+
+punchy:
+  punch: true
+
+relay:
+  am_relay: false
+  use_relays: true
+
+firewall:
+  outbound:
+    - port: any
+      proto: any
+      host: any
+  inbound:
+    - port: any
+      proto: icmp
+      host: any

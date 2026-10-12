@@ -1,0 +1,24 @@
+---
+# gate_pomerium role (spec section 4): Pomerium all-in-one identity-aware proxy.
+# TLS is terminated at the ingress, so Pomerium listens on plain HTTP and is
+# joined to the dokploy-network to front app containers. Selected via the gate
+# slot; the playbook gates this role with `when: slots.gate == 'pomerium'`.
+gate_pomerium_compose_dir: /opt/sealedstack/gate_pomerium
+gate_pomerium_image: docker.io/pomerium/pomerium
+gate_pomerium_image_tag: "v0.27.5"  # pinned; confirm the current tag before use
+gate_pomerium_port: 9090            # proxy + authenticate listener
+# Publish the host port on the mesh/localhost, never the WAN (M8).
+gate_pomerium_bind_address: "{{ mesh_bind_address | default('127.0.0.1') }}"
+gate_pomerium_server_url: "https://auth.example.com"
+gate_pomerium_domain: example.com
+gate_pomerium_idp_provider: oidc
+gate_pomerium_idp_client_id: ""
+gate_pomerium_hostnames: ["app.example.com"]
+gate_pomerium_allowed_users: ["admin@example.com"]
+gate_pomerium_upstream: "http://dokploy-traefik:80"
+gate_pomerium_network: dokploy-network
+gate_pomerium_cookie_secret_file: "{{ gate_pomerium_compose_dir }}/secrets/cookie"
+gate_pomerium_signing_key_file: "{{ gate_pomerium_compose_dir }}/secrets/signing_key"
+# Required (no default); provide from Bitwarden:
+#   gate_pomerium_shared_secret     -> POMERIUM_SHARED_SECRET
+#   gate_pomerium_idp_client_secret -> POMERIUM_CLIENT_SECRET

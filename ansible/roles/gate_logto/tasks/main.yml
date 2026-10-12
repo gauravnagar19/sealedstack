@@ -1,0 +1,56 @@
+---
+# gate_logto role (spec section 4): idempotently deploy Logto + PostgreSQL.
+# The seed step is idempotent, so re-running never duplicates data. Selected via
+# the gate slot; the playbook gates this role with `when: slots.gate == 'logto'`.
+
+- name: Ensure the gate_logto directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ gate_logto_compose_dir }}"
+    - "{{ gate_logto_compose_dir }}/secrets"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ gate_logto_network }}
+  register: gate_logto_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ gate_logto_network }}
+  when: gate_logto_net.rc != 0
+  changed_when: true
+
+- name: Generate the Logto database password
+  ansible.builtin.shell:
+    cmd: umask 077 && openssl rand -hex 24 > "{{ gate_logto_db_password_file }}"
+    creates: "{{ gate_logto_db_password_file }}"
+
+- name: Read the generated database password
+  ansible.builtin.slurp:
+    src: "{{ gate_logto_db_password_file }}"
+  register: gate_logto_db_password_slurp
+  no_log: true
+
+- name: Record the database password
+  ansible.builtin.set_fact:
+    gate_logto_db_password: "{{ gate_logto_db_password_slurp.content | b64decode | trim }}"
+  no_log: true
+
+- name: Render the gate_logto compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ gate_logto_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart gate_logto
+
+- name: Ensure gate_logto is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ gate_logto_compose_dir }}"
+  register: gate_logto_up
+  changed_when: >-
+    (gate_logto_up.stdout ~ gate_logto_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

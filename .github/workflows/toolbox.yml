@@ -1,0 +1,61 @@
+name: toolbox
+
+# Publish the toolbox image so users don't need to build it. Pin by digest in
+# production. Push on main and on version tags.
+#
+# It is also callable (`workflow_call`) so release.yml can build the toolbox and
+# consume its pushed manifest digest as the immutable base for the tool image.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      digest:
+        description: "The pushed multi-arch manifest digest (sha256:...)"
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/sealedstack-toolbox
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: toolbox
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+      - name: Summary
+        run: |
+          {
+            echo "### toolbox published"
+            echo
+            echo "- digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- tags:"
+            echo '${{ steps.meta.outputs.tags }}' | sed 's/^/  - /'
+          } >> "$GITHUB_STEP_SUMMARY"

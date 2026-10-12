@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Upload the configured paths to a Hetzner Storage Box over SSH/rsync.
+# Rendered by Ansible; edits are overwritten.
+set -euo pipefail
+
+SSH_ARGS=(-p "{{ backup_hetzner_storage_box_port }}" -o StrictHostKeyChecking=accept-new)
+{% if backup_hetzner_storage_box_ssh_key %}
+SSH_ARGS+=(-i "{{ backup_hetzner_storage_box_ssh_key }}")
+{% endif %}
+
+if [[ -n "${SSHPASS:-}" ]]; then
+  RSYNC=(sshpass -e rsync)
+else
+  RSYNC=(rsync)
+fi
+
+FLAGS=(-a --partial --numeric-ids{% if backup_hetzner_storage_box_delete %} --delete{% endif %})
+
+{% for source in backup_hetzner_storage_box_sources %}
+"${RSYNC[@]}" "${FLAGS[@]}" -e "ssh ${SSH_ARGS[*]}" \
+  "{{ source }}" \
+  "{{ backup_hetzner_storage_box_username }}@{{ backup_hetzner_storage_box_host }}:{{ backup_hetzner_storage_box_path }}/"
+{% endfor %}

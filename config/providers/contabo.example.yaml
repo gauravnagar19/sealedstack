@@ -1,0 +1,11 @@
+# Contabo API adapter (compute slot). Copy to config/providers/contabo.yaml and
+# fill from https://api.contabo.com/. While absent, compute_contabo is a no-op
+# and the rule table is applied by hand. {{rules}} is replaced with the rule array.
+base_url: https://api.contabo.com/v1
+auth:
+  type: bearer        # uses API_TOKEN (Contabo OAuth2 access token)
+firewall:
+  method: PUT
+  path: /compute/instances/{server_id}/firewall
+  body: |
+    { "rules": {{rules}} }

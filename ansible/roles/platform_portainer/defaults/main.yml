@@ -1,0 +1,11 @@
+---
+# platform_portainer role (registry platform.yaml): install the self-hosted
+# Portainer container UI (stacks over the local Docker engine) on a control
+# host. The panel listens on :9443 (HTTPS) and the edge agent on :8000.
+platform_portainer_image: portainer/portainer-ce
+platform_portainer_image_tag: "lts"  # pinned channel; pin an exact tag for reproducibility
+platform_portainer_compose_dir: /opt/sealedstack/platform_portainer
+platform_portainer_https_port: 9443
+platform_portainer_edge_port: 8000
+# Publish the host ports on the mesh/localhost, never the WAN (M8).
+platform_portainer_bind_address: "{{ mesh_bind_address | default('127.0.0.1') }}"

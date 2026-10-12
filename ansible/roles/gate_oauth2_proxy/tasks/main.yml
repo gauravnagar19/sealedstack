@@ -1,0 +1,56 @@
+---
+# gate_oauth2_proxy role (spec section 4): idempotently deploy oauth2-proxy.
+# Selected via the gate slot; the playbook gates this role with
+# `when: gate == 'oauth2-proxy'`.
+
+- name: Ensure the gate_oauth2_proxy directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ gate_oauth2_proxy_compose_dir }}"
+    - "{{ gate_oauth2_proxy_compose_dir }}/secrets"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ gate_oauth2_proxy_network }}
+  register: gate_oauth2_proxy_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ gate_oauth2_proxy_network }}
+  when: gate_oauth2_proxy_net.rc != 0
+  changed_when: true
+
+- name: Generate the oauth2-proxy cookie secret
+  ansible.builtin.shell:
+    cmd: umask 077 && openssl rand -base64 32 > "{{ gate_oauth2_proxy_cookie_secret_file }}"
+    creates: "{{ gate_oauth2_proxy_cookie_secret_file }}"
+
+- name: Read the generated cookie secret
+  ansible.builtin.slurp:
+    src: "{{ gate_oauth2_proxy_cookie_secret_file }}"
+  register: gate_oauth2_proxy_cookie
+  no_log: true
+
+- name: Record the cookie secret
+  ansible.builtin.set_fact:
+    gate_oauth2_proxy_cookie_secret: "{{ gate_oauth2_proxy_cookie.content | b64decode | trim }}"
+  no_log: true
+
+- name: Render the gate_oauth2_proxy compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ gate_oauth2_proxy_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart gate_oauth2_proxy
+
+- name: Ensure gate_oauth2_proxy is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ gate_oauth2_proxy_compose_dir }}"
+  register: gate_oauth2_proxy_up
+  changed_when: >-
+    (gate_oauth2_proxy_up.stdout ~ gate_oauth2_proxy_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

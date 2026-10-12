@@ -1,0 +1,16 @@
+# Auth0 OIDC adapter (registry user_auth: auth0).
+#
+# Copy to config/providers/user_auth_auth0.yaml. sealedstack.userauth reads
+# these values, resolves the secret from Secrets Manager (project `prod`, key
+# `<app>.AUTH0_CLIENT_SECRET`) and injects into .build/env.json:
+#
+#   AUTH0_DOMAIN        <- domain
+#   AUTH0_CLIENT_ID     <- client_id
+#   AUTH0_CLIENT_SECRET <- secret
+#
+# Create a Regular Web Application in Auth0 and register the callback URLs
+# sealedstack.userauth prints. Non-secret values may also live under
+# `providers.user_auth_auth0` in config/stack.yaml.
+
+domain: <tenant>.us.auth0.com
+client_id: <auth0-client-id>

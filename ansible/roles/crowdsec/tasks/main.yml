@@ -1,0 +1,144 @@
+---
+# crowdsec role (spec section 13; roadmap "Security hardening").
+# Deploys CrowdSec + the iptables firewall bouncer with Docker Compose.
+# Idempotent: re-running is safe.
+#
+# Mostly redundant on a sealed origin (zero inbound ports, spec section 13):
+# it only sees traffic that already reached the host. Opt in with
+# `crowdsec_enabled: true` (see the site.yml wiring).
+
+- name: Deploy CrowdSec
+  when: crowdsec_enabled | bool
+  block:
+    - name: Ensure the CrowdSec directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - "{{ crowdsec_compose_dir }}"
+        - "{{ crowdsec_bouncer_dir }}"
+
+    - name: Check for the Docker network
+      ansible.builtin.command: docker network inspect {{ crowdsec_network }}
+      register: crowdsec_net
+      changed_when: false
+      failed_when: false
+
+    - name: Create the Docker network
+      ansible.builtin.command: docker network create {{ crowdsec_network }}
+      when: crowdsec_net.rc != 0
+      changed_when: true
+
+    # The bouncer is a host-networked process that registers itself with the
+    # Local API using an API key. CrowdSec only reveals a key when it is
+    # created, so the key is generated once and kept on the host.
+    - name: Create an empty bouncer API key file
+      ansible.builtin.copy:
+        content: ""
+        dest: "{{ crowdsec_bouncer_key_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+        force: false
+
+    - name: Read the bouncer API key
+      ansible.builtin.slurp:
+        src: "{{ crowdsec_bouncer_key_file }}"
+      register: crowdsec_bouncer_key_slurp
+      no_log: true
+
+    - name: Record the bouncer API key
+      ansible.builtin.set_fact:
+        crowdsec_bouncer_key: "{{ crowdsec_bouncer_key_slurp.content | b64decode | trim }}"
+      no_log: true
+
+    # The bouncer directory is mounted as a whole so Docker never creates a
+    # directory where a config file should be.
+    - name: Render the CrowdSec compose file
+      ansible.builtin.template:
+        src: docker-compose.yml.j2
+        dest: "{{ crowdsec_compose_dir }}/docker-compose.yml"
+        owner: root
+        group: root
+        mode: "0640"
+      notify: Restart CrowdSec
+
+    - name: Ensure CrowdSec is running
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ crowdsec_compose_dir }}"
+      register: crowdsec_up
+      changed_when: >-
+        (crowdsec_up.stdout ~ crowdsec_up.stderr)
+        is search('Created|Started|Recreated|Recreate|Pulling|Built')
+
+    - name: Wait for the CrowdSec Local API
+      ansible.builtin.command:
+        cmd: docker exec {{ crowdsec_container_name }} cscli version
+      register: crowdsec_ready
+      until: crowdsec_ready.rc == 0
+      retries: 30
+      delay: 2
+      changed_when: false
+
+    - name: List the registered bouncers
+      ansible.builtin.command:
+        cmd: docker exec {{ crowdsec_container_name }} cscli bouncers list -o json
+      register: crowdsec_bouncers
+      changed_when: false
+
+    - name: Record the registered bouncer names and registration decision
+      ansible.builtin.set_fact:
+        crowdsec_registered_bouncers: >-
+          {{ (crowdsec_bouncers.stdout | from_json | default([], true))
+             | map(attribute='name') | list }}
+        crowdsec_bouncer_needs_registration: >-
+          {{ crowdsec_bouncer_name not in (crowdsec_bouncers.stdout
+             | from_json | default([], true) | map(attribute='name') | list)
+             or crowdsec_bouncer_key | length == 0 }}
+
+    # A bouncer that exists but whose key was lost cannot be used; delete it so
+    # it can be registered again below.
+    - name: Delete a bouncer whose key is missing
+      ansible.builtin.command:
+        cmd: docker exec {{ crowdsec_container_name }} cscli bouncers delete {{ crowdsec_bouncer_name }}
+      when:
+        - crowdsec_bouncer_name in crowdsec_registered_bouncers
+        - crowdsec_bouncer_key | length == 0
+      changed_when: true
+
+    - name: Register the firewall bouncer
+      ansible.builtin.command:
+        cmd: docker exec {{ crowdsec_container_name }} cscli bouncers add {{ crowdsec_bouncer_name }} -o raw
+      register: crowdsec_bouncer_add
+      when: crowdsec_bouncer_needs_registration | bool
+      changed_when: true
+      no_log: true
+
+    - name: Store the new bouncer API key
+      ansible.builtin.copy:
+        content: "{{ crowdsec_bouncer_add.stdout | trim }}\n"
+        dest: "{{ crowdsec_bouncer_key_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+      when: crowdsec_bouncer_needs_registration | bool
+      no_log: true
+
+    - name: Record the new bouncer API key
+      ansible.builtin.set_fact:
+        crowdsec_bouncer_key: "{{ crowdsec_bouncer_add.stdout | trim }}"
+      when: crowdsec_bouncer_needs_registration | bool
+      no_log: true
+
+    - name: Render the firewall bouncer config
+      ansible.builtin.template:
+        src: crowdsec-firewall-bouncer.yaml.j2
+        dest: "{{ crowdsec_bouncer_config_file }}"
+        owner: root
+        group: root
+        mode: "0640"
+      notify: Restart the firewall bouncer

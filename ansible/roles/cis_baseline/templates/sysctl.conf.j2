@@ -1,0 +1,7 @@
+# Managed by the sealedstack cis_baseline role (spec section 13).
+# Source: ansible/roles/cis_baseline/templates/sysctl.conf.j2
+# Applied by the "Reload sysctl" handler with `sysctl --system`.
+
+{% for key, value in cis_baseline_sysctl_settings | dictsort %}
+{{ key }} = {{ value }}
+{% endfor %}

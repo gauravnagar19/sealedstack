@@ -1,0 +1,29 @@
+---
+services:
+  authelia:
+    image: "{{ gate_authelia_image }}:{{ gate_authelia_image_tag }}"
+    restart: unless-stopped
+    volumes:
+      - "{{ gate_authelia_compose_dir }}/configuration.yml:/config/configuration.yml:ro"
+      - "{{ gate_authelia_compose_dir }}/users_database.yml:/config/users_database.yml:ro"
+      - authelia:/config
+    ports:
+      - "{{ gate_authelia_bind_address }}:{{ gate_authelia_port }}:9091"
+    networks:
+      - dokploy-network
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis:/data
+    networks:
+      - dokploy-network
+
+volumes:
+  authelia:
+  redis:
+
+networks:
+  dokploy-network:
+    external: true

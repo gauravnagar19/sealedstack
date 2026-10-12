@@ -1,0 +1,14 @@
+# Pointing clients at Headscale
+
+Create a user and a reusable auth key on the server:
+
+    docker compose exec headscale headscale users create sealedstack
+    docker compose exec headscale headscale preauthkeys create --user sealedstack --reusable
+
+Then, on each client, log in to this control server instead of Tailscale's:
+
+    tailscale up --login-server {{ mesh_headscale_server_url }} --authkey <key>
+
+The node keys and database live in the `headscale-data` volume; back it up with
+the rest of the state. `{{ mesh_headscale_server_url }}` must resolve to this
+host and terminate TLS in front of port {{ mesh_headscale_listen_port }}.

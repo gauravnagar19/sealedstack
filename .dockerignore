@@ -1,0 +1,33 @@
+# Build-context hygiene for the tool image (root Dockerfile; context = repo root).
+#
+# `just tool` and `docker build .` send this whole directory as the build
+# context, so a misconfigured ignore would ship user config and secrets into the
+# daemon. Keep the context to code and the shipped samples only.
+
+# Local build output and the runtime work dir (never part of the image).
+.build/
+.sealedstack/
+site/
+internal/
+
+# VCS history.
+.git/
+
+# Terraform state and provider cache (may hold remote-backend material).
+.terraform/
+**/*.tfstate*
+
+# Secrets.
+config/secrets/
+
+# User config: every config/*.yaml is excluded, then the shipped *.example.yaml
+# samples are re-included (negations must come after the broad match, and the
+# parent directories above stay unignored so negation works). The image only
+# needs the samples for `init` to copy.
+config/*.yaml
+config/**/*.yaml
+!config/*.example.yaml
+!config/providers/*.example.yaml
+
+# Imported Tailscale policy is user-specific (D-026).
+config/*.hujson

@@ -1,0 +1,12 @@
+---
+# platform_caprover role (registry platform.yaml): install the self-hosted
+# CapRover PaaS (Docker Swarm) on a control host. The panel listens on :3000;
+# apps are routed by CapRover's own nginx on :80/:443.
+platform_caprover_image: caprover/caprover
+platform_caprover_image_tag: "1.13.2"  # pinned; confirm the current tag before use
+platform_caprover_compose_dir: /opt/sealedstack/platform_caprover
+platform_caprover_http_port: 80
+platform_caprover_https_port: 443
+platform_caprover_admin_port: 3000
+# Publish the host ports on the mesh/localhost, never the WAN (M8).
+platform_caprover_bind_address: "{{ mesh_bind_address | default('127.0.0.1') }}"

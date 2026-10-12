@@ -1,0 +1,22 @@
+---
+# mesh_tailscale role (spec section 7.2, D-016): keep tailscaled running and
+# make sure Tailscale SSH stays disabled (admins use OpenSSH over the mesh).
+
+- name: Ensure tailscaled is enabled and running
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Read the tailscale backend state
+  ansible.builtin.command: tailscale status --json
+  register: mesh_tailscale_status
+  changed_when: false
+  failed_when: false
+
+- name: Ensure the node is up with SSH disabled
+  ansible.builtin.command: tailscale up --ssh=false --hostname={{ inventory_hostname }}
+  when: >-
+    mesh_tailscale_status.rc != 0 or
+    ((mesh_tailscale_status.stdout | from_json).BackendState | default('')) != 'Running'
+  changed_when: true

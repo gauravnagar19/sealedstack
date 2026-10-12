@@ -1,0 +1,31 @@
+# Local hooks. Install with: pre-commit install
+repos:
+  - repo: local
+    hooks:
+      - id: publish-check
+        name: publish-check (privacy guard)
+        entry: scripts/publish-check.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/tofuutils/pre-commit-opentofu
+    rev: v2.4.2
+    hooks:
+      - id: tofu_fmt
+        args: ["--args=-recursive tofu"]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+      - id: check-added-large-files

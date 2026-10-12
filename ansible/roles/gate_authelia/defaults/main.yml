@@ -1,0 +1,19 @@
+---
+# gate_authelia role (spec section 4): self-hosted 2FA portal that sits in
+# front of a reverse proxy. The session secret and storage encryption key are
+# generated once on the host (secrets: [] in the registry), so no secret has
+# to be committed.
+gate_authelia_compose_dir: /opt/sealedstack/gate_authelia
+gate_authelia_image: docker.io/authelia/authelia
+gate_authelia_image_tag: "4.38.10"  # pinned; confirm the current tag before use
+gate_authelia_port: 9091
+# Publish the host port on the mesh/localhost, never the WAN (M8).
+gate_authelia_bind_address: "{{ mesh_bind_address | default('127.0.0.1') }}"
+gate_authelia_server_url: "https://auth.example.com"
+gate_authelia_domain: example.com
+gate_authelia_session_name: sealedstack
+gate_authelia_session_expiration: 1h
+gate_authelia_redis_host: redis
+gate_authelia_network: dokploy-network
+gate_authelia_session_secret_file: "{{ gate_authelia_compose_dir }}/secrets/session"
+gate_authelia_storage_key_file: "{{ gate_authelia_compose_dir }}/secrets/storage"

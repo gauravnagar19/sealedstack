@@ -1,0 +1,45 @@
+---
+services:
+  db:
+    image: docker.io/library/postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "{{ gate_logto_db_user }}"
+      POSTGRES_PASSWORD: "{{ gate_logto_db_password }}"
+      POSTGRES_DB: "{{ gate_logto_db_name }}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - database:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  logto:
+    image: "{{ gate_logto_image }}:{{ gate_logto_image_tag }}"
+    restart: unless-stopped
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
+    environment:
+      TRUST_PROXY_HEADER: "1"
+      DB_URL: "postgres://{{ gate_logto_db_user }}:{{ gate_logto_db_password }}@db:5432/{{ gate_logto_db_name }}"
+      ENDPOINT: "{{ gate_logto_server_url }}"
+      ADMIN_ENDPOINT: "{{ gate_logto_admin_url }}"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "{{ gate_logto_bind_address }}:{{ gate_logto_port }}:3001"
+      - "{{ gate_logto_bind_address }}:{{ gate_logto_admin_port }}:3002"
+    networks:
+      - internal
+      - dokploy-network
+
+volumes:
+  database:
+
+networks:
+  internal:
+  dokploy-network:
+    external: true

@@ -1,0 +1,19 @@
+---
+# ingress_zrok role (spec section 4): publish an app through a zrok public
+# share. Runs the official zrok container in three steps - enable the
+# environment (one-off), reserve a name and share the backend - joined to the
+# dokploy-network so it can reach app containers. Selected via the ingress slot;
+# the playbook gates this role with `when: slots.ingress == 'zrok'`.
+ingress_zrok_compose_dir: /opt/sealedstack/ingress_zrok
+ingress_zrok_image: docker.io/openziti/zrok
+ingress_zrok_image_tag: "1.1.13"  # pinned; confirm the current tag before use
+ingress_zrok_environment_name: sealedstack
+ingress_zrok_unique_name: ""       # reserved public subdomain label (4-32 chars)
+ingress_zrok_backend_mode: proxy   # web | caddy | drive | proxy
+ingress_zrok_target: "http://dokploy-traefik:80"
+ingress_zrok_oauth_provider: ""    # google | github (optional)
+ingress_zrok_oauth_emails: ""      # space-separated allow list (optional)
+ingress_zrok_basic_auth: ""        # user:password (optional)
+ingress_zrok_frontends: public
+ingress_zrok_network: dokploy-network
+# Required (no default): ingress_zrok_enable_token -> ZROK_TOKEN

@@ -1,0 +1,54 @@
+---
+# NetMaker control plane (mesh slot, netmaker implementation). Terminate TLS in
+# front of these services (api.<domain>) with the sealedstack edge.
+services:
+  netmaker:
+    image: "{{ mesh_netmaker_server_image }}:{{ mesh_netmaker_server_tag }}"
+    restart: unless-stopped
+    environment:
+      SERVER_NAME: "{{ mesh_netmaker_domain }}"
+      SERVER_API_CONN_STRING: "api.{{ mesh_netmaker_domain }}:443"
+      SERVER_HTTP_HOST: "api.{{ mesh_netmaker_domain }}"
+      BROKER_ENDPOINT: "wss://broker.{{ mesh_netmaker_domain }}"
+      COREDNS_ADDR: "{{ mesh_netmaker_server_host }}"
+      STUN_SERVERS: "stun1.l.google.com:19302,stun2.l.google.com:19302"
+    volumes:
+      - dnsconfig:/root/config/dnsconfig
+      - sqldata:/root/data
+    ports:
+      - "127.0.0.1:{{ mesh_netmaker_api_port }}:8081"
+    networks:
+      - dokploy-network
+
+  netmaker-ui:
+    image: "{{ mesh_netmaker_ui_image }}:{{ mesh_netmaker_ui_tag }}"
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: "https://api.{{ mesh_netmaker_domain }}"
+    depends_on:
+      - netmaker
+    ports:
+      - "127.0.0.1:{{ mesh_netmaker_ui_port }}:80"
+    networks:
+      - dokploy-network
+
+  mq:
+    image: docker.io/eclipse-mosquitto:2.0.15-openssl
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    ports:
+      - "{{ mesh_netmaker_mqtt_port }}:1883"
+      - "{{ mesh_netmaker_mqtt_ws_port }}:8083"
+    networks:
+      - dokploy-network
+
+volumes:
+  dnsconfig:
+  sqldata:
+  mosquitto-data:
+
+networks:
+  dokploy-network:
+    external: true

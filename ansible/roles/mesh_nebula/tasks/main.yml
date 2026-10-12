@@ -1,0 +1,67 @@
+---
+# mesh_nebula role (spec section 4): idempotently install and run Nebula.
+# Selected via the mesh slot; the playbook gates this role with
+# `when: slots.mesh == 'nebula'`.
+
+- name: Map the architecture to a Nebula release name
+  ansible.builtin.set_fact:
+    mesh_nebula_arch: >-
+      {{ 'amd64' if ansible_architecture == 'x86_64' else
+         ('arm64' if ansible_architecture == 'aarch64' else ansible_architecture) }}
+
+- name: Ensure the Nebula config directory exists
+  ansible.builtin.file:
+    path: "{{ mesh_nebula_base_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Download the Nebula release
+  ansible.builtin.get_url:
+    url: "https://github.com/slackhq/nebula/releases/download/v{{ mesh_nebula_version }}/nebula-linux-{{ mesh_nebula_arch }}.tar.gz"
+    dest: "/tmp/nebula-linux-{{ mesh_nebula_arch }}.tar.gz"
+    mode: "0644"
+
+- name: Install the nebula and nebula-cert binaries
+  ansible.builtin.unarchive:
+    src: "/tmp/nebula-linux-{{ mesh_nebula_arch }}.tar.gz"
+    dest: /usr/local/bin
+    remote_src: true
+    mode: "0755"
+    creates: /usr/local/bin/nebula
+
+- name: Generate the Nebula certificate authority
+  ansible.builtin.command:
+    cmd: >-
+      nebula-cert ca -name {{ mesh_nebula_ca_name }}
+      -duration {{ mesh_nebula_ca_duration }}
+    chdir: "{{ mesh_nebula_base_dir }}"
+    creates: "{{ mesh_nebula_base_dir }}/ca.crt"
+
+- name: Sign this host's Nebula certificate
+  ansible.builtin.command:
+    cmd: >-
+      nebula-cert sign -name {{ inventory_hostname }}
+      -ip {{ mesh_nebula_ip }}
+    chdir: "{{ mesh_nebula_base_dir }}"
+    creates: "{{ mesh_nebula_base_dir }}/host.crt"
+
+- name: Render the Nebula config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ mesh_nebula_base_dir }}/config.yaml"
+    mode: "0600"
+  notify: Restart mesh_nebula
+
+- name: Render the Nebula systemd unit
+  ansible.builtin.template:
+    src: nebula.service.j2
+    dest: /etc/systemd/system/nebula.service
+    mode: "0644"
+  notify: Restart mesh_nebula
+
+- name: Ensure nebula is enabled and running
+  ansible.builtin.systemd:
+    name: nebula
+    enabled: true
+    state: started
+    daemon_reload: true

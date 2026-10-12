@@ -1,0 +1,16 @@
+# Managed by the sealedstack crowdsec role (spec section 13).
+# Source: ansible/roles/crowdsec/templates/crowdsec-firewall-bouncer.yaml.j2
+#
+# The bouncer shares the host network namespace, so it reaches the Local API
+# on 127.0.0.1. The API key is registered by the role and stored on the host
+# ({{ crowdsec_bouncer_key_file }}).
+mode: iptables
+update_frequency: 10s
+daemonize: false
+log_mode: stdout
+log_level: "{{ crowdsec_log_level }}"
+api_url: "{{ crowdsec_lapi_url }}"
+api_key: "{{ crowdsec_bouncer_key }}"
+disable_ipv6: false
+deny_action: DROP
+deny_log: false

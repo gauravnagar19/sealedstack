@@ -1,0 +1,6 @@
+---
+- name: Restart gate_zitadel
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ gate_zitadel_compose_dir }}"
+  changed_when: true

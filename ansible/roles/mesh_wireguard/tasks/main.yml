@@ -1,0 +1,75 @@
+---
+# mesh_wireguard role (spec section 4): idempotently run plain WireGuard.
+# Selected via the mesh slot; the playbook gates this role with
+# `when: slots.mesh == 'wireguard'`.
+
+- name: Install WireGuard
+  ansible.builtin.apt:
+    name:
+      - wireguard
+      - wireguard-tools
+    state: present
+
+- name: Enable IPv4 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+
+- name: Generate the WireGuard server private key
+  ansible.builtin.shell:
+    cmd: umask 077 && wg genkey > "{{ mesh_wireguard_private_key_file }}"
+    creates: "{{ mesh_wireguard_private_key_file }}"
+
+- name: Read the server private key
+  ansible.builtin.slurp:
+    src: "{{ mesh_wireguard_private_key_file }}"
+  register: mesh_wireguard_key_slurp
+  no_log: true
+
+- name: Record the server private key
+  ansible.builtin.set_fact:
+    mesh_wireguard_private_key: "{{ mesh_wireguard_key_slurp.content | b64decode | trim }}"
+  no_log: true
+
+- name: Derive the server public key
+  ansible.builtin.command:
+    cmd: wg pubkey
+    stdin: "{{ mesh_wireguard_private_key }}"
+  register: mesh_wireguard_pubkey
+  changed_when: false
+
+- name: Record the server public key
+  ansible.builtin.set_fact:
+    mesh_wireguard_server_public_key: "{{ mesh_wireguard_pubkey.stdout | trim }}"
+
+- name: Render the WireGuard interface config
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: "{{ mesh_wireguard_config_dir }}/{{ mesh_wireguard_interface }}.conf"
+    mode: "0600"
+  notify: Restart mesh_wireguard
+
+- name: Ensure the peer config directory exists
+  ansible.builtin.file:
+    path: "{{ mesh_wireguard_config_dir }}/peers"
+    state: directory
+    mode: "0700"
+
+- name: Render a config for each peer
+  ansible.builtin.template:
+    src: peer.conf.j2
+    dest: "{{ mesh_wireguard_config_dir }}/peers/{{ item.name }}.conf"
+    mode: "0600"
+  loop: "{{ mesh_wireguard_peers }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Ensure WireGuard is enabled and running
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ mesh_wireguard_interface }}"
+    enabled: true
+    state: started
+    daemon_reload: true

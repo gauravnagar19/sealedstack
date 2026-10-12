@@ -1,0 +1,91 @@
+---
+# cis_baseline role defaults (spec section 13; roadmap "Security hardening").
+#
+# A small, safe subset of the CIS Benchmark for a sealed origin: sysctl/kernel
+# hardening, a filesystem + network-protocol module blacklist, and permissions
+# on the account databases.
+#
+# Deliberately out of scope (owned by other roles):
+#   - SSH and crypto policies      -> the `ssh` role (spec section 7.2).
+#   - Firewall, routing, ip_forward -> the `firewall` role (spec section 7.3).
+#   - Docker daemon configuration   -> the `docker` role.
+# This role changes nothing that can cut the mesh or the Docker data path.
+#
+# Every value below is overridable.
+
+cis_baseline_enabled: true
+
+# sysctl drop-in, applied with `sysctl --system` by the handler.
+cis_baseline_sysctl_file: /etc/sysctl.d/99-sealedstack-cis.conf
+
+# modprobe drop-in that blacklists unused filesystems and protocols.
+cis_baseline_modprobe_file: /etc/modprobe.d/sealedstack-cis-blacklist.conf
+
+# sysctl settings shipped by the role. Edit or narrow this map to change the
+# baseline; an empty map disables the sysctl file entirely.
+cis_baseline_sysctl_settings:
+  # Kernel information leaks and exploit surface.
+  kernel.dmesg_restrict: 1
+  kernel.kptr_restrict: 2
+  kernel.yama.ptrace_scope: 1
+  kernel.randomize_va_space: 2
+  kernel.core_uses_pid: 1
+  fs.suid_dumpable: 0
+  # IPv4 network hardening (CIS 3.x).
+  # rp_filter is set to 2 (loose) rather than CIS's strict 1: Tailscale,
+  # Docker overlay and Docker ingress all break under strict reverse-path
+  # filtering because packets arrive on a different interface than they leave.
+  net.ipv4.conf.all.rp_filter: 2
+  net.ipv4.conf.default.rp_filter: 2
+  net.ipv4.conf.all.accept_source_route: 0
+  net.ipv4.conf.default.accept_source_route: 0
+  net.ipv4.conf.all.accept_redirects: 0
+  net.ipv4.conf.default.accept_redirects: 0
+  net.ipv4.conf.all.secure_redirects: 0
+  net.ipv4.conf.default.secure_redirects: 0
+  net.ipv4.conf.all.send_redirects: 0
+  net.ipv4.conf.default.send_redirects: 0
+  net.ipv4.conf.all.log_martians: 1
+  net.ipv4.icmp_echo_ignore_broadcasts: 1
+  net.ipv4.icmp_ignore_bogus_error_responses: 1
+  net.ipv4.tcp_syncookies: 1
+  # IPv6 network hardening.
+  net.ipv6.conf.all.accept_redirects: 0
+  net.ipv6.conf.default.accept_redirects: 0
+  net.ipv6.conf.all.accept_source_route: 0
+  net.ipv6.conf.default.accept_source_route: 0
+  # NOTE: net.ipv4.ip_forward is left as Docker requires it (1).
+  # NOTE: net.ipv6.conf.*.accept_ra is intentionally not disabled: on an
+  #       IPv6-only or SLAAC host it would remove the default route.
+
+# Modules to blacklist through /etc/modprobe.d. They cannot be loaded after the
+# next boot; the handler rebuilds the initramfs when this file changes.
+cis_baseline_blacklisted_modules:
+  # Rarely-used filesystems (CIS 1.1.1.x).
+  - cramfs
+  - freevxfs
+  - jffs2
+  - hfs
+  - hfsplus
+  - udf
+  # Network protocols the host never needs (CIS 3.x).
+  - dccp
+  - sctp
+  - rds
+  - tipc
+  # NOTE: squashfs is excluded on purpose: snapd on Ubuntu uses it.
+  # NOTE: usb-storage is excluded on purpose; add it for hosts that will never
+  #       see removable media.
+
+# Owner/group/mode for the account databases (CIS 6.1.x). The `shadow` group
+# exists on Debian and Ubuntu; change it for other distributions. Files that do
+# not exist are skipped.
+cis_baseline_account_file_specs:
+  - { path: /etc/passwd, owner: root, group: root, mode: "0644" }
+  - { path: /etc/passwd-, owner: root, group: root, mode: "0644" }
+  - { path: /etc/group, owner: root, group: root, mode: "0644" }
+  - { path: /etc/group-, owner: root, group: root, mode: "0644" }
+  - { path: /etc/shadow, owner: root, group: shadow, mode: "0640" }
+  - { path: /etc/shadow-, owner: root, group: shadow, mode: "0640" }
+  - { path: /etc/gshadow, owner: root, group: shadow, mode: "0640" }
+  - { path: /etc/gshadow-, owner: root, group: shadow, mode: "0640" }

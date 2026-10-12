@@ -1,0 +1,287 @@
+"""Forge adapters (spec §5, M7).
+
+The `forge` slot abstracts the hosting platform the infra repo lives on: read an
+app-repo file at a ref, open a PR/MR, comment on/update a PR or issue, set/read
+CI variables and secrets on an app repo, and create/update the pinned Status
+issue. GitHub is the reference implementation; ``InMemoryForge`` is the mocked
+forge used by the M7 acceptance tests (no network, no real org).
+
+The engine only ever *reads* secrets (D-038); the one write here is publishing a
+value the infra repo already owns into an app repo's CI (D-023), never back to a
+secret source.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Mapping, Optional
+
+from .http import HttpClient, UrllibClient
+
+
+class ForgeError(RuntimeError):
+    pass
+
+
+class Forge:
+    """The forge contract (spec §5)."""
+
+    def read_file(self, repo: str, path: str, ref: str = "main") -> str:  # pragma: no cover
+        raise NotImplementedError
+
+    def open_pr(self, repo: str, *, branch: str, title: str, body: str, files: Mapping[str, str], base: str = "main") -> int:  # pragma: no cover
+        raise NotImplementedError
+
+    def upsert_comment(self, repo: str, number: int, body: str, *, marker: str = "") -> int:  # pragma: no cover
+        raise NotImplementedError
+
+    def set_variable(self, repo: str, name: str, value: str) -> None:  # pragma: no cover
+        raise NotImplementedError
+
+    def get_variable(self, repo: str, name: str) -> str:  # pragma: no cover
+        raise NotImplementedError
+
+    def set_secret(self, repo: str, name: str, value: str, *, environment: str = "") -> None:  # pragma: no cover
+        raise NotImplementedError
+
+    def get_issue(self, repo: str, marker: str) -> Optional[int]:  # pragma: no cover
+        raise NotImplementedError
+
+    def create_issue(self, repo: str, *, title: str, body: str, pinned: bool = False) -> int:  # pragma: no cover
+        raise NotImplementedError
+
+    def update_issue(self, repo: str, number: int, *, title: Optional[str] = None, body: Optional[str] = None) -> None:  # pragma: no cover
+        raise NotImplementedError
+
+    def ensure_environment(self, repo: str, environment: str) -> None:  # pragma: no cover
+        """Create the environment (so a required reviewer can gate releases)."""
+        raise NotImplementedError
+
+    def permission(self, repo: str, user: str) -> str:  # pragma: no cover
+        """One of admin|write|read|none (used to gate comment commands)."""
+        raise NotImplementedError
+
+
+# --------------------------------------------------------------------------- #
+# GitHub (reference)
+# --------------------------------------------------------------------------- #
+class GitHubForge(Forge):
+    """GitHub REST via a user-owned GitHub App installation token."""
+
+    api = "https://api.github.com"
+
+    def __init__(self, token: str, *, http: Optional[HttpClient] = None, seal=None):
+        self.token = token
+        self.http = http or UrllibClient()
+        self._seal = seal if seal is not None else libsodium_sealer()
+
+    @classmethod
+    def from_env(cls, env: Optional[Mapping[str, str]] = None, *, http: Optional[HttpClient] = None) -> "GitHubForge":
+        import os
+
+        env = dict(os.environ if env is None else env)
+        token = env.get("GH_TOKEN") or env.get("GITHUB_TOKEN") or ""
+        if not token:
+            raise ForgeError("GH_TOKEN is not set")
+        return cls(token, http=http)
+
+    def _request(self, method: str, path: str, *, json_body=None, text: bool = False) -> object:
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        if text:
+            headers["Accept"] = "application/vnd.github.raw"
+        response = self.http.request(method, f"{self.api}{path}", headers=headers, json_body=json_body)
+        if response.status >= 400:
+            raise ForgeError(f"{method} {path} failed (HTTP {response.status})")
+        if text:
+            return response.text
+        if not response.body:
+            return None
+        return response.json()
+
+    def read_file(self, repo: str, path: str, ref: str = "main") -> str:
+        return str(self._request("GET", f"/repos/{repo}/contents/{path}?ref={ref}", text=True))
+
+    def open_pr(self, repo: str, *, branch: str, title: str, body: str, files: Mapping[str, str], base: str = "main") -> int:
+        base_sha = self._request("GET", f"/repos/{repo}/git/ref/heads/{base}")["object"]["sha"]
+        self._request("POST", f"/repos/{repo}/git/refs", json_body={"ref": f"refs/heads/{branch}", "sha": base_sha})
+        for path, content in files.items():
+            self._request(
+                "PUT",
+                f"/repos/{repo}/contents/{path}",
+                json_body={"message": f"sealedstack: {title}", "content": _b64(content), "branch": branch},
+            )
+        pr = self._request("POST", f"/repos/{repo}/pulls", json_body={"title": title, "body": body, "head": branch, "base": base})
+        return int(pr["number"])
+
+    def upsert_comment(self, repo: str, number: int, body: str, *, marker: str = "") -> int:
+        if marker:
+            comments = self._request("GET", f"/repos/{repo}/issues/{number}/comments") or []
+            for comment in comments:
+                if marker in (comment.get("body") or ""):
+                    self._request("PATCH", f"/repos/{repo}/issues/comments/{comment['id']}", json_body={"body": body})
+                    return int(comment["id"])
+        created = self._request("POST", f"/repos/{repo}/issues/{number}/comments", json_body={"body": body})
+        return int(created["id"])
+
+    def set_variable(self, repo: str, name: str, value: str) -> None:
+        try:
+            self._request("POST", f"/repos/{repo}/actions/variables", json_body={"name": name, "value": value})
+        except ForgeError:
+            self._request("PATCH", f"/repos/{repo}/actions/variables/{name}", json_body={"name": name, "value": value})
+
+    def get_variable(self, repo: str, name: str) -> str:
+        data = self._request("GET", f"/repos/{repo}/actions/variables/{name}")
+        return str((data or {}).get("value") or "")
+
+    def set_secret(self, repo: str, name: str, value: str, *, environment: str = "") -> None:
+        # GitHub requires a libsodium sealed box; inject a sealer (e.g. pynacl) or
+        # fall back to `gh secret set`, which encrypts for you.
+        if self._seal is None:
+            raise ForgeError("set_secret needs a libsodium sealer (or use `gh secret set`)")
+        base = f"/repos/{repo}/actions/secrets" if not environment else f"/repos/{repo}/environments/{environment}/secrets"
+        key = self._request("GET", f"{base}/public-key")
+        sealed = self._seal(key["key"], value)
+        self._request("PUT", f"{base}/{name}", json_body={"encrypted_value": sealed, "key_id": key["key_id"]})
+
+    def get_issue(self, repo: str, marker: str) -> Optional[int]:
+        issues = self._request("GET", f"/repos/{repo}/issues?state=all&per_page=100") or []
+        for issue in issues:
+            if "pull_request" in issue:
+                continue
+            if marker in (issue.get("body") or ""):
+                return int(issue["number"])
+        return None
+
+    def create_issue(self, repo: str, *, title: str, body: str, pinned: bool = False) -> int:
+        issue = self._request("POST", f"/repos/{repo}/issues", json_body={"title": title, "body": body})
+        return int(issue["number"])
+
+    def update_issue(self, repo: str, number: int, *, title: Optional[str] = None, body: Optional[str] = None) -> None:
+        payload = {}
+        if title is not None:
+            payload["title"] = title
+        if body is not None:
+            payload["body"] = body
+        self._request("PATCH", f"/repos/{repo}/issues/{number}", json_body=payload)
+
+    def ensure_environment(self, repo: str, environment: str) -> None:
+        try:
+            self._request("PUT", f"/repos/{repo}/environments/{environment}")
+        except ForgeError:
+            pass
+
+    def permission(self, repo: str, user: str) -> str:
+        try:
+            data = self._request("GET", f"/repos/{repo}/collaborators/{user}/permission")
+            return str((data or {}).get("permission") or "none")
+        except ForgeError:
+            return "none"
+
+
+def _b64(text: str) -> str:
+    import base64
+
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+
+def libsodium_sealer():
+    """A GitHub-secret sealer using libsodium sealed boxes (needs ``pynacl``).
+
+    Returns ``None`` when ``pynacl`` is unavailable, so callers can fall back to
+    another path (e.g. ``gh secret set``)."""
+    try:
+        from nacl import encoding, public  # type: ignore
+    except Exception:  # noqa: BLE001
+        return None
+
+    def seal(key_b64: str, value: str) -> str:
+        pk = public.PublicKey(key_b64.encode("ascii"), encoding.Base64Encoder)
+        box = public.SealedBox(pk)
+        return encoding.Base64Encoder.encode(box.encrypt(value.encode("utf-8"))).decode("ascii")
+
+    return seal
+
+
+# --------------------------------------------------------------------------- #
+# In-memory (tests) — the "mocked forge"
+# --------------------------------------------------------------------------- #
+@dataclass
+class _Comment:
+    id: int
+    body: str
+
+
+@dataclass
+class InMemoryForge(Forge):
+    """A forge that records everything in memory; used by the M7 acceptance."""
+
+    files: dict = field(default_factory=dict)
+    prs: list = field(default_factory=list)
+    comments: dict = field(default_factory=dict)
+    variables: dict = field(default_factory=dict)
+    secrets: dict = field(default_factory=dict)
+    issues: dict = field(default_factory=dict)
+    permissions: dict = field(default_factory=dict)
+    environments: set = field(default_factory=set)
+    _next: int = 1000
+
+    def _id(self) -> int:
+        self._next += 1
+        return self._next
+
+    def read_file(self, repo: str, path: str, ref: str = "main") -> str:
+        return self.files.get((repo, ref, path), "")
+
+    def open_pr(self, repo: str, *, branch: str, title: str, body: str, files: Mapping[str, str], base: str = "main") -> int:
+        number = self._id()
+        for path, content in files.items():
+            self.files[(repo, branch, path)] = content
+        self.prs.append({"number": number, "repo": repo, "branch": branch, "title": title, "body": body, "files": dict(files)})
+        return number
+
+    def upsert_comment(self, repo: str, number: int, body: str, *, marker: str = "") -> int:
+        bucket = self.comments.setdefault((repo, number), [])
+        if marker:
+            for comment in bucket:
+                if marker in comment.body:
+                    comment.body = body
+                    return comment.id
+        comment = _Comment(self._id(), body)
+        bucket.append(comment)
+        return comment.id
+
+    def set_variable(self, repo: str, name: str, value: str) -> None:
+        self.variables[(repo, name)] = value
+
+    def get_variable(self, repo: str, name: str) -> str:
+        return self.variables.get((repo, name), "")
+
+    def set_secret(self, repo: str, name: str, value: str, *, environment: str = "") -> None:
+        self.secrets[(repo, environment, name)] = value
+
+    def get_issue(self, repo: str, marker: str) -> Optional[int]:
+        for number, issue in self.issues.items():
+            if issue["repo"] == repo and marker in issue["body"]:
+                return number
+        return None
+
+    def create_issue(self, repo: str, *, title: str, body: str, pinned: bool = False) -> int:
+        number = self._id()
+        self.issues[number] = {"repo": repo, "number": number, "title": title, "body": body, "pinned": pinned}
+        return number
+
+    def update_issue(self, repo: str, number: int, *, title: Optional[str] = None, body: Optional[str] = None) -> None:
+        issue = self.issues[number]
+        if title is not None:
+            issue["title"] = title
+        if body is not None:
+            issue["body"] = body
+
+    def ensure_environment(self, repo: str, environment: str) -> None:
+        self.environments.add((repo, environment))
+
+    def permission(self, repo: str, user: str) -> str:
+        return self.permissions.get((repo, user), "none")

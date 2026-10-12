@@ -1,0 +1,37 @@
+---
+# ingress_bore role (spec section 4): idempotently run the bore server and any
+# configured local connectors. Selected via the ingress slot; the playbook gates
+# this role with `when: slots.ingress == 'bore'`.
+
+- name: Ensure the ingress_bore compose directory exists
+  ansible.builtin.file:
+    path: "{{ ingress_bore_compose_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ ingress_bore_network }}
+  register: ingress_bore_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ ingress_bore_network }}
+  when: ingress_bore_net.rc != 0
+  changed_when: true
+
+- name: Render the ingress_bore compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ ingress_bore_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart ingress_bore
+
+- name: Ensure ingress_bore is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ ingress_bore_compose_dir }}"
+  register: ingress_bore_up
+  changed_when: >-
+    (ingress_bore_up.stdout ~ ingress_bore_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

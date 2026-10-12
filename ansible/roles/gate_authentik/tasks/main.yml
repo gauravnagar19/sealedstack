@@ -1,0 +1,46 @@
+---
+# gate_authentik role (spec section 4): idempotently deploy authentik + outpost.
+# Selected via the gate slot; the playbook gates this role with
+# `when: gate == 'authentik'`.
+
+- name: Ensure the gate_authentik compose directory exists
+  ansible.builtin.file:
+    path: "{{ gate_authentik_compose_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ gate_authentik_network }}
+  register: gate_authentik_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ gate_authentik_network }}
+  when: gate_authentik_net.rc != 0
+  changed_when: true
+
+- name: Render the gate_authentik compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ gate_authentik_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart gate_authentik
+
+- name: Ensure gate_authentik is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ gate_authentik_compose_dir }}"
+  register: gate_authentik_up
+  changed_when: >-
+    (gate_authentik_up.stdout ~ gate_authentik_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')
+
+- name: Wait for the authentik server to answer
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ gate_authentik_port }}/-/health/live/"
+    status_code: [200, 204]
+  register: gate_authentik_health
+  until: gate_authentik_health is succeeded
+  retries: 60
+  delay: 5

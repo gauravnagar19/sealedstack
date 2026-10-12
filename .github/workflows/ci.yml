@@ -1,0 +1,102 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Everything runs in the toolbox image so local and CI use the same tools (M12).
+  toolbox:
+    name: validate (toolbox)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the toolbox
+        run: docker build -t sealedstack-toolbox:ci toolbox
+      - name: Build the tool image
+        # F2: the root Dockerfile is never otherwise built in CI, so a broken
+        # FROM/COPY would only surface at release time.
+        run: docker build -f Dockerfile --build-arg TOOLBOX_IMAGE=sealedstack-toolbox:ci .
+      - name: config from examples
+        # The repo ships no real config (D-022/F4); validate against the samples.
+        run: |
+          mkdir -p "$RUNNER_TEMP/cfg"
+          cp config/stack.example.yaml "$RUNNER_TEMP/cfg/stack.yaml"
+          cp config/servers.example.yaml "$RUNNER_TEMP/cfg/servers.yaml"
+          cp config/apps.example.yaml "$RUNNER_TEMP/cfg/apps.yaml"
+      - name: config + registry + render + compose lint
+        env:
+          # Offline render: repo apps may be unresolvable; validate reports them.
+          TF_VAR_state_passphrase: ci-dummy
+        run: |
+          docker run --rm -v "$PWD:/work" -v "$RUNNER_TEMP/cfg:/cfg" -w /work \
+            -e TF_VAR_state_passphrase -e SEALEDSTACK_CONFIG=/cfg \
+            sealedstack-toolbox:ci bash -lc \
+            "python3 scripts/registry.py check && python3 scripts/render.py --allow-unresolved && python3 scripts/validate.py"
+      - name: ansible-lint
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
+            ansible-lint
+      - name: ansible-playbook --syntax-check
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
+            bash -lc "ansible-playbook -i localhost, --syntax-check \
+              ansible/playbooks/site.yml ansible/playbooks/bootstrap.yml"
+      - name: shellcheck
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
+            bash -lc "shellcheck scripts/*.sh"
+      - name: publication hygiene
+        # Catches personal values (if the deny-list is present) and any public IP.
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
+            bash -lc "scripts/publish-check.sh"
+      - name: tests (bats + pytest, incl. the engine)
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
+            bash -lc "tests/run.sh"
+
+  tofu:
+    name: tofu fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.13.1"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "pyyaml==6.0.2" "jsonschema==4.23.0"
+      - name: config from examples
+        run: |
+          mkdir -p cfg
+          cp config/stack.example.yaml cfg/stack.yaml
+          cp config/servers.example.yaml cfg/servers.yaml
+          cp config/apps.example.yaml cfg/apps.yaml
+      - name: render (offline)
+        env:
+          SEALEDSTACK_CONFIG: ${{ github.workspace }}/cfg
+        run: python scripts/render.py --allow-unresolved
+      - run: tofu fmt -check -recursive tofu
+      - name: tofu validate
+        env:
+          # Encryption needs a value even for -backend=false validation (H8).
+          TF_VAR_state_passphrase: ci-dummy
+        run: |
+          for stack in state edge platform compute; do
+            tofu -chdir="tofu/stacks/${stack}" init -backend=false -input=false >/dev/null
+            tofu -chdir="tofu/stacks/${stack}" validate
+          done
+
+  secrets:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

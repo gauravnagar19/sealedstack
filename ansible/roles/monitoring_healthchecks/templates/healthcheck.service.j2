@@ -1,0 +1,8 @@
+[Unit]
+Description=sealedstack healthchecks.io ping
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ monitoring_healthchecks_curl }} -fsS --max-time {{ monitoring_healthchecks_timeout }} --retry {{ monitoring_healthchecks_retries }} {{ monitoring_healthchecks_url }}

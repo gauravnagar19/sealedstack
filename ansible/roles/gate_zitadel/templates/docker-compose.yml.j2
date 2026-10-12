@@ -1,0 +1,53 @@
+---
+services:
+  db:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "{{ gate_zitadel_db_name }}"
+      POSTGRES_PASSWORD: "{{ gate_zitadel_db_password }}"
+      POSTGRES_USER: "{{ gate_zitadel_db_user }}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d {{ gate_zitadel_db_name }} -U {{ gate_zitadel_db_user }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - database:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  zitadel:
+    image: "{{ gate_zitadel_image }}:{{ gate_zitadel_image_tag }}"
+    restart: unless-stopped
+    command: ["start-from-init", "--masterkeyFromEnv", "--tlsMode", "disabled"]
+    environment:
+      ZITADEL_MASTERKEY: "{{ gate_zitadel_masterkey }}"
+      ZITADEL_PORT: "8080"
+      ZITADEL_DATABASE_POSTGRES_DSN: "postgresql://{{ gate_zitadel_db_user }}:{{ gate_zitadel_db_password }}@db:5432/{{ gate_zitadel_db_name }}?sslmode=disable"
+      ZITADEL_EXTERNALDOMAIN: "{{ gate_zitadel_domain }}"
+      ZITADEL_EXTERNALPORT: "{{ gate_zitadel_external_port }}"
+      ZITADEL_EXTERNALSECURE: "true"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: sealedstack
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: "{{ gate_zitadel_admin_user }}"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: "{{ gate_zitadel_admin_password }}"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS: "{{ gate_zitadel_admin_email }}"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED: "true"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "{{ gate_zitadel_bind_address }}:{{ gate_zitadel_port }}:8080"
+    networks:
+      - internal
+      - dokploy-network
+
+volumes:
+  database:
+
+networks:
+  internal:
+  dokploy-network:
+    external: true

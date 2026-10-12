@@ -1,0 +1,138 @@
+# sealedstack servers config — copy to servers.yaml and fill in.
+# The key is also the Tailscale MagicDNS hostname. No IPs are stored (D-008).
+# `provider` must be an id from `just providers compute` (registry/compute.yaml).
+servers:
+  web-1:
+    provider: hetzner         # creates the server (creates_server: true)
+    role: control             # exactly one control server (D-010)
+    os: ubuntu-24.04
+    server_type: cx22         # provider size/plan slug
+    location: fsn1            # region / datacentre
+
+  # A worker that runs replicas but no Dokploy panel:
+  # web-2:
+  #   provider: hetzner
+  #   role: worker
+  #   os: ubuntu-24.04
+  #   server_type: cx22
+  #   location: fsn1
+
+  # An existing VPS you bring yourself (firewall applied by hand or via adapter).
+  # Its public IP and root password are BOOTSTRAP SECRETS, not config (D-049);
+  # the names default to SERVER_IP_<NAME> / ROOT_PASSWORD_<NAME> (upper-case the
+  # name, `-` -> `_`) and can be overridden here:
+  # box-1:
+  #   provider: netcup
+  #   role: control
+  #   os: ubuntu-24.04
+  #   external_id: v2202xxxxxxxxxxxxx
+  #   bootstrap:
+  #     ip_secret: SERVER_IP_BOX_1
+  #     password_secret: ROOT_PASSWORD_BOX_1
+
+  # Hostinger needs plan/template_id/data_center_id; Vultr needs os_id:
+  # h-1:
+  #   provider: hostinger
+  #   role: control
+  #   os: ubuntu-24.04
+  #   plan: kvm1
+  #   template_id: "1234"
+  #   data_center_id: "42"
+
+  # Linode (native): image uses the linode/ namespace; location is a region slug.
+  # ln-1:
+  #   provider: linode
+  #   role: control
+  #   os: ubuntu-24.04
+  #   server_type: g6-nanode-1
+  #   location: eu-central
+  #   # image: linode/ubuntu24.04   # optional; overrides the os mapping
+
+  # Scaleway (native): location is a zone slug; image is a Scaleway image name.
+  # scw-1:
+  #   provider: scaleway
+  #   role: control
+  #   os: ubuntu-24.04
+  #   server_type: DEV1-S
+  #   location: fr-par-1
+  #   # image: ubuntu_noble          # optional; overrides the os mapping
+
+  # AWS (native): the region is set on the compute stack's aws provider
+  # (providers.aws.region / TF_VAR_aws_region); location is an optional AZ.
+  # image accepts an ami-... id or an AMI name glob (see compute_aws).
+  # aws-1:
+  #   provider: aws
+  #   role: control
+  #   os: ubuntu-24.04
+  #   server_type: t3.small
+  #   location: eu-central-1a
+  #   # image: ami-0abcdef1234567890
+
+  # GCP (native): location is a zone; image is project/family.
+  # gcp-1:
+  #   provider: gcp
+  #   role: control
+  #   os: ubuntu-24.04
+  #   server_type: e2-small
+  #   location: europe-west3-a
+  #   # image: ubuntu-os-cloud/ubuntu-2404-lts-amd64
+
+  # Azure (native): location is a region; image is a marketplace URN.
+  # az-1:
+  #   provider: azure
+  #   role: control
+  #   os: ubuntu-24.04
+  #   server_type: Standard_B1s
+  #   location: westeurope
+  #   # image: Canonical:ubuntu-24_04-lts:server:latest
+
+  # Oracle Cloud (native): shape + compartment OCID; location is an availability
+  # domain (empty selects the first in the compartment). The free ARM tier is
+  # VM.Standard.A1.Flex.
+  # oci-1:
+  #   provider: oracle
+  #   role: control
+  #   os: ubuntu-24.04
+  #   server_type: VM.Standard.A1.Flex
+  #   location: Uocm:PHX-AD-1
+  #   compartment_id: ocid1.compartment.oc1..xxxxxxxx
+  #   # image: Canonical-Ubuntu-24.04   # optional; overrides the os mapping
+
+  # UpCloud (native): server_type is an UpCloud plan; location is a zone; image
+  # is a storage template title.
+  # up-1:
+  #   provider: upcloud
+  #   role: control
+  #   os: ubuntu-24.04
+  #   server_type: 1xCPU-1GB
+  #   location: fi-hel1
+  #   # image: Ubuntu Server 24.04 LTS (Noble Numbat)   # optional; overrides the os mapping
+
+  # OVHcloud (native): service_name is the Public Cloud project id; flavor/image
+  # are resolved by name in the region.
+  # ovh-1:
+  #   provider: ovh
+  #   role: control
+  #   os: ubuntu-24.04
+  #   server_type: b3-8
+  #   location: GRA11
+  #   service_name: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  #   # image: Ubuntu 24.04   # optional; overrides the os mapping
+
+  # Civo (native): server_type is an instance size; location is a region; image
+  # is a disk image.
+  # civo-1:
+  #   provider: civo
+  #   role: control
+  #   os: ubuntu-24.04
+  #   server_type: g3.xsmall
+  #   location: LON1
+  #   # image: ubuntu-noble   # optional; overrides the os mapping
+
+  # Contabo (planned): no OpenTofu provider, so it is firewall-only through the
+  # REST adapter. Bring an existing VPS and pass its provider id.
+  # contabo-1:
+  #   provider: contabo
+  #   role: control
+  #   os: ubuntu-24.04
+  #   external_id: "123456"

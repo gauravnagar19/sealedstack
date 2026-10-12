@@ -1,0 +1,13 @@
+---
+# platform_coolify role (registry platform.yaml): install the self-hosted
+# Coolify PaaS on a control host. Coolify's installer manages its own Docker
+# Compose stack under /data/coolify; the panel listens on :8000.
+platform_coolify_install_url: "https://cdn.coollabs.io/coolify/install.sh"
+platform_coolify_data_dir: /data/coolify
+platform_coolify_source_dir: /data/coolify/source
+platform_coolify_panel_port: 8000
+# Optional: pre-create the root admin so the registration page is never exposed
+# (recommended on a sealed origin). Provide from Bitwarden; leave empty to skip.
+platform_coolify_root_username: ""
+platform_coolify_root_email: ""
+platform_coolify_root_password: ""

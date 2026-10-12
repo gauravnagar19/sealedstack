@@ -1,0 +1,6 @@
+---
+- name: Restart mesh_netmaker
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ mesh_netmaker_compose_dir }}"
+  changed_when: true

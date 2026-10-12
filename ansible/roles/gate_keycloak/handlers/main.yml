@@ -1,0 +1,6 @@
+---
+- name: Restart gate_keycloak
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ gate_keycloak_compose_dir }}"
+  changed_when: true

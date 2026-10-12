@@ -1,0 +1,11 @@
+# GitHub Container Registry (ghcr.io) — the registry slot golden path (D-033).
+#
+# Copy to config/providers/registry_ghcr.yaml (or set the same keys under
+# `providers.registry_ghcr` in stack.yaml; a file wins over the block) and select
+# it with `slots.registry: ghcr`. scripts/render.py renders it into
+# .build/registry.json; the platform stack registers it with Dokploy so it can
+# pull private images for `build.mode: ci` apps.
+#
+# owner: the GitHub user or org that owns the packages. Images are pushed as
+#   ghcr.io/<owner>/<repo>-<service>:<version>.
+owner: your-github-user-or-org

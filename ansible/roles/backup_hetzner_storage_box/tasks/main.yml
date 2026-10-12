@@ -1,0 +1,49 @@
+---
+- name: Require a storage box host
+  ansible.builtin.assert:
+    that:
+      - hetzner_storage_box_host | length > 0
+    fail_msg: "Set hetzner_storage_box_host (e.g. u123456.your-storagebox.de)."
+
+- name: Install rsync
+  ansible.builtin.apt:
+    name: rsync
+    state: present
+
+- name: Ensure the ssh key directory exists
+  ansible.builtin.file:
+    path: /etc/sealedstack
+    state: directory
+    mode: "0700"
+    owner: root
+    group: root
+
+- name: Install the storage box ssh key
+  ansible.builtin.copy:
+    dest: /etc/sealedstack/storagebox_ed25519
+    content: "{{ hetzner_storage_box_ssh_key }}\n"
+    mode: "0600"
+    owner: root
+    group: root
+  when: hetzner_storage_box_ssh_key | length > 0
+  no_log: true
+
+- name: Install the backup service
+  ansible.builtin.template:
+    src: sealedstack-storagebox.service.j2
+    dest: /etc/systemd/system/sealedstack-storagebox.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install the backup timer
+  ansible.builtin.template:
+    src: sealedstack-storagebox.timer.j2
+    dest: /etc/systemd/system/sealedstack-storagebox.timer
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable the backup timer
+  ansible.builtin.systemd:
+    name: sealedstack-storagebox.timer
+    enabled: true
+    state: started

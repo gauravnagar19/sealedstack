@@ -1,0 +1,194 @@
+---
+# Bootstrap a fresh server (spec section 7.1).
+#
+# Runs over the public IP as root, using a password or a provider-installed key.
+# It creates the admin user, hardens sshd, installs Tailscale and joins the mesh,
+# then waits until the MagicDNS name resolves. `site.yml` is a separate run.
+#
+# Required extra-vars:
+#   target_name          MagicDNS / servers.yaml key (e.g. server-1)
+#   tailscale_auth_key   single-use, pre-authorised tag:server key
+#   admin_password       sudo/login password for the admin user
+#   admin_ssh_keys_json  operator public keys as a JSON array (from
+#                        config/admin.ssh_keys, D-040; required, since password
+#                        auth is disabled below)
+
+- name: Bootstrap a fresh server
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    # Scope the disabled host-key check to this play only: bootstrap always
+    # connects to a brand-new host over the public IP. It is NOT disabled
+    # globally in ansible.cfg (site.yml/inventory rely on known_hosts).
+    ansible_host_key_checking: false
+    admin_user: "{{ lookup('env', 'ADMIN_USER') | default('admin', true) }}"
+    # Operator public keys come from config (D-040), never the environment.
+    admin_ssh_keys: "{{ (admin_ssh_keys_json | default('[]')) | from_json }}"
+    # Per-server salt derived deterministically from the hostname, so the hash is
+    # stable and idempotent but not shared across installs (N10). Combined with
+    # update_password: on_create, the hash is only written at creation.
+    admin_password_salt: "{{ 65534 | random(seed=target_name) | string }}"
+    # Where the one-shot Tailscale auth key is staged (0600) so it never appears
+    # in an argv (H10).
+    tailscale_authkey_file: /root/.sealedstack-tailscale-authkey
+
+  tasks:
+    - name: Ensure sudo is installed
+      ansible.builtin.apt:
+        name: sudo
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Assert at least one operator SSH key is provided
+      ansible.builtin.assert:
+        that:
+          - admin_ssh_keys | length > 0
+        fail_msg: >-
+          config/admin.ssh_keys is empty; refusing to disable password
+          authentication (it would lock you out of the server). Add your public
+          key to config/stack.yaml.
+
+    - name: Create the admin user
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        password: "{{ admin_password | password_hash('sha512', admin_password_salt) }}"
+        update_password: on_create
+        groups: sudo
+        shell: /bin/bash
+        create_home: true
+        state: present
+      no_log: true
+
+    - name: Install the operator SSH public keys
+      ansible.posix.authorized_key:
+        user: "{{ admin_user }}"
+        key: "{{ item }}"
+        state: present
+      loop: "{{ admin_ssh_keys }}"
+
+    # C4: prove the key actually works over a fresh connection BEFORE we turn
+    # password auth off, so a malformed/absent key cannot lock us out. If this
+    # fails, hardening never runs and the server keeps its password window.
+    - name: Verify keyed SSH to the admin user before disabling password auth
+      ansible.builtin.command:
+        argv:
+          - ssh
+          - -o
+          - BatchMode=yes
+          - -o
+          - StrictHostKeyChecking=accept-new
+          - -o
+          - UserKnownHostsFile=/dev/null
+          - -o
+          - ConnectTimeout=10
+          - -p
+          - "{{ ansible_port | default(22) }}"
+          - "{{ admin_user }}@{{ ansible_host | default(inventory_hostname) }}"
+          - "true"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: bootstrap_key_check
+      retries: 5
+      delay: 3
+      until: bootstrap_key_check.rc == 0
+      failed_when: bootstrap_key_check.rc != 0
+
+    - name: Check for the cloud-init sshd drop-in
+      ansible.builtin.stat:
+        path: /etc/ssh/sshd_config.d/50-cloud-init.conf
+      register: bootstrap_cloud_init
+
+    - name: Neutralise the cloud-init sshd drop-in
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/50-cloud-init.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Neutralised by sealedstack bootstrap: the hardening lives in
+          # 00-sealedstack.conf, which sshd reads first (alphabetical order).
+      when: bootstrap_cloud_init.stat.exists
+      notify: Reload sshd
+
+    - name: Harden sshd before anything else
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/00-sealedstack.conf
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+        content: |
+          PermitRootLogin no
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication yes
+      notify: Reload sshd
+
+    - name: Read the effective sshd configuration
+      ansible.builtin.command: /usr/sbin/sshd -T
+      register: bootstrap_sshd_effective
+      changed_when: false
+      failed_when: false
+
+    - name: Assert password and root login are disabled
+      ansible.builtin.assert:
+        that:
+          - "'passwordauthentication no' in bootstrap_sshd_effective.stdout"
+          - "'permitrootlogin no' in bootstrap_sshd_effective.stdout"
+        fail_msg: >-
+          sshd -T does not report the hardened settings; a cloud-init drop-in
+          may be overriding 00-sealedstack.conf.
+
+    - name: Install Tailscale
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -fsSL https://tailscale.com/install.sh | sh
+      args:
+        creates: /usr/bin/tailscale
+
+    - name: Join the mesh using a 0600 key file
+      block:
+        # H10: never put the auth key in argv; stage it and use --authkey=file:.
+        - name: Stage the Tailscale auth key
+          ansible.builtin.copy:
+            dest: "{{ tailscale_authkey_file }}"
+            owner: root
+            group: root
+            mode: "0600"
+            content: "{{ tailscale_auth_key }}\n"
+          no_log: true
+
+        - name: Join the mesh (hostname = server name, SSH off)
+          ansible.builtin.command:
+            argv:
+              - tailscale
+              - up
+              - "--authkey=file:{{ tailscale_authkey_file }}"
+              - "--hostname={{ target_name }}"
+              - --ssh=false
+              - --accept-dns=true
+          register: tailscale_up
+          changed_when: "'already' not in (tailscale_up.stderr | default(''))"
+          no_log: true
+      always:
+        - name: Remove the staged Tailscale auth key
+          ansible.builtin.file:
+            path: "{{ tailscale_authkey_file }}"
+            state: absent
+
+    - name: Wait until the MagicDNS name resolves
+      ansible.builtin.command: getent hosts {{ target_name }}
+      register: magicdns
+      until: magicdns.rc == 0
+      retries: 30
+      delay: 5
+      changed_when: false
+
+  handlers:
+    - name: Reload sshd
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded

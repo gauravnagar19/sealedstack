@@ -1,0 +1,121 @@
+---
+# Host baseline (spec section 7.2). Runs as the admin user over the mesh.
+# Idempotent: re-running it is always safe.
+#
+# Slot-selected self-hosted providers (ingress, gate) are appended as roles and
+# gated on config/stack.yaml `slots`.
+
+- name: Configure a sealed origin host
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    admin_user: "{{ ansible_user | default('admin') }}"
+    server_role: "{{ hostvars[inventory_hostname].role | default('worker') }}"
+    # Operator public keys from config/admin.ssh_keys (D-040), never env.
+    admin_ssh_keys: "{{ (admin_ssh_keys_json | default('[]')) | from_json }}"
+    config_dir: "{{ lookup('env', 'SEALEDSTACK_CONFIG') | default(playbook_dir + '/../../config', true) }}"
+    stack: "{{ lookup('file', config_dir + '/stack.yaml') | from_yaml }}"
+    slots: "{{ stack.slots }}"
+    # Interface and UDP direct-path port per mesh implementation. The wildcard
+    # (+) matches Docker-created interfaces (zerotier, netmaker). Port "0" means
+    # the mesh has no fixed direct port to allow through UFW.
+    meshes:
+      tailscale: { interface: tailscale0, port: "41641" }
+      tailscale-ssh: { interface: tailscale0, port: "41641" }
+      headscale: { interface: tailscale0, port: "41641" }
+      zerotier: { interface: "zt+", port: "0" }
+      netbird: { interface: "wt0", port: "3478" }
+      nebula: { interface: "nebula1", port: "4242" }
+      netmaker: { interface: "nm-+", port: "0" }
+      innernet: { interface: "sealedstack", port: "51820" }
+      firezone: { interface: "wg-firezone", port: "51820" }
+      wireguard: { interface: "wg0", port: "51820" }
+    mesh_interface: "{{ (meshes[slots.mesh | default('tailscale')] | default({})).interface | default('tailscale0') }}"
+    mesh_direct_port: "{{ (meshes[slots.mesh | default('tailscale')] | default({})).port | default('0') }}"
+    # Address self-hosted panels/gates publish their host ports on. Prefer the
+    # mesh interface address (reachable over the mesh, never from the WAN);
+    # loopback when the mesh address is unknown. Override per /etc/host or with
+    # `-e mesh_bind_address=0.0.0.0` for an implementation that needs it.
+    mesh_bind_address: >-
+      {{ (ansible_facts[mesh_interface] | default({})).ipv4.address
+         | default('127.0.0.1') }}
+
+  roles:
+    - base
+    - ssh
+    # Docker first: the self-hosted mesh roles below run Docker Compose.
+    - docker
+    - role: mesh_tailscale
+      when: slots.mesh | default('tailscale') == 'tailscale'
+    - role: mesh_headscale
+      when: slots.mesh | default('tailscale') == 'headscale'
+    - role: mesh_netbird
+      when: slots.mesh | default('tailscale') == 'netbird'
+    - role: mesh_nebula
+      when: slots.mesh | default('tailscale') == 'nebula'
+    - role: mesh_netmaker
+      when: slots.mesh | default('tailscale') == 'netmaker'
+    - role: mesh_innernet
+      when: slots.mesh | default('tailscale') == 'innernet'
+    - role: mesh_firezone
+      when: slots.mesh | default('tailscale') == 'firezone'
+    - role: mesh_wireguard
+      when: slots.mesh | default('tailscale') == 'wireguard'
+    - role: mesh_tailscale_ssh
+      when: slots.mesh | default('tailscale') == 'tailscale-ssh'
+    - firewall
+    - role: platform_dokploy
+      when: slots.platform | default('dokploy') == 'dokploy'
+    # Self-hosted ingress (alternative to Cloudflare Tunnel).
+    - role: ingress_caddy
+      when: slots.ingress | default('cloudflare') == 'caddy'
+    - role: ingress_traefik
+      when: slots.ingress | default('cloudflare') == 'traefik'
+    - role: ingress_frp
+      when: slots.ingress | default('cloudflare') == 'frp'
+    - role: ingress_pangolin
+      when: slots.ingress | default('cloudflare') == 'pangolin'
+    - role: ingress_tailscale_funnel
+      when: slots.ingress | default('cloudflare') == 'tailscale-funnel'
+    - role: ingress_zrok
+      when: slots.ingress | default('cloudflare') == 'zrok'
+    - role: ingress_bore
+      when: slots.ingress | default('cloudflare') == 'bore'
+    # Self-hosted identity-aware proxies (alternative to Cloudflare Access).
+    - role: gate_authentik
+      when: slots.gate | default('cloudflare_access') == 'authentik'
+    - role: gate_authelia
+      when: slots.gate | default('cloudflare_access') == 'authelia'
+    - role: gate_oauth2_proxy
+      when: slots.gate | default('cloudflare_access') == 'oauth2-proxy'
+    - role: gate_pomerium
+      when: slots.gate | default('cloudflare_access') == 'pomerium'
+    - role: gate_keycloak
+      when: slots.gate | default('cloudflare_access') == 'keycloak'
+    - role: gate_zitadel
+      when: slots.gate | default('cloudflare_access') == 'zitadel'
+    - role: gate_logto
+      when: slots.gate | default('cloudflare_access') == 'logto'
+    # Alternative self-hosted ingress (nginx + certbot).
+    - role: ingress_nginx
+      when: slots.ingress | default('cloudflare') == 'nginx'
+    # Security hardening (docs/security-hardening.md).
+    - role: cis_baseline
+      when: cis_baseline_enabled | default(true) | bool
+    - role: crowdsec
+      when: crowdsec_enabled | default(false) | bool
+    # Backup slot: host-side rsync to a Hetzner Storage Box.
+    - role: backup_hetzner_storage_box
+      when: slots.backup | default('r2') == 'hetzner_storage_box'
+      vars:
+        hetzner_storage_box_host: "{{ ((stack.providers | default({})).backup_hetzner_storage_box | default({})).host | default('') }}"
+        hetzner_storage_box_user: "{{ ((stack.providers | default({})).backup_hetzner_storage_box | default({})).username | default('u000000') }}"
+        hetzner_storage_box_path: "{{ ((stack.providers | default({})).backup_hetzner_storage_box | default({})).path | default('/backups') }}"
+        hetzner_storage_box_local_path: "{{ ((stack.providers | default({})).backup_hetzner_storage_box | default({})).local_path | default('/var/backups') }}"
+    # External uptime heartbeat (healthchecks.io).
+    - role: monitoring_healthchecks
+      when: (((stack.providers | default({})).monitoring_healthchecks | default({})).url | default('') | length) > 0
+      vars:
+        monitoring_healthchecks_url: "{{ ((stack.providers | default({})).monitoring_healthchecks | default({})).url | default('') }}"

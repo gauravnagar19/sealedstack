@@ -1,0 +1,42 @@
+---
+# Managed by the sealedstack crowdsec role (spec section 13).
+# Source: ansible/roles/crowdsec/templates/docker-compose.yml.j2
+#
+# The detection agent keeps its configuration in named volumes (Docker seeds a
+# fresh volume with the image contents, unlike a bind mount). The firewall
+# bouncer needs the host network namespace to reach the Local API on
+# 127.0.0.1 and to manage iptables, so it runs with network_mode: host.
+services:
+  crowdsec:
+    image: "{{ crowdsec_image }}:{{ crowdsec_image_tag }}"
+    container_name: "{{ crowdsec_container_name }}"
+    restart: unless-stopped
+    environment:
+      COLLECTIONS: "{{ crowdsec_collections | join(' ') }}"
+    volumes:
+      - crowdsec_config:/etc/crowdsec
+      - crowdsec_data:/var/lib/crowdsec/data
+      - /var/log:/var/log:ro
+    ports:
+      - "{{ crowdsec_lapi_bind }}:8080"
+    networks:
+      - "{{ crowdsec_network }}"
+
+  crowdsec-firewall-bouncer:
+    image: "{{ crowdsec_bouncer_image }}:{{ crowdsec_bouncer_image_tag }}"
+    container_name: "{{ crowdsec_bouncer_container_name }}"
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - "{{ crowdsec_bouncer_dir }}:/etc/crowdsec/bouncers:ro"
+
+volumes:
+  crowdsec_config:
+  crowdsec_data:
+
+networks:
+  "{{ crowdsec_network }}":
+    external: true

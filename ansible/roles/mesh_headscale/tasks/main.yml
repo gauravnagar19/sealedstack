@@ -1,0 +1,53 @@
+---
+# mesh_headscale role (spec section 4): idempotently deploy a headscale control
+# server. Selected via the mesh slot; the playbook gates this role with
+# `when: slots.mesh == 'headscale'`.
+
+- name: Ensure the mesh_headscale directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ mesh_headscale_compose_dir }}"
+    - "{{ mesh_headscale_compose_dir }}/config"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ mesh_headscale_network }}
+  register: mesh_headscale_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ mesh_headscale_network }}
+  when: mesh_headscale_net.rc != 0
+  changed_when: true
+
+- name: Render the headscale config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ mesh_headscale_compose_dir }}/config/config.yaml"
+    mode: "0640"
+  notify: Restart mesh_headscale
+
+- name: Render the headscale compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ mesh_headscale_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart mesh_headscale
+
+- name: Write the client onboarding note
+  ansible.builtin.template:
+    src: CLIENTS.md.j2
+    dest: "{{ mesh_headscale_compose_dir }}/CLIENTS.md"
+    mode: "0640"
+
+- name: Ensure mesh_headscale is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ mesh_headscale_compose_dir }}"
+  register: mesh_headscale_up
+  changed_when: >-
+    (mesh_headscale_up.stdout ~ mesh_headscale_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

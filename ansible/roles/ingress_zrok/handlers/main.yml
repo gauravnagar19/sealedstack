@@ -1,0 +1,6 @@
+---
+- name: Restart ingress_zrok
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ ingress_zrok_compose_dir }}"
+  changed_when: true

@@ -1,0 +1,11 @@
+---
+# mesh_firezone role (spec section 4): the Firezone Gateway container. It joins
+# a Firezone Site to this host and enforces the portal's group-based policies
+# over WireGuard; the control plane stays in the Firezone portal.
+mesh_firezone_compose_dir: /opt/sealedstack/mesh_firezone
+mesh_firezone_image: ghcr.io/firezone/gateway
+mesh_firezone_image_tag: "1"  # pinned major; confirm the current tag before use
+mesh_firezone_gateway_id: ""
+mesh_firezone_network: dokploy-network
+# Required (no default): mesh_firezone_token -> FIREZONE_TOKEN (registry
+# FIREZONE_TOKEN), the single-owner token minted per Gateway in the portal.

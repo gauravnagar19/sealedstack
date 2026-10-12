@@ -1,0 +1,19 @@
+---
+services:
+  frps:
+    image: "{{ ingress_frp_image }}:{{ ingress_frp_image_tag }}"
+    restart: unless-stopped
+    command: ["-c", "/etc/frp/frps.toml"]
+    volumes:
+      - "{{ ingress_frp_compose_dir }}/frps.toml:/etc/frp/frps.toml:ro"
+    ports:
+      - "{{ ingress_frp_bind_port }}:{{ ingress_frp_bind_port }}"
+      - "{{ ingress_frp_bind_port }}:{{ ingress_frp_bind_port }}/udp"
+      - "{{ ingress_frp_dashboard_port }}:{{ ingress_frp_dashboard_port }}"
+      - "{{ ingress_frp_vhost_http_port }}:{{ ingress_frp_vhost_http_port }}"
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true

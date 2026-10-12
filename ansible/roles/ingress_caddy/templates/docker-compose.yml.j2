@@ -1,0 +1,23 @@
+---
+services:
+  caddy:
+    image: "{{ ingress_caddy_image }}:{{ ingress_caddy_image_tag }}"
+    restart: unless-stopped
+    volumes:
+      - "{{ ingress_caddy_compose_dir }}/Caddyfile:/etc/caddy/Caddyfile:ro"
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "{{ ingress_caddy_http_port }}:80"
+      - "{{ ingress_caddy_https_port }}:443"
+      - "{{ ingress_caddy_https_port }}:443/udp"
+    networks:
+      - dokploy-network
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  dokploy-network:
+    external: true

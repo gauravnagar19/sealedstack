@@ -1,0 +1,19 @@
+---
+http:
+  routers:
+{% for hostname in ingress_traefik_hostnames %}
+    "{{ hostname | replace('.', '-') }}":
+      rule: "Host(`{{ hostname }}`)"
+      entryPoints:
+        - websecure
+      service: sealedstack
+{% if ingress_traefik_email | length > 0 %}
+      tls:
+        certResolver: letsencrypt
+{% endif %}
+{% endfor %}
+  services:
+    sealedstack:
+      loadBalancer:
+        servers:
+          - url: "{{ ingress_traefik_upstream }}"

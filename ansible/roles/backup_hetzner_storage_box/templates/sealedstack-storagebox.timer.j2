@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the sealedstack Storage Box backup on a schedule
+
+[Timer]
+OnCalendar={{ hetzner_storage_box_oncalendar }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

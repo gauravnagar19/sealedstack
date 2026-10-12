@@ -1,0 +1,133 @@
+"""Python orchestration for ``plan`` / ``apply`` / ``up`` (spec M6, D-047).
+
+This replaces the bash case in ``scripts/sealedstack`` and the ``just`` recipe
+chains with an explicit, re-runnable phase list. The heavy steps (OpenTofu,
+Ansible, the renderers) are still executed as child processes, but the *order*,
+guards and reporting live here so a mid-way failure can simply be re-run.
+
+Every phase is a pure description: a name, a list of argv to run, and whether it
+is only needed for ``up``. ``run_phases`` executes them in order and stops at the
+first non-zero exit, returning the phase that failed.
+"""
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Optional, Sequence
+
+
+@dataclass
+class Phase:
+    name: str
+    argv: list[str]
+    up_only: bool = False
+
+
+def _py(code_root: Path, script: str, *args: str) -> list[str]:
+    return [sys.executable or "python3", str(code_root / "scripts" / script), *args]
+
+
+def _mod(module: str, *args: str) -> list[str]:
+    """Run a sealedstack submodule (D-047: bash phases ported to Python)."""
+    return [sys.executable or "python3", "-m", f"sealedstack.{module}", *args]
+
+
+def _sh(code_root: Path, script: str, *args: str) -> list[str]:
+    return [str(code_root / "scripts" / script), *args]
+
+
+def phases(
+    command: str,
+    *,
+    code_root: Path,
+    stack_name: str = "",
+    servers: Sequence[str] = (),
+    server_ips: Optional[dict] = None,
+) -> list[Phase]:
+    """The ordered phases for a command.
+
+    ``plan`` and ``apply`` share the render/preflight prefix; ``apply`` adds the
+    writes and the post-apply publishing; ``up`` prepends state and interleaves
+    server bootstrap between edge and platform (spec 6.2 step 6).
+    """
+    server_ips = server_ips or {}
+    prefix = [
+        Phase("render", _py(code_root, "render.py")),
+        Phase("mesh-policy", _py(code_root, "mesh-policy.py")),
+        Phase("build-env", _mod("buildenv")),
+        Phase("user-auth", _mod("userauth")),
+    ]
+
+    if command == "plan":
+        return prefix + [
+            Phase("edge-plan", _mod("edge", "plan")),
+            Phase("platform-plan", _mod("platform", "plan")),
+        ]
+
+    if command == "apply":
+        return prefix + [
+            Phase("edge-apply", _mod("edge", "apply")),
+            Phase("platform-apply", _mod("platform", "apply")),
+            Phase("post-apply", _mod("postapply")),
+            Phase("publish", _mod("publishsettings")),
+        ]
+
+    if command == "up":
+        result = [Phase("state-init", _mod("stateinit"))]
+        result += prefix
+        result.append(Phase("edge-apply", _mod("edge", "apply")))
+        for server in servers:
+            result.append(Phase(f"server-up:{server}", _mod("server", "up", server), up_only=True))
+        result += [
+            Phase("platform-apply", _mod("platform", "apply")),
+            Phase("post-apply", _mod("postapply")),
+            Phase("publish", _mod("publishsettings")),
+            Phase("status", _py(code_root, "status.py")),
+        ]
+        return result
+
+    raise ValueError(f"no orchestration for {command!r}")
+
+
+def run_phases(
+    command: str,
+    *,
+    code_root: Path,
+    runner: Callable[[Sequence[str], Path], int],
+    stack_name: str = "",
+    servers: Sequence[str] = (),
+    server_ips: Optional[dict] = None,
+    json_output: bool = False,
+    stream=None,
+) -> int:
+    """Run the phases in order; stop at the first failure. Re-runnable."""
+    out = stream if stream is not None else sys.stderr
+    plan = phases(
+        command,
+        code_root=code_root,
+        stack_name=stack_name,
+        servers=servers,
+        server_ips=server_ips,
+    )
+
+    records = []
+    for phase in plan:
+        print(f"==> {phase.name}", file=out)
+        rc = runner(phase.argv, code_root)
+        records.append({"phase": phase.name, "rc": rc})
+        if rc != 0:
+            if json_output:
+                print(json.dumps({"command": command, "failed": phase.name, "phases": records}))
+            else:
+                print(
+                    f"sealedstack: '{phase.name}' failed (exit {rc}). "
+                    f"Fix the cause and re-run `sealedstack {command}`; every step is safe to repeat.",
+                    file=out,
+                )
+            return rc
+
+    if json_output:
+        print(json.dumps({"command": command, "ok": True, "phases": records}))
+    return 0

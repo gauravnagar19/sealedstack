@@ -1,0 +1,14 @@
+---
+# Handlers for the crowdsec role.
+
+- name: Restart CrowdSec
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate {{ crowdsec_service }}
+    chdir: "{{ crowdsec_compose_dir }}"
+  changed_when: true
+
+- name: Restart the firewall bouncer
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate {{ crowdsec_bouncer_service }}
+    chdir: "{{ crowdsec_compose_dir }}"
+  changed_when: true

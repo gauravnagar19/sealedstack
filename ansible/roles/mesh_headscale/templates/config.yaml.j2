@@ -1,0 +1,42 @@
+---
+# headscale control server config (mesh slot, headscale implementation).
+# Keys under /var/lib/headscale are generated automatically on first start.
+server_url: {{ mesh_headscale_server_url }}
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+grpc_listen_addr: 127.0.0.1:50443
+grpc_allow_insecure: false
+
+private_key_path: /var/lib/headscale/private.key
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+db_type: sqlite3
+db_path: /var/lib/headscale/db.sqlite
+
+derp:
+  server:
+    enabled: false
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+  auto_update_enabled: true
+  update_frequency: 24h
+
+disable_check_updates: false
+ephemeral_node_inactivity_timeout: 30m
+
+dns:
+  magic_dns: true
+  base_domain: {{ mesh_headscale_base_domain | default('headscale.example.com', true) }}
+  nameservers:
+    global:
+{% for server in mesh_headscale_nameservers %}
+      - {{ server }}
+{% else %}
+      - 1.1.1.1
+{% endfor %}

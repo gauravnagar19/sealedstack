@@ -1,0 +1,37 @@
+---
+# ingress_zrok role (spec section 4): idempotently run a zrok public share.
+# Selected via the ingress slot; the playbook gates this role with
+# `when: slots.ingress == 'zrok'`.
+
+- name: Ensure the ingress_zrok compose directory exists
+  ansible.builtin.file:
+    path: "{{ ingress_zrok_compose_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ ingress_zrok_network }}
+  register: ingress_zrok_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ ingress_zrok_network }}
+  when: ingress_zrok_net.rc != 0
+  changed_when: true
+
+- name: Render the ingress_zrok compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ ingress_zrok_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart ingress_zrok
+
+- name: Ensure ingress_zrok is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ ingress_zrok_compose_dir }}"
+  register: ingress_zrok_up
+  changed_when: >-
+    (ingress_zrok_up.stdout ~ ingress_zrok_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

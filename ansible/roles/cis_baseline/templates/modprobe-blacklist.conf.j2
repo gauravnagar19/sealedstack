@@ -1,0 +1,9 @@
+# Managed by the sealedstack cis_baseline role (spec section 13).
+# Source: ansible/roles/cis_baseline/templates/modprobe-blacklist.conf.j2
+# These modules cannot be loaded after the next boot. The "Rebuild the
+# initramfs" handler runs when this file changes.
+
+{% for module in cis_baseline_blacklisted_modules %}
+install {{ module }} /bin/false
+blacklist {{ module }}
+{% endfor %}

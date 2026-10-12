@@ -1,0 +1,25 @@
+---
+# Pomerium all-in-one (spec section 4). TLS is terminated at the ingress, so the
+# internal listener is plain HTTP behind the mesh.
+address: "0.0.0.0:{{ gate_pomerium_port }}"
+insecure_server: true
+grpc_address: "0.0.0.0:{{ gate_pomerium_port }}"
+shared_secret: "{{ gate_pomerium_shared_secret }}"
+cookie_secret: "{{ gate_pomerium_cookie_secret }}"
+signing_key: "{{ gate_pomerium_signing_key }}"
+authenticate_service_url: "{{ gate_pomerium_server_url }}"
+idp_provider: "{{ gate_pomerium_idp_provider }}"
+idp_client_id: "{{ gate_pomerium_idp_client_id }}"
+idp_client_secret: "{{ gate_pomerium_idp_client_secret }}"
+routes:
+{% for hostname in gate_pomerium_hostnames %}
+  - from: "https://{{ hostname }}"
+    to: "{{ gate_pomerium_upstream }}"
+    policy:
+      - allow:
+          or:
+{% for user in gate_pomerium_allowed_users %}
+            - email:
+                is: "{{ user }}"
+{% endfor %}
+{% endfor %}

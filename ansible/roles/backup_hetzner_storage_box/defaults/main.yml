@@ -1,0 +1,11 @@
+---
+# backup_hetzner_storage_box: rsync a local path to a Hetzner Storage Box on a
+# schedule. Not S3 — it uses SSH/SFTP, so it is a separate backup slot impl.
+hetzner_storage_box_host: ""            # e.g. u123456.your-storagebox.de
+hetzner_storage_box_user: "u123456"
+hetzner_storage_box_port: 23
+hetzner_storage_box_path: "/home/backups"
+hetzner_storage_box_local_path: "/var/backups"
+hetzner_storage_box_ssh_key: ""          # private key (secret); empty means the host key/agent is used
+hetzner_storage_box_oncalendar: "*-*-* 03:30:00"
+hetzner_storage_box_rsync_opts: "-az --delete"

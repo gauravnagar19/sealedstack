@@ -1,0 +1,6 @@
+---
+- name: Restart mesh_wireguard
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ mesh_wireguard_interface }}"
+    state: restarted
+    daemon_reload: true

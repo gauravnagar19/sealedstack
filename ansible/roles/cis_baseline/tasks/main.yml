@@ -1,0 +1,46 @@
+---
+# cis_baseline role (spec section 13; roadmap "Security hardening").
+#
+# A safe, idempotent subset of the CIS Benchmark. It never touches SSH,
+# crypto policy, the firewall or routing, so it cannot cut the mesh or the
+# Docker data path on a sealed origin.
+
+- name: Apply the CIS baseline
+  when: cis_baseline_enabled | bool
+  block:
+    - name: Write the CIS sysctl drop-in
+      ansible.builtin.template:
+        src: sysctl.conf.j2
+        dest: "{{ cis_baseline_sysctl_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload sysctl
+
+    - name: Write the module blacklist drop-in
+      ansible.builtin.template:
+        src: modprobe-blacklist.conf.j2
+        dest: "{{ cis_baseline_modprobe_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Rebuild the initramfs
+
+    - name: Find the sensitive account files
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      loop: "{{ cis_baseline_account_file_specs }}"
+      loop_control:
+        label: "{{ item.path }}"
+      register: cis_baseline_account_files
+
+    - name: Enforce permissions on the sensitive account files
+      ansible.builtin.file:
+        path: "{{ item.item.path }}"
+        owner: "{{ item.item.owner }}"
+        group: "{{ item.item.group }}"
+        mode: "{{ item.item.mode }}"
+      loop: "{{ cis_baseline_account_files.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: item.stat.exists

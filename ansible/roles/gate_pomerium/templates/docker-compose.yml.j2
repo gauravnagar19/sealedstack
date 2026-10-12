@@ -1,0 +1,16 @@
+---
+services:
+  pomerium:
+    image: "{{ gate_pomerium_image }}:{{ gate_pomerium_image_tag }}"
+    restart: unless-stopped
+    command: ["--config=/pomerium/config.yaml"]
+    volumes:
+      - "{{ gate_pomerium_compose_dir }}/config.yaml:/pomerium/config.yaml:ro"
+    ports:
+      - "{{ gate_pomerium_bind_address }}:{{ gate_pomerium_port }}:{{ gate_pomerium_port }}"
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true

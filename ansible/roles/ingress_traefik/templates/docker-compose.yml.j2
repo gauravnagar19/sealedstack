@@ -1,0 +1,21 @@
+---
+services:
+  traefik:
+    image: "{{ ingress_traefik_image }}:{{ ingress_traefik_image_tag }}"
+    restart: unless-stopped
+    volumes:
+      - "{{ ingress_traefik_compose_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "{{ ingress_traefik_compose_dir }}/dynamic:/etc/traefik/dynamic:ro"
+      - traefik_acme:/acme
+    ports:
+      - "{{ ingress_traefik_http_port }}:80"
+      - "{{ ingress_traefik_https_port }}:443"
+    networks:
+      - dokploy-network
+
+volumes:
+  traefik_acme:
+
+networks:
+  dokploy-network:
+    external: true

@@ -1,0 +1,14 @@
+# Firebase Auth adapter (registry user_auth: firebase).
+#
+# Copy to config/providers/user_auth_firebase.yaml. sealedstack.userauth reads
+# these values, resolves the secret from Secrets Manager (project `prod`, key
+# `<app>.FIREBASE_SERVICE_ACCOUNT`) and injects into .build/env.json:
+#
+#   FIREBASE_PROJECT_ID    <- project_id
+#   FIREBASE_SERVICE_ACCOUNT <- secret (the service-account JSON, verbatim)
+#
+# The service-account JSON is a secret; store it as `<app>.FIREBASE_SERVICE_ACCOUNT`
+# in the `prod` Secrets Manager project. Non-secret values may also live under
+# `providers.user_auth_firebase` in config/stack.yaml.
+
+project_id: <firebase-project-id>

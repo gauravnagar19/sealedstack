@@ -1,0 +1,57 @@
+---
+# gate_zitadel role (spec section 4): idempotently deploy ZITADEL + PostgreSQL.
+# `start-from-init` applies the schema and the FirstInstance bootstrap on the
+# first run and is a no-op afterwards. Selected via the gate slot; the playbook
+# gates this role with `when: slots.gate == 'zitadel'`.
+
+- name: Ensure the gate_zitadel directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ gate_zitadel_compose_dir }}"
+    - "{{ gate_zitadel_compose_dir }}/secrets"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ gate_zitadel_network }}
+  register: gate_zitadel_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ gate_zitadel_network }}
+  when: gate_zitadel_net.rc != 0
+  changed_when: true
+
+- name: Generate the ZITADEL database password
+  ansible.builtin.shell:
+    cmd: umask 077 && openssl rand -hex 24 > "{{ gate_zitadel_db_password_file }}"
+    creates: "{{ gate_zitadel_db_password_file }}"
+
+- name: Read the generated database password
+  ansible.builtin.slurp:
+    src: "{{ gate_zitadel_db_password_file }}"
+  register: gate_zitadel_db_password_slurp
+  no_log: true
+
+- name: Record the database password
+  ansible.builtin.set_fact:
+    gate_zitadel_db_password: "{{ gate_zitadel_db_password_slurp.content | b64decode | trim }}"
+  no_log: true
+
+- name: Render the gate_zitadel compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ gate_zitadel_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart gate_zitadel
+
+- name: Ensure gate_zitadel is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ gate_zitadel_compose_dir }}"
+  register: gate_zitadel_up
+  changed_when: >-
+    (gate_zitadel_up.stdout ~ gate_zitadel_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealedstack.dev/schemas/stack.schema.json",
+  "title": "sealedstack stack.yaml",
+  "description": "Slot selection and global settings (spec section 5.1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "domain",
+    "owner_email",
+    "slots",
+    "cloudflare",
+    "gate",
+    "edge_security",
+    "state"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Infra repo name; namespaces the remote state key (sealedstack/<name>/<stack>.tfstate, spec \u00a76.3a)."
+    },
+    "domain": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$",
+      "description": "Apex domain on Cloudflare nameservers."
+    },
+    "owner_email": {
+      "type": "string",
+      "format": "email"
+    },
+    "admin_user": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]*$",
+      "default": "admin",
+      "description": "The Linux admin user created on every server."
+    },
+    "providers": {
+      "type": "object",
+      "description": "Per-implementation non-secret config, keyed by '<slot>_<impl>' (e.g. backup_s3, gate_authentik).",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Backup destination settings for the selected backup slot.",
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "secondary": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional second, off-provider copy of every backup (the 3-2-1 rule). The platform stack creates a second Dokploy destination and a second backup schedule for each database when this is set.",
+          "required": [
+            "endpoint",
+            "region",
+            "bucket"
+          ],
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "minLength": 1
+            },
+            "region": {
+              "type": "string",
+              "minLength": 1
+            },
+            "bucket": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "mesh": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Mesh settings. Your own tailnet policy lives in config/tailscale-policy.hujson (imported by `init`); sealedstack merges only its block into it (D-026).",
+      "properties": {
+        "tailnet": {
+          "type": "string",
+          "description": "MagicDNS suffix, e.g. tail1234.ts.net, for fully-qualified hostnames (required when slots.mesh is tailscale)."
+        },
+        "policy": {
+          "enum": [
+            "managed",
+            "unmanaged"
+          ],
+          "default": "managed",
+          "description": "'managed' (default): sealedstack merges its tags, rules and tests into config/tailscale-policy.hujson and applies the result. 'unmanaged': sealedstack prints its block for manual pasting and leaves the tailnet policy alone."
+        },
+        "narrow_allow_all": {
+          "type": "boolean",
+          "default": false,
+          "description": "F1: when true and the tailnet policy still has the default allow-all rule, sealedstack rewrites the exact `* -> *` rule to `autogroup:member -> autogroup:member:*` (members' own devices only) so tagged servers are excluded. When false, a broad rule makes plan/apply refuse with instructions."
+        }
+      }
+    },
+    "slots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compute",
+        "mesh",
+        "ingress",
+        "gate",
+        "secrets",
+        "backup",
+        "platform"
+      ],
+      "properties": {
+        "compute": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "mesh": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "ingress": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "gate": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "secrets": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "backup": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "platform": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "user_auth": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "ci": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "registry": {
+          "$ref": "#/$defs/slot_impl"
+        },
+        "forge": {
+          "$ref": "#/$defs/slot_impl"
+        }
+      }
+    },
+    "cloudflare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_id",
+        "zone",
+        "team_name"
+      ],
+      "properties": {
+        "account_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "team_name": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Zero Trust team name; the Access login is <team_name>.cloudflareaccess.com."
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policies",
+        "catch_all"
+      ],
+      "properties": {
+        "policies": {
+          "type": "object",
+          "minProperties": 1,
+          "patternProperties": {
+            "^[a-z0-9-]+$": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "emails",
+                "session"
+              ],
+              "properties": {
+                "emails": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "format": "email"
+                  }
+                },
+                "session": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(m|h|d)$"
+                }
+              }
+            }
+          }
+        },
+        "catch_all": {
+          "type": "boolean"
+        }
+      }
+    },
+    "edge_security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bot_fight_mode",
+        "block_ai_bots",
+        "blocked_paths"
+      ],
+      "properties": {
+        "bot_fight_mode": {
+          "type": "boolean"
+        },
+        "block_ai_bots": {
+          "type": "boolean"
+        },
+        "blocked_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "bucket"
+      ],
+      "properties": {
+        "backend": {
+          "enum": [
+            "r2",
+            "s3",
+            "local"
+          ]
+        },
+        "bucket": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    },
+    "git_provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Dokploy Git provider for building repo apps in `server` build mode (spec 4.4).",
+      "properties": {
+        "type": {
+          "enum": [
+            "github_app",
+            "deploy_key"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Secret key mapping (D-050): each logical secret -> its key in the source. Omitted entries default to the logical name.",
+      "properties": {
+        "project": {
+          "type": "string",
+          "description": "Source project/namespace (e.g. the Bitwarden project)."
+        },
+        "keys": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Logical secret name -> source key."
+        }
+      }
+    },
+    "admin": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Admin identity. SSH public keys (not secrets) are installed during bootstrap (D-040); no keys are accepted from the environment.",
+      "properties": {
+        "ssh_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Operator SSH public keys to trust on every server."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "slot_impl": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "description": "Name of the implementation chosen for this slot (spec section 4)."
+    }
+  }
+}

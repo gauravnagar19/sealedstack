@@ -1,0 +1,12 @@
+[Interface]
+PrivateKey = {{ item.private_key | default('<peer-private-key>') }}
+Address = {{ item.address | default('10.66.0.2/24') }}
+{% if mesh_wireguard_dns %}
+DNS = {{ mesh_wireguard_dns }}
+{% endif %}
+
+[Peer]
+PublicKey = {{ mesh_wireguard_server_public_key }}
+Endpoint = {{ mesh_wireguard_endpoint }}
+AllowedIPs = {{ item.allowed_ips | default('10.66.0.0/24') }}
+PersistentKeepalive = 25

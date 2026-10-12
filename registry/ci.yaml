@@ -1,0 +1,76 @@
+slot: ci
+contract: "app repo release -> deployed version of the app on the server (spec section 4, D-015)."
+implementations:
+  - id: github-actions
+    name: GitHub Actions
+    status: experimental
+    summary: Tag a release; the job joins the tailnet as tag:ci and calls the Dokploy API. The default (D-015).
+    secrets: [TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [workflow, tailnet]
+    impl: {}
+    docs: https://docs.github.com/en/actions
+    notes: "config-only: see examples/app-template/.github/workflows/deploy.yml and docs/ci-cd.md"
+  - id: gitlab-ci
+    name: GitLab CI/CD
+    status: experimental
+    summary: A tag pipeline joins the tailnet (auth key or OIDC) and calls the Dokploy API.
+    secrets: [TS_AUTHKEY, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [pipeline, tailnet]
+    docs: https://docs.gitlab.com/ee/ci/
+    notes: "stub: examples/app-template/.gitlab-ci.yml"
+  - id: gitea-actions
+    name: Gitea Actions
+    status: experimental
+    summary: An act_runner job using the GitHub-Actions-compatible syntax.
+    secrets: [TS_AUTHKEY, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [workflow, runner_labels, tailnet]
+    docs: https://docs.gitea.com/usage/actions/overview
+  - id: drone
+    name: Drone CI
+    status: experimental
+    summary: A tag pipeline joins the tailnet and calls the Dokploy API.
+    secrets: [TS_AUTHKEY, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [pipeline, tailnet]
+    docs: https://docs.drone.io/
+  - id: jenkins
+    name: Jenkins
+    status: experimental
+    summary: A declarative pipeline or freestyle job runs the tailnet join and deploy.
+    secrets: [TS_AUTHKEY, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [job, tailnet]
+    docs: https://www.jenkins.io/doc/book/pipeline/
+  - id: buildkite
+    name: Buildkite
+    status: experimental
+    summary: A pipeline step on an agent joins the tailnet and calls the Dokploy API.
+    secrets: [TS_AUTHKEY, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [pipeline, tailnet]
+    docs: https://buildkite.com/docs/pipelines
+  - id: circleci
+    name: CircleCI
+    status: experimental
+    summary: A tag workflow joins the tailnet and calls the Dokploy API.
+    secrets: [TS_AUTHKEY, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [workflow, tailnet]
+    docs: https://circleci.com/docs/
+  - id: bamboo
+    name: Atlassian Bamboo
+    status: experimental
+    summary: A deployment plan joins the tailnet and calls the Dokploy API.
+    secrets: [TS_AUTHKEY, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [plan, tailnet]
+    docs: https://confluence.atlassian.com/bamboo
+  - id: woodpecker
+    name: Woodpecker CI
+    status: experimental
+    summary: A tag pipeline joins the tailnet and calls the Dokploy API.
+    secrets: [TS_AUTHKEY, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [pipeline, tailnet]
+    docs: https://woodpecker-ci.org/docs/intro
+  - id: aws-codebuild
+    name: AWS CodeBuild
+    status: experimental
+    summary: A build project on a tagged release joins the tailnet and calls the Dokploy API.
+    secrets: [TS_AUTHKEY, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
+    config: [project, region, tailnet]
+    docs: https://docs.aws.amazon.com/codebuild/latest/userguide/welcome.html

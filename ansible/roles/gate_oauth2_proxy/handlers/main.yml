@@ -1,0 +1,6 @@
+---
+- name: Restart gate_oauth2_proxy
+  ansible.builtin.command:
+    cmd: docker compose up -d --force-recreate
+    chdir: "{{ gate_oauth2_proxy_compose_dir }}"
+  changed_when: true

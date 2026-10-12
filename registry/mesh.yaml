@@ -1,0 +1,84 @@
+slot: mesh
+contract: "server name -> private hostname, interface name, CI identity (spec section 4)."
+implementations:
+  - id: tailscale
+    name: Tailscale
+    status: experimental
+    summary: MagicDNS hostnames, an OpenTofu-owned ACL and tag:server / tag:ci grants.
+    secrets: [TAILSCALE_OAUTH_CLIENT_ID, TAILSCALE_OAUTH_CLIENT_SECRET]
+    config: [tailnet]
+    impl: { tofu_module: mesh_tailscale, ansible_role: mesh_tailscale }
+    docs: https://tailscale.com/kb/
+  - id: headscale
+    name: Headscale (self-hosted)
+    status: experimental
+    summary: Tailscale-compatible control server you host yourself.
+    secrets: []
+    config: [controller_url]
+    impl: { ansible_role: mesh_headscale }
+    docs: https://headscale.net/
+  - id: netbird
+    name: NetBird
+    status: experimental
+    summary: Self-hostable WireGuard-based mesh with SSO.
+    secrets: [NETBIRD_TOKEN]
+    config: [management_url]
+    impl: { ansible_role: mesh_netbird }
+    docs: https://netbird.io/
+  - id: zerotier
+    name: ZeroTier
+    status: experimental
+    summary: Managed virtual network with a central controller.
+    secrets: [ZEROTIER_API_TOKEN]
+    config: [network_id]
+    impl: { tofu_module: mesh_zerotier }
+    docs: https://www.zerotier.com/
+  - id: nebula
+    name: Nebula
+    status: experimental
+    summary: Lightweight overlay with its own CA; no controller.
+    secrets: [NEBULA_CA_KEY]
+    config: [lighthouse]
+    impl: { ansible_role: mesh_nebula }
+    docs: https://nebula.defined.net/
+  - id: netmaker
+    name: Netmaker
+    status: experimental
+    summary: WireGuard mesh with a management UI/API.
+    secrets: [NETMAKER_TOKEN]
+    config: [server_url]
+    impl: { ansible_role: mesh_netmaker }
+    docs: https://www.netmaker.io/
+  - id: innernet
+    name: Innernet
+    status: experimental
+    summary: WireGuard-based private network with a CLI.
+    secrets: []
+    config: [server_url]
+    impl: { ansible_role: mesh_innernet }
+    docs: https://github.com/tonarino/innernet
+  - id: firezone
+    name: Firezone
+    status: experimental
+    summary: WireGuard-based access platform with a web UI.
+    secrets: [FIREZONE_TOKEN]
+    config: [server_url]
+    impl: { ansible_role: mesh_firezone }
+    docs: https://www.firezone.dev/
+  - id: wireguard
+    name: Plain WireGuard
+    status: experimental
+    summary: Manual peer configuration; no controller or DNS.
+    secrets: [WIREGUARD_PRIVATE_KEY]
+    config: [endpoint]
+    impl: { ansible_role: mesh_wireguard }
+    docs: https://www.wireguard.com/
+  - id: tailscale-ssh
+    name: Tailscale SSH
+    status: experimental
+    summary: Removes SSH keys entirely; revisit D-016.
+    secrets: [TAILSCALE_OAUTH_CLIENT_ID, TAILSCALE_OAUTH_CLIENT_SECRET]
+    config: []
+    impl: { ansible_role: mesh_tailscale_ssh }
+    docs: https://tailscale.com/kb/1193/tailscale-ssh/
+    notes: "revisits D-016"

@@ -1,0 +1,16 @@
+---
+# ingress_bore role (spec section 4): minimal TCP tunnels over the official
+# bore container. By default it runs the public `bore server`; add one entry to
+# `ingress_bore_clients` per app to also run a `bore local` connector next to
+# it. Selected via the ingress slot; the playbook gates this role with
+# `when: slots.ingress == 'bore'`.
+ingress_bore_compose_dir: /opt/sealedstack/ingress_bore
+ingress_bore_image: docker.io/ekzhang/bore
+ingress_bore_image_tag: "0.6.0"  # pinned; confirm the current tag before use
+ingress_bore_server_enabled: true
+ingress_bore_server_port: 7835
+ingress_bore_server_addr: "bore.example.com"  # public address clients dial
+ingress_bore_network: dokploy-network
+# Connectors: [{ name: web, local_port: 80, remote_port: 8080 }, ...]
+ingress_bore_clients: []
+# Optional (no default): ingress_bore_secret -> BORE_SECRET

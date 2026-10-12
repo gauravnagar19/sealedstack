@@ -1,0 +1,56 @@
+---
+# gate_keycloak role (spec section 4): idempotently deploy Keycloak + PostgreSQL.
+# Selected via the gate slot; the playbook gates this role with
+# `when: slots.gate == 'keycloak'`.
+
+- name: Ensure the gate_keycloak directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ gate_keycloak_compose_dir }}"
+    - "{{ gate_keycloak_compose_dir }}/secrets"
+
+- name: Check for the dokploy-network
+  ansible.builtin.command: docker network inspect {{ gate_keycloak_network }}
+  register: gate_keycloak_net
+  changed_when: false
+  failed_when: false
+
+- name: Create the dokploy-network
+  ansible.builtin.command: docker network create {{ gate_keycloak_network }}
+  when: gate_keycloak_net.rc != 0
+  changed_when: true
+
+- name: Generate the Keycloak database password
+  ansible.builtin.shell:
+    cmd: umask 077 && openssl rand -hex 24 > "{{ gate_keycloak_db_password_file }}"
+    creates: "{{ gate_keycloak_db_password_file }}"
+
+- name: Read the generated database password
+  ansible.builtin.slurp:
+    src: "{{ gate_keycloak_db_password_file }}"
+  register: gate_keycloak_db_password_slurp
+  no_log: true
+
+- name: Record the database password
+  ansible.builtin.set_fact:
+    gate_keycloak_db_password: "{{ gate_keycloak_db_password_slurp.content | b64decode | trim }}"
+  no_log: true
+
+- name: Render the gate_keycloak compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ gate_keycloak_compose_dir }}/docker-compose.yml"
+    mode: "0640"
+  notify: Restart gate_keycloak
+
+- name: Ensure gate_keycloak is running
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans
+    chdir: "{{ gate_keycloak_compose_dir }}"
+  register: gate_keycloak_up
+  changed_when: >-
+    (gate_keycloak_up.stdout ~ gate_keycloak_up.stderr)
+    is search('Created|Started|Recreated|Recreate|Pulling|Built')

@@ -1,0 +1,9 @@
+---
+# docker role (spec section 7.2): install Docker CE from Docker's apt repo and
+# bound container log growth.
+docker_arch: >-
+  {{ 'amd64' if ansible_architecture == 'x86_64'
+     else ('arm64' if ansible_architecture == 'aarch64'
+           else ansible_architecture) }}
+docker_distro: "{{ ansible_distribution | lower }}"
+docker_release: "{{ ansible_distribution_release }}"

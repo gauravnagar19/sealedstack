@@ -1,0 +1,45 @@
+---
+# platform_dokploy role (spec section 7.2).
+# Only control servers run the panel; worker servers stay Docker-only.
+
+- name: Configure the Dokploy panel
+  when: server_role | default('worker') == 'control'
+  block:
+    - name: Check whether Dokploy is installed
+      ansible.builtin.stat:
+        path: /etc/dokploy
+      register: dokploy_installed
+
+    - name: Install Dokploy
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -fsSL {{ dokploy_install_url }} | sh
+      args:
+        executable: /bin/bash
+      environment:
+        DOKPLOY_VERSION: "{{ dokploy_version }}"
+      when: not dokploy_installed.stat.exists
+      changed_when: true
+
+    - name: Wait for the dokploy-network to appear
+      ansible.builtin.command: docker network inspect dokploy-network
+      register: dokploy_network
+      until: dokploy_network.rc == 0
+      retries: 30
+      delay: 5
+      changed_when: false
+
+    - name: Assert the traefik container exists
+      ansible.builtin.command: docker ps -q -f name=dokploy-traefik
+      register: dokploy_traefik
+      changed_when: false
+      failed_when: dokploy_traefik.stdout | length == 0
+
+    - name: Assert the panel serves over the mesh
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:3000"
+        status_code: [200, 301, 302, 307, 308]
+      register: dokploy_health
+      until: dokploy_health is succeeded
+      retries: 30
+      delay: 5

@@ -1,0 +1,65 @@
+# Image security CI for an app repo (docs/security-hardening.md, spec section 13).
+#
+# Builds the app image once, generates an SBOM (Syft, via anchore/sbom-action)
+# and scans it (Trivy, via aquasecurity/trivy-action), failing the job on
+# HIGH or CRITICAL findings.
+#
+# Required setup:
+#   - A Dockerfile at the repository root. Adjust `context` / `file` below if it
+#     lives elsewhere, or replace the build step with `docker pull` of the
+#     exact pinned image the app ships.
+#   - No secrets are needed: the scan runs against the freshly built image.
+#
+# Optional:
+#   - Set `ignore-unfixed: "false"` to fail on unpatched vulnerabilities too.
+#   - Add a second opinion with Grype against the generated SBOM
+#     (`grype sbom:sbom.spdx.json --fail-on high`).
+name: security
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+
+# Fail closed: read the repo, no elevation. `security-events: write` is only
+# needed if you later upload SARIF to code scanning.
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  sbom-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the app image
+        run: docker build --tag "app:${GITHUB_SHA}" .
+
+      - name: Generate an SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: "app:${{ github.sha }}"
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+
+      - name: Scan the image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "app:${{ github.sha }}"
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+
+      - name: Upload the SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json

@@ -1,0 +1,41 @@
+---
+# platform_coolify role (registry platform.yaml): install Coolify on a control
+# server. Only control servers run the panel; worker servers stay Docker-only.
+
+- name: Configure the Coolify panel
+  when: server_role | default('worker') == 'control'
+  block:
+    - name: Check whether Coolify is installed
+      ansible.builtin.stat:
+        path: "{{ platform_coolify_data_dir }}"
+      register: platform_coolify_installed
+
+    - name: Build the Coolify installer environment
+      ansible.builtin.set_fact:
+        platform_coolify_env:
+          ROOT_USERNAME: "{{ platform_coolify_root_username }}"
+          ROOT_USER_EMAIL: "{{ platform_coolify_root_email }}"
+          ROOT_USER_PASSWORD: "{{ platform_coolify_root_password }}"
+      when: platform_coolify_root_username | length > 0
+      no_log: true
+
+    - name: Install Coolify
+      ansible.builtin.shell: |
+        set -o pipefail
+        curl -fsSL {{ platform_coolify_install_url }} | bash
+      args:
+        executable: /bin/bash
+      environment: "{{ platform_coolify_env | default({}) }}"
+      when: not platform_coolify_installed.stat.exists
+      changed_when: true
+      no_log: true
+      notify: Restart platform_coolify
+
+    - name: Wait for the Coolify panel to answer
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ platform_coolify_panel_port }}"
+        status_code: [200, 301, 302, 307, 308]
+      register: platform_coolify_health
+      until: platform_coolify_health is succeeded
+      retries: 60
+      delay: 5

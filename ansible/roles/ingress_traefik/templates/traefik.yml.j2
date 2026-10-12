@@ -1,0 +1,21 @@
+---
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+api:
+  dashboard: true
+{% if ingress_traefik_email | length > 0 %}
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "{{ ingress_traefik_email }}"
+      storage: /acme/acme.json
+      httpChallenge:
+        entryPoint: web
+{% endif %}

@@ -1,0 +1,16 @@
+# Supabase Auth adapter (registry user_auth: supabase).
+#
+# Copy to config/providers/user_auth_supabase.yaml. sealedstack.userauth reads
+# these values, resolves the secret from Secrets Manager (project `prod`, key
+# `<app>.SUPABASE_SERVICE_ROLE_KEY`) and injects into .build/env.json:
+#
+#   SUPABASE_URL              <- project_url
+#   SUPABASE_ANON_KEY         <- anon_key (public; the app ships it to browsers)
+#   SUPABASE_SERVICE_ROLE_KEY <- secret (server-only, never expose to clients)
+#
+# The anon key is public, so it is config; the service-role key is a secret.
+# Non-secret values may also live under `providers.user_auth_supabase` in
+# config/stack.yaml.
+
+project_url: https://<project-ref>.supabase.co
+anon_key: <supabase-anon-key>

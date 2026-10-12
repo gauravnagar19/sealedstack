@@ -1,0 +1,77 @@
+# sealedstack stack config — copy to stack.yaml and fill in.
+# Slot selection and global settings (spec section 5.1). No secrets here (D-008).
+name: example-infra
+domain: example.com
+owner_email: you@example.com
+admin_user: admin
+# Operator SSH public keys (not secrets), installed on every server at bootstrap
+# (D-040). No keys are read from the environment.
+admin:
+  ssh_keys: []
+  # ssh_keys:
+  #   - "ssh-ed25519 AAAA... you@example.com"
+
+slots:
+  compute: hetzner            # per-server providers are set in servers.yaml
+  mesh: tailscale             # tailscale | netbird | headscale | ... (see `just providers mesh`)
+  ingress: cloudflare
+  gate: cloudflare_access
+  secrets: bitwarden          # bitwarden | sops | aws_ssm | ...
+  backup: r2                  # r2 | s3 | b2 | wasabi | spaces | minio | storj | ...
+  platform: dokploy
+  registry: ghcr              # image registry (registry/registry.yaml, D-033)
+  # ci: github-actions        # app-repo release CI (see registry/ci.yaml, docs/ci-cd.md)
+  # user_auth: clerk          # only if an app sets `user_auth:`
+
+# Secret key mapping (D-050). `keys` maps a logical secret to its key in the
+# source; entries omitted default to the logical name. Setup writes the defaults.
+secrets:
+  project: infra
+  keys: {}
+
+cloudflare:
+  account_id: REPLACE_ME      # from the dashboard (not a secret)
+  zone: example.com
+  team_name: example          # Access login: example.cloudflareaccess.com
+
+gate:
+  policies:
+    owner-only: { emails: [you@example.com], session: 24h }
+  catch_all: true
+
+edge_security:
+  bot_fight_mode: true
+  block_ai_bots: true
+  blocked_paths: ["/.env", "/.git", "xmlrpc.php", "/wp-", "*.php"]
+
+state:
+  backend: r2
+  bucket: sealedstack-state
+
+# Backup destination for the selected backup slot (s3-family only; r2 derives
+# endpoint/region from the account).
+# backup:
+#   endpoint: https://s3.eu-central-1.wasabisys.com
+#   region: eu-central-1
+#   bucket: sealedstack-backups
+#   # Optional second, off-provider copy (3-2-1). Credentials are read from
+#   # TF_VAR_backup_secondary_access_key_id / _secret_access_key (export them or
+#   # put them in Bitwarden).
+#   secondary:
+#     endpoint: https://s3.us-west-004.backblazeb2.com
+#     region: us-west-004
+#     bucket: sealedstack-backups-secondary
+
+# Per-implementation non-secret config, keyed by "<slot>_<impl>".
+# providers:
+#   gate_authentik: { server_url: https://auth.example.com }
+
+# Mesh. Your tailnet policy lives in config/tailscale-policy.hujson (imported
+# verbatim by `sealedstack init`); sealedstack merges only its own tags, rules
+# and tests into it (D-026). Set `policy: unmanaged` to paste the block by hand.
+# Set `tailnet` (e.g. tail1234.ts.net) for fully-qualified hostnames.
+mesh:
+  # Import your tailnet policy first (`sealedstack init`), then set `managed`.
+  # `unmanaged` prints sealedstack's rules for you to paste by hand.
+  policy: unmanaged
+  tailnet: example.ts.net       # your MagicDNS suffix, e.g. tail1234.ts.net

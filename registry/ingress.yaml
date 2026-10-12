@@ -1,0 +1,83 @@
+slot: ingress
+contract: "app, hostnames[], servers[] -> per-server connector token and DNS records (spec section 4)."
+implementations:
+  - id: cloudflare
+    name: Cloudflare Tunnel
+    status: experimental
+    summary: One tunnel per app (D-013), proxied CNAME DNS, WAF and bot settings.
+    config: [account_id, zone, team_name]
+    secrets: [CLOUDFLARE_API_TOKEN]
+    impl: { tofu_module: ingress_cloudflare }
+    docs: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+  - id: pangolin
+    name: Pangolin
+    status: experimental
+    summary: Self-hosted tunnel and reverse proxy built on WireGuard and Traefik.
+    secrets: [PANGOLIN_API_KEY]
+    config: [server_url]
+    impl: { ansible_role: ingress_pangolin }
+    docs: https://github.com/fosrl/pangolin
+  - id: frp
+    name: frp
+    status: experimental
+    summary: Fast reverse proxy; a frps server plus frpc connectors.
+    secrets: [FRP_TOKEN]
+    config: [server_addr]
+    impl: { ansible_role: ingress_frp }
+    docs: https://github.com/fatedier/frp
+  - id: ngrok
+    name: ngrok
+    status: experimental
+    summary: Managed tunnels with reserved domains and cloud endpoints.
+    secrets: [NGROK_API_KEY]
+    config: [domain, oauth_provider]
+    impl: { tofu_module: ingress_ngrok }
+    docs: https://ngrok.com/
+  - id: tailscale-funnel
+    name: Tailscale Funnel
+    status: experimental
+    summary: Public ingress directly from the mesh, no extra tunnel.
+    secrets: [TAILSCALE_OAUTH_CLIENT_ID, TAILSCALE_OAUTH_CLIENT_SECRET]
+    config: [hostname, upstream]
+    impl: { ansible_role: ingress_tailscale_funnel }
+    docs: https://tailscale.com/kb/1223/funnel/
+  - id: zrok
+    name: zrok
+    status: experimental
+    summary: Open-source sharing built on OpenZiti; a zrok share published next to the app container.
+    secrets: [ZROK_TOKEN]
+    config: [unique_name, backend_mode, target]
+    impl: { ansible_role: ingress_zrok }
+    docs: https://zrok.io/
+  - id: bore
+    name: bore
+    status: experimental
+    summary: Minimal TCP tunnel; a public bore server plus local connectors.
+    secrets: [BORE_SECRET]
+    config: [server_addr, port]
+    impl: { ansible_role: ingress_bore }
+    docs: https://github.com/ekzhang/bore
+  - id: caddy
+    name: Caddy
+    status: experimental
+    summary: Reverse proxy with automatic TLS, run at the edge.
+    secrets: []
+    config: [hostnames]
+    impl: { ansible_role: ingress_caddy }
+    docs: https://caddyserver.com/
+  - id: traefik
+    name: Traefik
+    status: experimental
+    summary: Reverse proxy and load router with ACME.
+    secrets: []
+    config: [hostnames]
+    impl: { ansible_role: ingress_traefik }
+    docs: https://traefik.io/
+  - id: nginx
+    name: nginx
+    status: experimental
+    summary: Reverse proxy with nginx and certbot (Docker).
+    secrets: []
+    config: [hostnames, upstream, email]
+    impl: { ansible_role: ingress_nginx }
+    docs: https://nginx.org/

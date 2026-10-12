@@ -1,0 +1,24 @@
+# Netcup SCP REST API adapter (spec section 4, v0.4).
+#
+# Copy to config/providers/netcup.yaml and fill in the values from the SCP API
+# documentation (SCP -> API -> REST API Docs). While this file is absent,
+# compute_netcup is a no-op and `just server-up` prints the rule table for you
+# to apply by hand. The file is JSON-compatible YAML; `{{rules}}` is replaced
+# with the rule array from the compute stack.
+#
+# The exact base_url, auth scheme and firewall path/body below are placeholders
+# and MUST be confirmed against the SCP API docs before enabling.
+
+base_url: https://www.servercontrolpanel.de/api/v1
+
+auth:
+  # basic (API_USERNAME / API_PASSWORD) or bearer (API_TOKEN)
+  type: basic
+
+firewall:
+  method: PUT
+  path: /servers/{server_id}/firewall
+  body: |
+    {
+      "rules": {{rules}}
+    }

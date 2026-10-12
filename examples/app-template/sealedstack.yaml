@@ -1,0 +1,19 @@
+name: example
+compose: docker-compose.yml
+web: { service: web, port: 3000, health: /api/health }
+build:
+  mode: ci                    # build in CI, deploy the prebuilt image (D-030)
+  platforms: [linux/amd64]
+needs:
+  postgres:
+    version: "16"
+    database: example
+    env: DATABASE_URL
+    backup: { every: 6h, keep: 28 }
+    restore_on_create: latest
+  redis:
+    version: "7"
+    env: REDIS_URL
+secrets: [EXAMPLE_SECRET]
+user_auth:
+  webhook_paths: [/api/webhooks/auth]

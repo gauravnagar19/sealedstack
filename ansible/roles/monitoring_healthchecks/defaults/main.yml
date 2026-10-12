@@ -1,0 +1,11 @@
+---
+# monitoring_healthchecks role (roadmap Operations): a small systemd timer that
+# pings a healthchecks.io check URL, so external uptime alerting fires when the
+# host or its services go dark.
+monitoring_healthchecks_url: ""            # https://hc-ping.com/<uuid>; required
+monitoring_healthchecks_interval: "5min"   # systemd OnUnitActiveSec
+monitoring_healthchecks_timeout: 10        # curl --max-time seconds
+monitoring_healthchecks_retries: 3         # curl --retry
+monitoring_healthchecks_curl: /usr/bin/curl
+monitoring_healthchecks_unit: sealedstack-healthcheck
+monitoring_healthchecks_start_on_boot: true

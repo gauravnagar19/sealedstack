@@ -1,0 +1,124 @@
+"""OpenTofu backend init (D-047).
+
+Replaces the ``tofu_ready`` helper in ``scripts/lib.sh``. The R2 backend
+credentials go into a throwaway 0600 ``-backend-config`` file that is removed
+right after ``init`` and are never exported: exporting them would clobber
+``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY``, which the AWS provider uses
+for ``provider: aws`` in the compute stack (M-review item 5).
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+from typing import Callable, Mapping, Optional, Sequence
+
+from . import config as config_mod
+from . import secrets as secrets_mod
+
+# A tofu runner takes (argv, env) and returns a return code.
+TofuRunner = Callable[[Sequence[str], Mapping[str, str]], int]
+
+
+def default_runner(argv: Sequence[str], env: Mapping[str, str]) -> int:
+    return subprocess.run(list(argv), env=dict(env)).returncode
+
+
+def require(source: secrets_mod.SecretSource, config: config_mod.Config, name: str) -> str:
+    """Read a required infra secret (honouring D-050 key mapping)."""
+    key = config.secret_key(name)
+    result = source.get(key)
+    if not result.found:
+        raise config_mod.ConfigError(
+            f"sealedstack: missing required secret '{key}' in the '{source.kind}' source"
+        )
+    return result.value
+
+
+def optional(source: secrets_mod.SecretSource, config: config_mod.Config, name: str) -> str:
+    key = config.secret_key(name)
+    result = source.get(key)
+    return result.value if result.found else ""
+
+
+def backend_config(
+    config: config_mod.Config,
+    env: Mapping[str, str],
+    source: secrets_mod.SecretSource,
+    stack_dir: Path,
+) -> tuple[Path, str]:
+    """Write the 0600 backend config; return ``(path, state_passphrase)``."""
+    import tempfile
+
+    account_id = str((config.stack.get("cloudflare") or {}).get("account_id") or "")
+    state_bucket = str((config.stack.get("state") or {}).get("bucket") or "sealedstack-state")
+
+    r2_access = require(source, config, "R2_ACCESS_KEY_ID")
+    r2_secret = require(source, config, "R2_SECRET_ACCESS_KEY")
+    passphrase = require(source, config, "state_passphrase")
+    if len(passphrase) < 16:
+        raise config_mod.ConfigError(
+            f"sealedstack: state_passphrase must be at least 16 characters (pbkdf2); got {len(passphrase)}"
+        )
+
+    # State key: sealedstack/<infra_name>/<stack>.tfstate (spec §6.3a). The infra
+    # name comes from stack.yaml:name; e2e overrides it with
+    # SEALEDSTACK_STATE_PREFIX so it can share the bucket without touching
+    # production state (N8).
+    infra_name = env.get("SEALEDSTACK_STATE_PREFIX") or config.name or "sealedstack"
+    stack = Path(stack_dir).name
+    key = f"sealedstack/{infra_name}/{stack}.tfstate"
+
+    content = (
+        f'bucket = "{state_bucket}"\n'
+        f'key = "{key}"\n'
+        'region = "auto"\n'
+        f'endpoints = {{ s3 = "https://{account_id}.r2.cloudflarestorage.com" }}\n'
+        f'access_key = "{r2_access}"\n'
+        f'secret_key = "{r2_secret}"\n'
+        "skip_credentials_validation = true\n"
+        "skip_region_validation = true\n"
+        "skip_requesting_account_id = true\n"
+        "use_path_style = true\n"
+        "use_lockfile = true\n"
+    )
+
+    fd, path = tempfile.mkstemp()
+    os.chmod(path, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    return Path(path), passphrase
+
+
+def ready(
+    config: config_mod.Config,
+    env: Mapping[str, str],
+    source: secrets_mod.SecretSource,
+    stack_dir: Path,
+    *,
+    runner: Optional[TofuRunner] = None,
+) -> str:
+    """``tofu init`` a stack against the encrypted R2 backend.
+
+    Returns the state passphrase, which every later ``tofu`` command on the stack
+    needs (the encryption block reads ``TF_VAR_state_passphrase``).
+    """
+    runner = runner or default_runner
+    # Drop any legacy plaintext backend file (H10).
+    legacy = Path(stack_dir) / "backend.hcl"
+    if legacy.exists():
+        legacy.unlink()
+
+    tmp, passphrase = backend_config(config, env, source, stack_dir)
+    child_env = dict(env)
+    child_env["TF_VAR_state_passphrase"] = passphrase
+    try:
+        rc = runner(
+            ["tofu", "-chdir", str(stack_dir), "init", "-input=false", "-reconfigure", f"-backend-config={tmp}"],
+            child_env,
+        )
+    finally:
+        tmp.unlink(missing_ok=True)
+    if rc != 0:
+        raise config_mod.ConfigError(f"tofu init failed for {stack_dir} (exit {rc})")
+    return passphrase
