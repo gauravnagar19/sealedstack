@@ -99,7 +99,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0   # scan the whole history
+      - name: Build the toolbox
+        run: docker build -t sealedstack-toolbox:ci toolbox
+      - name: gitleaks (full history)
+        # A direct full-history scan (no push-range logic, which breaks on a
+        # rewritten root commit). publish-check --strict also scans the archive.
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo sealedstack-toolbox:ci \
+            gitleaks detect --redact -v --no-banner
