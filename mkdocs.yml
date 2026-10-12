@@ -33,6 +33,7 @@ markdown_extensions:
       permalink: true
 validation:
   links:
+    not_found: info      # links to repo files outside docs/ are valid on GitHub; tests/pytest/test_docs.py checks them
     absolute_links: ignore
     unrecognized_links: ignore
-    anchors: ignore
+    anchors: warn

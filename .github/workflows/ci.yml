@@ -93,6 +93,19 @@ jobs:
             tofu -chdir="tofu/stacks/${stack}" validate
           done
 
+  docs:
+    name: docs build (strict)
+    # Builds only; deploying is gated separately (D-053). Broken links and anchors
+    # fail the build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "mkdocs-material==9.5.42"
+      - run: mkdocs build --strict
+
   secrets:
     name: gitleaks
     runs-on: ubuntu-latest
