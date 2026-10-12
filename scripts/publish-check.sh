@@ -105,7 +105,8 @@ else:
 
 # --- tracked files, excluding the private internal/ tree -------------------
 listed = subprocess.run(
-    ["git", "-C", str(root), "ls-files", "-z"],
+    # safe.directory: in CI the mounted checkout can be owned by another user.
+    ["git", "-c", "safe.directory=*", "-C", str(root), "ls-files", "-z"],
     capture_output=True, text=True, check=True,
 ).stdout
 files = [f for f in listed.split("\0") if f and not f.startswith("internal/")]
@@ -376,7 +377,7 @@ run_gitleaks() {
   fi
   TMPDIR_PC="$(mktemp -d)"
   trap 'rm -rf "${TMPDIR_PC}"' EXIT
-  git -C "${ROOT}" archive HEAD | tar -x -C "${TMPDIR_PC}"
+  git -c safe.directory='*' -C "${ROOT}" archive HEAD | tar -x -C "${TMPDIR_PC}"
   say "== gitleaks (git archive HEAD) =="
   if gitleaks detect --no-git --source "${TMPDIR_PC}" --redact --verbose; then
     ok "ok: gitleaks found no leaks"
