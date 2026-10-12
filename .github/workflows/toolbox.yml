@@ -1,14 +1,11 @@
 name: toolbox
 
 # Publish the toolbox image so users don't need to build it. Pin by digest in
-# production. Push on main and on version tags.
-#
-# It is also callable (`workflow_call`) so release.yml can build the toolbox and
-# consume its pushed manifest digest as the immutable base for the tool image.
+# production. Pushed on main; on a version tag the release workflow builds it
+# (via `workflow_call`) so the tag does not trigger two concurrent pushes.
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
   workflow_call:
     outputs:
