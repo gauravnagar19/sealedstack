@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# pre-push guard (fixes round 3, §A7): keep the repo's history and identity
+# clean. Refuses to push
+#   - any ref other than refs/heads/main, refs/heads/feat/* and refs/tags/v*,
+#   - any commit or tag whose author, committer or tagger email is not a GitHub
+#     no-reply address (@users.noreply.github.com) or a known CI bot.
+#
+# Installed by scripts/install-hooks.sh. Bypass with `git push --no-verify`
+# only if you know exactly why.
+set -euo pipefail
+
+ZERO="0000000000000000000000000000000000000000"
+status=0
+
+allowed_ref() {
+  case "$1" in
+    refs/heads/main) return 0 ;;
+    refs/heads/feat/*) return 0 ;;
+    refs/tags/v*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+email_ok() {
+  local email="${1#<}"
+  email="${email%>}"
+  case "${email}" in
+    *@users.noreply.github.com) return 0 ;;
+    *dependabot*|*github-actions*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+check_emails() {
+  local label="$1" range="$2" who email
+  while read -r type email; do
+    [[ -n "${email}" ]] || continue
+    if ! email_ok "${email}"; then
+      echo "pre-push: refusing ${label}: ${type} email '${email}' is not a GitHub no-reply address" >&2
+      status=1
+    fi
+  done < <(git log --format='%ae %ae' "${range}" 2>/dev/null | sed 's/^/author /' ; \
+           git log --format='%ce %ce' "${range}" 2>/dev/null | sed 's/^/committer /')
+}
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  [[ -n "${local_ref}" ]] || continue
+  if ! allowed_ref "${remote_ref}"; then
+    echo "pre-push: refusing to push '${remote_ref}' (only main, feat/* and v* tags may be pushed)" >&2
+    status=1
+    continue
+  fi
+
+  if [[ "${remote_oid}" == "${ZERO}" || -z "${remote_oid}" ]]; then
+    range="${local_oid}"
+  else
+    range="${remote_oid}..${local_oid}"
+  fi
+  check_emails "${remote_ref}" "${range}" || true
+
+  if [[ "${remote_ref}" == refs/tags/* ]]; then
+    tagger="$(git for-each-ref --format='%(taggeremail)' "${local_ref}" 2>/dev/null || true)"
+    if [[ -n "${tagger}" ]] && ! email_ok "${tagger}"; then
+      echo "pre-push: refusing tag ${remote_ref}: tagger email '${tagger}' is not a GitHub no-reply address" >&2
+      status=1
+    fi
+  fi
+done
+
+exit "${status}"

@@ -8,8 +8,9 @@
 #
 # Usage:
 #   scripts/publish-check.sh              content + patterns over tracked files
-#   scripts/publish-check.sh --strict     the above, plus gitleaks over `git archive HEAD`
-#   scripts/publish-check.sh --metadata   git history/tags: identities, messages, tags
+#   scripts/publish-check.sh --strict     the above, plus the git identity/metadata
+                                        scan and gitleaks over `git archive HEAD`
+#   scripts/publish-check.sh --metadata   git history/tags only: identities, messages, tags
 #   scripts/publish-check.sh --colors     force colour
 #   scripts/publish-check.sh --no-colors  disable colour (alias: --fixed)
 #
@@ -30,8 +31,9 @@ deny-list internal/publish-denylist.txt and for personal patterns
 
 Usage:
   scripts/publish-check.sh              content + patterns over tracked files
-  scripts/publish-check.sh --strict     the above, plus gitleaks over `git archive HEAD`
-  scripts/publish-check.sh --metadata   git history/tags: identities, messages, tags
+  scripts/publish-check.sh --strict     the above, plus the git identity/metadata
+                                        scan and gitleaks over `git archive HEAD`
+  scripts/publish-check.sh --metadata   git history/tags only: identities, messages, tags
   scripts/publish-check.sh --colors     force colour
   scripts/publish-check.sh --no-colors  disable colour (alias: --fixed)
 
@@ -41,11 +43,13 @@ EOF
 }
 
 MODE="default"
+STRICT=0
+METADATA=0
 COLOR="auto"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --strict) MODE="strict" ;;
-    --metadata) MODE="metadata" ;;
+    --strict) STRICT=1; MODE="strict" ;;
+    --metadata) METADATA=1; [[ "${MODE}" == "default" ]] && MODE="metadata" ;;
     --colors) COLOR="always" ;;
     --no-colors) COLOR="never" ;;
     --fixed) COLOR="never" ;;
@@ -267,7 +271,8 @@ else:
 
 def git(*args):
     return subprocess.run(
-        ["git", "-C", root, *args], capture_output=True, text=True, check=True,
+        ["git", "-c", "safe.directory=*", "-C", root, *args],
+        capture_output=True, text=True, check=True,
     ).stdout
 
 
@@ -388,18 +393,15 @@ run_gitleaks() {
 }
 
 # --- dispatch -------------------------------------------------------------
-case "${MODE}" in
-  metadata)
-    run_metadata_scan
-    ;;
-  strict)
-    run_content_scan
-    run_gitleaks
-    ;;
-  *)
-    run_content_scan
-    ;;
-esac
+if [[ "${STRICT}" -eq 1 ]]; then
+  run_content_scan
+  run_metadata_scan
+  run_gitleaks
+elif [[ "${METADATA}" -eq 1 ]]; then
+  run_metadata_scan
+else
+  run_content_scan
+fi
 
 if [[ "${status}" -eq 0 ]]; then
   ok "publish-check: ok (${MODE})"

@@ -13,6 +13,22 @@ and what's next are tracked in the private development repo.
   SaaS API except to fetch secrets.
 - **One provider per slot until a second is needed** (D-012) — but the registry
   is deliberately broad; new providers are welcome as long as they validate.
+- **Personal data must not reach git.** Commit/tag identity must be a GitHub
+  no-reply address; `scripts/publish-check.sh --strict --metadata` fails on any
+  other identity, and a `pre-push` hook blocks it (see below).
+
+## Install the git hooks
+
+Run this once after cloning (it symlinks the hooks into `.git/hooks/`):
+
+```sh
+scripts/install-hooks.sh
+```
+
+The `pre-push` hook refuses to push any ref other than `main`, `feat/*` and
+`v*` tags, and refuses any commit or tag whose author/committer/tagger email is
+not `@users.noreply.github.com` (or a known CI bot). It protects the clean
+history and the no-reply identity; don't bypass it with `--no-verify`.
 
 ## Before you open a PR
 
