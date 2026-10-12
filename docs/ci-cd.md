@@ -12,12 +12,12 @@
 The **Release** layer ([spec.md §2](spec.md#2-architecture-golden-path)) is the
 app repo's own CI. sealedstack builds the place (a Dokploy compose service);
 the app's CI ships the version. This is **D-015**
-([decisions.md](decisions.md#d-015--app-ci-owns-releases-sealedstack-owns-placement--2026-10-11--accepted)):
+([decisions.md](decisions.md)):
 sealedstack creates services with **auto-deploy off**, and each app repo's
 pipeline deploys by calling the Dokploy API.
 
 In the registry this is the `ci` slot: `registry/ci.yaml`, listed by
-`just providers ci`. `github-actions` is the default and the only implemented
+`sealedstack debug providers ci`. `github-actions` is the default and the only implemented
 implementation; the rest are registered as `planned`. It is an optional slot in
 `config/stack.yaml` (`ci: github-actions`).
 
@@ -60,7 +60,7 @@ off. The CI only triggers the deploy of the **existing** compose service.
 ## 2. Tailscale for CI: an OAuth client and `tag:ci`
 
 The job must reach the Dokploy panel, and only that. The edge stack already
-owns the whole ACL ([D-014](decisions.md#d-014--opentofu-owns-the-entire-tailscale-acl--2026-10-11--accepted),
+owns the whole ACL ([D-014](decisions.md),
 `tofu/stacks/edge/main.tf`, `locals.tailscale_policy`): `tag:ci` is owned by `autogroup:admin`, and
 the one grant CI gets is:
 
@@ -231,8 +231,16 @@ long-lived Tailscale secret.
 
 ## 7. Publish the compose id (`DOKPLOY_APP_ID`)
 
+> **Automatic with sealedstack.** `apply` and `up` publish these settings to each
+> app repo for you, through the forge adapter: the variables
+> `SEALEDSTACK_COMPOSE_IDS`, `SEALEDSTACK_DOKPLOY_URL`,
+> `SEALEDSTACK_TS_OAUTH_CLIENT_ID`, `SEALEDSTACK_TS_AUDIENCE` and
+> `SEALEDSTACK_REGISTRY`, and the secret `SEALEDSTACK_DOKPLOY_API_KEY` in the
+> `production` environment (`sealedstack debug publish` re-runs it). The manual
+> steps below are for CI systems the adapter does not cover yet.
+
 The platform stack creates the app's compose service and exposes its id. After
-`just apply`:
+`sealedstack apply` (the CI run after you merge):
 
 ```sh
 tofu -chdir=tofu/stacks/platform output -json compose_ids
@@ -252,7 +260,7 @@ gh secret set DOKPLOY_API_KEY --repo you/shop --body "<from Bitwarden>"
 - `DOKPLOY_API_KEY` lives in Bitwarden `infra` (`DOKPLOY_API_KEY`); it is created
   by Dokploy on first boot.
 - `DOKPLOY_APP_ID` is the `compose_ids[<app>][<server>]` value above. On
-  `just apply` it can change; re-publish it then (v0.2 automates this).
+  `apply` it can change; re-publish it then (v0.2 automates this).
 
 `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` (or `TS_AUTHKEY`) are per tailnet, not
 per app, so they can be org-wide or duplicated per repo.
@@ -273,7 +281,7 @@ per app, so they can be org-wide or duplicated per repo.
 | AWS CodeBuild | Tailscale client (auth key) in `buildspec.yml` | `TS_AUTHKEY`, `DOKPLOY_URL`, `DOKPLOY_API_KEY`, `DOKPLOY_APP_ID` | <https://docs.aws.amazon.com/codebuild/latest/userguide/welcome.html> |
 
 The `ci` registry entries (`registry/ci.yaml`) record the same secret names, so
-`just providers ci` and the registry stay the source of truth.
+`sealedstack debug providers ci` and the registry stay the source of truth.
 
 ## Related
 

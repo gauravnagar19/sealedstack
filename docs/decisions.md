@@ -112,7 +112,7 @@ Format: **D-NNN — title** · date · status.
 
 ### D-025 — Releases stay with app CI; sealedstack never touches release fields · 2026-10-11 · accepted
 **Decision:** Release fields (`APP_VERSION` and the deployed tag) belong to the app's CI. sealedstack manages only the env keys it owns (DB URLs, injected secrets) and ignores drift on release fields.
-**Why:** It fixes review N9, where `just apply` reset the tag to `main`, and it keeps D-015.
+**Why:** It fixes review N9, where an `apply` run reset the tag to `main`, and it keeps D-015.
 
 ### D-026 — Tailscale: one tailnet, "your file, our block" · 2026-10-11 · accepted (refines D-014)
 **Decision:** On first run, the user's existing Tailscale policy is imported verbatim into the infra repo (`config/tailscale-policy.hujson`). sealedstack adds and tests only its own tags and rules. Applying refuses to run until that file exists.

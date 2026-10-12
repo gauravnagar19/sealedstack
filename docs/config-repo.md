@@ -2,7 +2,10 @@
 
 `config/` holds your servers, domains, app placement and provider settings — the
 only user-specific files in sealedstack. It is kept separate so the generic code
-can be public while your topology stays private (D-020).
+can be public while your topology stays private (D-022). In the normal CI-first
+setup this is already the case: `config/` lives in your private infra repo, and
+the engine reads it through `SEALEDSTACK_CONFIG=/infra/config`. This page explains
+the variable for the other layouts.
 
 Every script resolves the config directory from a single source of truth:
 
@@ -39,11 +42,10 @@ sealedstack at it:
 ```sh
 git clone git@github.com:you/sealedstack-config.git ../sealedstack-config
 export SEALEDSTACK_CONFIG="$(pwd)/../sealedstack-config"   # absolute path is clearest
-just validate
+sealedstack check
 ```
 
-Add the export to your shell profile, or prefix each `just` recipe (the toolbox
-passes the environment through). Keep it out of committed files.
+Keep the export out of committed files.
 
 ## Option B — a git submodule at `config/`
 
@@ -63,11 +65,11 @@ variable is needed.
 checkout:
 
 ```sh
-SEALEDSTACK_CONFIG=/mnt/ss-config just apply
+SEALEDSTACK_CONFIG=/mnt/ss-config sealedstack plan
 ```
 
-`just init` (or `scripts/init.py`) writes to the resolved directory and creates
-it if needed; pass `--config-dir` to override the environment for a single run:
+`sealedstack setup` writes to the resolved directory and creates it if needed;
+pass `--config-dir` to override the environment for a single run:
 
 ```sh
 python3 scripts/init.py --config-dir ../sealedstack-config
@@ -76,8 +78,8 @@ python3 scripts/init.py --config-dir ../sealedstack-config
 ## Verify
 
 ```sh
-SEALEDSTACK_CONFIG=/path/to/config python3 scripts/validate.py
+SEALEDSTACK_CONFIG=/path/to/config sealedstack check
 ```
 
-The paths printed by `validate`/`render` are informational (`config/...`), but
+The paths printed by `check` and `debug render` are informational (`config/...`), but
 the file reads and writes come from `SEALEDSTACK_CONFIG`.

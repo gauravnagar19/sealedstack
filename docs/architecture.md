@@ -36,9 +36,9 @@ Design invariants:
 
 | Layer | Scope | Tool | Runs from |
 |---|---|---|---|
-| **Host** | OS, users, SSH, mesh join, firewall, Docker, Dokploy, self-hosted gate/ingress | Ansible (`ansible/`) | the toolbox container |
-| **Edge** | tunnels, DNS, Access/gate, WAF, bot rules, Tailscale ACL, backup destination, secret writes | OpenTofu (`tofu/stacks/edge`) | the toolbox |
-| **Platform** | Dokploy projects, compose services, domains, databases, backups, tunnel connectors, workers | OpenTofu (`tofu/stacks/platform`) | the toolbox |
+| **Host** | OS, users, SSH, mesh join, firewall, Docker, Dokploy, self-hosted gate/ingress | Ansible (`ansible/`) | the engine image, in CI |
+| **Edge** | tunnels, DNS, Access/gate, WAF, bot rules, Tailscale ACL, backup destination | OpenTofu (`tofu/stacks/edge`) | the engine image, in CI |
+| **Platform** | Dokploy projects, compose services, domains, databases, backups, tunnel connectors, workers | OpenTofu (`tofu/stacks/platform`) | the engine image, in CI |
 | **Release** | building and deploying an app version | the app repo's CI (`ci` slot) | the app's CI |
 
 There is also a **compute** stack (`tofu/stacks/compute`) that provisions or
@@ -60,14 +60,14 @@ configures servers and their provider firewalls, and a one-shot **state** stack.
 
 Every external dependency is a slot with a contract (spec §4). The catalog lives
 in `registry/<slot>.yaml` and is validated by `schemas/registry.schema.json`.
-`just providers` lists it.
+`sealedstack debug providers` lists it.
 
 ```
 config/stack.yaml   slots: { compute: hetzner, backup: r2, gate: cloudflare_access, ... }
         │
         ▼
-registry/<slot>.yaml  ──►  just validate (selected impl must exist & not be planned)
-        │                        just doctor (required secrets/tools)
+registry/<slot>.yaml  ──►  sealedstack check (selected impl must exist & not be planned;
+        │                        required secrets and permissions)
         ▼
 stacks dispatch on the slot  ──►  tofu/modules/<slot>_<impl>  |  ansible/roles/<slot>_<impl>  |  scripts/<adapter>
 ```
@@ -76,7 +76,7 @@ Dispatch:
 
 - **compute** — per server (`config/servers.yaml` `provider`); `stacks/compute`
   has one module block per provider. A provider with `creates_server: true` is
-  provisioned by `just server-up`, which then discovers the IP.
+  provisioned by `sealedstack up` / `server add`, which then discovers the IP.
 - **mesh / ingress / gate / secrets / backup** — the edge stack branches on
   `local.slots.<slot>`. `tofu/stacks/edge/main.tf` is the reference for this.
 - **platform** — `stacks/platform` (Dokploy today).
@@ -97,12 +97,12 @@ a module/role/adapter (see [AGENTS.md](../AGENTS.md)).
   `engine/sealedstack/secrets.py`; the edge stack writes tunnel tokens back.
 - **Backups** — a `dokploy_destination` on the selected backup slot; per-DB
   scheduled backups with retention, an optional second destination (3-2-1), and
-  `just app-restore` / `just db-drill`. Dokploy's own DB is backed up to
+  `sealedstack db restore` / `db drill`. Dokploy's own DB is backed up to
   `_dokploy/`.
 
 ## Reproducible rendering
 
-`just render` fetches each app's `sealedstack.yaml` manifest and merges it with
+`sealedstack debug render` (run by `check`, `plan` and `apply`) fetches each app's `sealedstack.yaml` manifest and merges it with
 its placement entry, writing `.build/`. The tofu stacks read only `.build/`, so
 a plan is reproducible from a rendered snapshot. `.build/env.json` (written by
 `sealedstack.buildenv` + `sealedstack.userauth`) carries app secrets and
@@ -127,7 +127,7 @@ Layers of defence (spec §13):
 ## Repository map
 
 ```
-justfile            single entrypoint (runs in the toolbox)
+justfile            contributor aliases for the CLI (runs in the toolbox)
 toolbox/Dockerfile  the pinned image (tofu, ansible, bws, sops, aws, ...)
 config/             the only user-specific values (+ *.example.yaml)
 registry/           provider catalog, one file per slot

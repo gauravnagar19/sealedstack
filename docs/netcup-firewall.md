@@ -2,8 +2,9 @@
 
 Netcup is managed in two ways (v0.4). Either the SCP REST adapter automates the
 firewall (see [providers.md](providers.md)) once `config/providers/netcup.yaml`
-is filled in from the SCP API docs — or, while that file is absent, `just
-server-up` prints the rule table and pauses for you to apply it by hand. From
+is filled in from the SCP API docs, or, while that file is absent,
+`sealedstack server add` prints the rule table and pauses for you to apply it by
+hand. From
 [spec.md §7.4](spec.md#74-provider-firewall-compute-slot).
 
 ## Rule table (the same on every provider)
@@ -22,10 +23,10 @@ server-up` prints the rule table and pauses for you to apply it by hand. From
 ## Order of operations
 
 1. In the SCP, apply the rule table above, **and temporarily allow inbound TCP 22**.
-2. Run `just server-up server-1`. It reads the public IP from `SERVER_IP_SERVER_1`
+2. Run `add-server` for `server-1` (Actions, Run workflow, `add-server --name server-1`; `sealedstack server add server-1` in a break-glass session). It reads the public IP from `SERVER_IP_SERVER_1`
    (a bootstrap secret, D-049). Bootstrap replaces password auth
    with your key and joins Tailscale.
-3. When `just` pauses after bootstrap, **remove the temporary TCP 22 rule** in the
+3. When the run pauses after bootstrap, **remove the temporary TCP 22 rule** in the
    SCP and confirm.
 4. The rest of the run happens over Tailscale.
 

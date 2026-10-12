@@ -16,6 +16,12 @@
 > provider maturity (§4), the app manifest `build` block (§5.4), Tailscale policy
 > management (§8), the Dokploy ownership/env contract (§9), commands (§10, now a CLI),
 > the delivery plan (§15, milestones M0–M5) and risks (§16, R8–R10).
+>
+> **Update (CI-first):** the signed-off [user experience](user-experience.md)
+> (D-034 to D-053) wins wherever it differs from this document. The engine runs in
+> the user's own CI from a pinned container image, users install nothing, and the
+> only commands users see are `sealedstack <noun> <verb>` (§10, §14). `just` is a
+> contributor convenience only.
 
 ## 1. What it is
 
@@ -67,9 +73,9 @@ There are four layers, each with one tool:
 
 | Layer | Scope | Tool | Runs from |
 |---|---|---|---|
-| **Host** | OS, users, SSH, mesh join, firewall, Docker, Dokploy | Ansible | Toolbox container on the laptop |
-| **Edge** | Tunnels, DNS, Access, WAF, bot settings, Tailscale ACL and auth keys, R2 buckets | OpenTofu (`stacks/edge`) | Toolbox |
-| **Platform** | Dokploy projects, compose services, domains, databases, backups, tunnel connectors | OpenTofu (`stacks/platform`) | Toolbox |
+| **Host** | OS, users, SSH, mesh join, firewall, Docker, Dokploy | Ansible | The engine image, in CI |
+| **Edge** | Tunnels, DNS, Access, WAF, bot settings, Tailscale ACL and auth keys, R2 buckets | OpenTofu (`stacks/edge`) | The engine image, in CI |
+| **Platform** | Dokploy projects, compose services, domains, databases, backups, tunnel connectors | OpenTofu (`stacks/platform`) | The engine image, in CI |
 | **Release** | Building and deploying a version of an app | The app repo's own CI (GitHub Actions → Tailscale → Dokploy API) | GitHub |
 
 **Layering rule:** OpenTofu never SSHes into a server, and Ansible never calls a SaaS API except to fetch secrets.
@@ -80,7 +86,7 @@ There are four layers, each with one tool:
 
 | Repo | Contains | Visibility |
 |---|---|---|
-| `sealedstack` | Generic Ansible roles, OpenTofu modules and stacks, the `justfile`, the toolbox image and docs. Also `config/` during the MVP. | Private now. Public at v1.0, after `config/` moves out. |
+| `sealedstack` | Generic Ansible roles, OpenTofu modules and stacks, the `justfile`, the toolbox image and docs. Also `config/` during the MVP. | Private. Going public is a late step that only the owner can confirm (D-053). |
 | `sealedstack-config` (v0.5) | The user's `config/` directory | Private |
 | App repos (e.g. `example-app`, `shop`) | Code, `docker-compose.yml`, `sealedstack.yaml` manifest, release CI | Unchanged |
 
@@ -88,7 +94,7 @@ There are four layers, each with one tool:
 
 ```
 sealedstack/
-  justfile                      # single entrypoint (§10)
+  justfile                      # contributor aliases for the CLI (§10)
   toolbox/Dockerfile            # tofu, ansible, bws, just, sops, aws, check-jsonschema
   schemas/                      # JSON Schemas for every config file (validated before any run)
   ansible/
@@ -234,14 +240,14 @@ user_auth:
   webhook_paths: [/api/webhooks/clerk]      # exempted from the gate; the app verifies signatures
 ```
 
-**Rules for app compose files** (checked by `just validate`):
+**Rules for app compose files** (checked by `sealedstack check`):
 
 - No `ports:` on any service. Traffic arrives through Traefik on `dokploy-network`.
 - No database service inside the compose file when that database is declared under `needs:`.
 
 ### 5.5 Merge rule
 
-`just render` fetches each app's manifest at `source.ref` using `gh api`, merges it with the app's `apps.yaml` entry, and writes `.build/apps/<app>.json`. The OpenTofu stacks read only `.build/`, so a plan is reproducible from a rendered snapshot.
+`sealedstack debug render` (run as part of `check`, `plan` and `apply`) fetches each app's manifest at `source.ref` through the forge adapter, merges it with the app's `apps.yaml` entry, and writes `.build/apps/<app>.json`. The OpenTofu stacks read only `.build/`, so a plan is reproducible from a rendered snapshot.
 
 ---
 
@@ -263,13 +269,13 @@ user_auth:
 
 | Machine account | Access |
 |---|---|
-| `laptop` | read/write to `infra`, `prod`, `staging` |
-| `github-actions` | read access to `prod` only |
+| `ci` (the infra repo's `BWS_ACCESS_TOKEN`) | **read-only** access to `infra` and `prod` |
+| `app-ci` (per app repo, optional) | read access to `prod` only |
 | (spare) | — |
 
 **Flow:**
 
-- OpenTofu **writes** the secrets it creates (tunnel tokens, R2 keys) back into Secrets Manager.
+- sealedstack only **reads** Secrets Manager (D-038). Everything it generates (tunnel tokens, database passwords) lives in the encrypted OpenTofu state, never back in the secret source.
 - The platform stack **reads** `<app>.*` and sets the values as Dokploy environment variables.
 - Nothing is ever written to git. `.build/` is gitignored.
 
@@ -318,7 +324,7 @@ These close Docker's well-known bypass of UFW (D-005):
 
 | Provider | MVP behaviour |
 |---|---|
-| `any-ssh` / `netcup` | `just server-up` prints the exact rule table and waits for the operator to confirm it is applied |
+| `any-ssh` / `netcup` | `sealedstack server add` prints the exact rule table and waits for the operator to confirm it is applied |
 | `hetzner` (v0.4) | `hcloud_firewall` resource via OpenTofu |
 | `hostinger` (v0.4) | API if one is usable; otherwise printed, as for Netcup |
 
@@ -335,7 +341,7 @@ The rule table, the same on every provider:
 | in | UDP | * | * | DROP | |
 | out | TCP | * | 25, 465, 587 | DROP | Provider default; outbound email goes through an HTTPS API |
 
-**Public port 22 handling.** It is open only during `bootstrap.yml`. On providers where the firewall is applied by hand, `just server-up` tells the operator to apply the rule table first and temporarily allow TCP 22, then pauses after bootstrap until they remove that rule.
+**Public port 22 handling.** It is open only during `bootstrap.yml`. On providers where the firewall is applied by hand, `server add` tells the operator to apply the rule table first and temporarily allow TCP 22, then pauses after bootstrap until they remove that rule.
 
 ---
 
@@ -378,18 +384,22 @@ Use the community provider `vanillauys/dokploy`, pinned to an exact version. **v
 
 ## 10. Commands
 
-Every command runs inside the toolbox container. `BWS_ACCESS_TOKEN` is passed through from the shell.
+Every command is `sealedstack <noun> <verb>`. It is the same vocabulary as a workflow input, a `/sealedstack` pull request comment and, optionally, a terminal in a Codespace (D-042). `check` runs before every other command. Locally, only the read-only commands work; writes need CI or the guarded `--break-glass` (D-045). The full reference, with approvals, is [user-experience.md §12.1](user-experience.md#121-commands-ci-input-pr-comment-and-local-all-the-same).
 
 | Command | Does |
 |---|---|
-| `just validate` | Schema-checks `config/`, renders the app manifests, and lints the compose rules |
-| `just state-init` | Run once: creates the state bucket (local state) and stores its credentials |
-| `just server-up <name>` | Mints a mesh auth key, runs `bootstrap.yml`, then `site.yml`; prints the provider firewall table |
-| `just server-sync [name]` | Re-runs `site.yml` (drift correction, upgrades) |
-| `just plan` / `just apply` | Runs `render`, then edge, then platform |
-| `just app-restore <app> [backup-id]` | Restores the latest (or a named) backup into the app's primary database |
-| `just doctor` (v0.5) | Checks tokens, permissions, zone and ACL |
-| `just init` (v0.5) | Interactive wizard that writes `config/` |
+| `sealedstack setup` | Writes `config/` and opens the Setup PR with the living checklist |
+| `sealedstack check` | Preflight: schemas, secrets, token permissions, version pins; read-only |
+| `sealedstack plan` | Renders the app manifests, then plans edge and platform; read-only |
+| `sealedstack apply` | Renders, then applies edge and platform from the merged `main` |
+| `sealedstack up` | Converges everything: state bucket, edge, server bootstrap and baseline, platform, verify, Status issue; re-running resumes |
+| `sealedstack server add <name>` (`add-server`) | Mints a mesh auth key, runs `bootstrap.yml`, then `site.yml`; prints the provider firewall table |
+| `sealedstack server sync [name]` | Re-runs `site.yml` (drift correction, upgrades) |
+| `sealedstack app add` (`add-app`) | Opens the infra PR and the app-repo onboarding PR |
+| `sealedstack db restore <app> [backup]` (`restore`) | Restores the latest (or a named) backup into the app's primary database |
+| `sealedstack db drill <app>` (`drill`) | Restores the latest backup into a throwaway database and checks it |
+| `sealedstack status` | Health, versions, backups and drift; updates the Status issue |
+| `sealedstack debug render\|publish\|providers` | Internals for troubleshooting |
 
 ---
 
@@ -430,16 +440,21 @@ Every command runs inside the toolbox container. `BWS_ACCESS_TOKEN` is passed th
 
 ## 14. Prerequisites
 
+Users install nothing locally: a browser, a Git hosting account and the credentials below are enough (D-034, D-044). The Setup checklist verifies every item. The step-by-step version is [prerequisites.md](prerequisites.md).
+
 | Requirement | Mandatory | Notes |
 |---|---|---|
 | A domain on Cloudflare nameservers | ✅ | Tunnel hostnames and Access require a Cloudflare zone |
 | Cloudflare account (Free plan) with Zero Trust enabled | ✅ | Zero Trust and R2 may ask for a payment method even on free plans |
-| Cloudflare API token | ✅ | Account: Cloudflare Tunnel Edit, Access Apps and Policies Edit, Workers R2 Storage Edit. Zone: DNS Edit, Zone WAF Edit, Bot Management Edit, Single Redirect Edit |
-| Tailscale account | ✅ | API access token or OAuth client with ACL and auth-key scopes; MagicDNS on |
-| Bitwarden account plus a free organisation with Secrets Manager | ✅ | 1 machine-account token for the laptop |
-| GitHub account | ✅ | App repos; `gh` authenticated in the toolbox |
+| Cloudflare API token (`CLOUDFLARE_API_TOKEN`) | ✅ | Account: Cloudflare Tunnel Edit, Access Apps and Policies Edit, Workers R2 Storage Edit. Zone: DNS Edit, Zone WAF Edit, Bot Management Edit, Single Redirect Edit. Target design: R2 S3 keys are derived from it (D-044); today they are still the separate `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` secrets |
+| Tailscale account with MagicDNS on, and an OAuth client | ✅ | Scopes `policy_file`, `auth_keys`, `devices:core`. Server auth keys are minted from it; no long-lived API key |
+| `STATE_PASSPHRASE` | ✅ | At least 16 characters; encrypts the OpenTofu state (key name configurable, default `state_passphrase`) |
+| Bitwarden account plus a free organisation with Secrets Manager | ✅ | One **read-only** machine-account token, held in CI as `BWS_ACCESS_TOKEN` |
+| Server credentials, per existing server | ✅ for Netcup / any-ssh | `SERVER_IP_<NAME>` and `ROOT_PASSWORD_<NAME>`; the key names are declared in `servers.yaml` under `bootstrap` (D-049, D-050). API providers need only their token |
+| `admin.ssh_keys` in `stack.yaml` | ✅ | Operator SSH public keys, installed at bootstrap (not secrets, D-040) |
+| Bot identity (`sealedstack-bot`) | ✅ | A user-owned GitHub App created from the Setup checklist's manifest link (D-039) |
+| A GitHub account and a private infra repository | ✅ | Hosts the two bootstrap files and runs the engine in GitHub Actions |
 | A server: Ubuntu 24.04 or Debian 12, ≥ 2 vCPU / 4 GB / 40 GB (control) | ✅ | Workers: ≥ 1 vCPU / 2 GB |
-| Docker on the laptop | ✅ | Everything else is in the toolbox image |
 | Clerk account | Only for `user_auth: clerk` apps | |
 
 ---
@@ -450,7 +465,7 @@ Every command runs inside the toolbox container. `BWS_ACCESS_TOKEN` is passed th
 
 **Scope:**
 
-- Repo skeleton, toolbox image, `schemas/`, `just validate`.
+- Repo skeleton, toolbox image, `schemas/`, `sealedstack check`.
 - `state` stack on R2 with state encryption.
 - Ansible: `bootstrap.yml` and `site.yml` with every role in §7.
 - Edge: Tailscale ACL and auth key; tunnel, DNS, Access (policy + app + catch-all), WAF rule and bot settings for the `hello` app.
@@ -459,21 +474,21 @@ Every command runs inside the toolbox container. `BWS_ACCESS_TOKEN` is passed th
 
 **Acceptance criteria**, on a freshly wiped Netcup server:
 
-1. `just server-up server-1` then `just apply` finishes without errors in ≤ 15 minutes (not counting the manual firewall step).
+1. `sealedstack up` (Run workflow, then one approval) finishes without errors in ≤ 15 minutes from an empty server (not counting the manual firewall step).
 2. From an external network, TCP ports `22, 80, 443, 3000, 8080` on the public IP all time out.
 3. `https://hello.example.com` returns 302 to the Access login; after logging in as the owner, whoami output shows.
 4. `https://hello.example.com/.env` returns 403.
 5. `ssh server-1` works over Tailscale, and `http://server-1:3000` shows the Dokploy panel.
-6. Re-running `just server-sync` and `just apply` produces **no changes**.
+6. Re-running `sealedstack server sync` and `sealedstack apply` produces **no changes**.
 7. `git grep` finds no secret values; `config/` contains no IP addresses.
 
 ### v0.2: Real apps
 
-example-app and shop onboarded; `sealedstack.yaml` manifests; `just render`; Clerk plumbing (secret injection, DNS-only Clerk records, webhook bypass); the `www` → apex redirect; `DOKPLOY_APP_ID` published to the app repos; removing `ports:` and the in-compose Postgres from example-app.
+example-app and shop onboarded; `sealedstack.yaml` manifests; manifest rendering; Clerk plumbing (secret injection, DNS-only Clerk records, webhook bypass); the `www` → apex redirect; `DOKPLOY_APP_ID` published to the app repos; removing `ports:` and the in-compose Postgres from example-app.
 
 ### v0.3: Durable data
 
-R2 backup destination, Dokploy-managed Postgres, `restore_on_create`, `just app-restore`, weekly restore drill, Dokploy self-backup, and a documented full rebuild drill.
+R2 backup destination, Dokploy-managed Postgres, `restore_on_create`, `sealedstack db restore`, weekly restore drill, Dokploy self-backup, and a documented full rebuild drill.
 
 ### v0.4: Multi-server
 
@@ -481,7 +496,7 @@ R2 backup destination, Dokploy-managed Postgres, `restore_on_create`, `just app-
 
 ### v0.5: Developer experience and open source (beta)
 
-`just init`, `just doctor`, `just release-status`; the `secrets: sops`
+`sealedstack setup`, `sealedstack check`, the provider release gate; the `secrets: sops`
 implementation; the `config/` split into its own repo (`SEALEDSTACK_CONFIG`);
 public docs; CI for this repo (ansible-lint, `tofu validate`, gitleaks); publish
 the toolbox image to GHCR. Kept in beta until v1.0.

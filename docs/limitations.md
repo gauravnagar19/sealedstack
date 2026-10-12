@@ -22,15 +22,16 @@ config/apps.example.yaml           config/providers/*.example.yaml
 ```
 
 `config/stack.yaml`, `config/servers.yaml`, `config/apps.yaml` and
-`config/tailscale-policy.hujson` are all in `.gitignore`. **`just validate`,
-`just plan` and `just apply` all need a real `config/` to exist.** On a fresh
-checkout they fail until you create one.
+`config/tailscale-policy.hujson` are all in `.gitignore`. **`check`, `plan`
+and `apply` all need a real `config/` to exist.** In your infra repo, the Setup
+job creates it as a pull request; in a fresh checkout of the tool repo they fail
+until you create one.
 
-Run locally in one of three ways:
+Contributors running the tool from a checkout can create one in three ways:
 
 ```sh
 # 1. Interactive wizard
-just init
+sealedstack setup
 
 # 2. Copy the samples and edit
 cp config/stack.example.yaml   config/stack.yaml
@@ -44,7 +45,7 @@ export SEALEDSTACK_CONFIG=/absolute/path/to/your-config
 `SEALEDSTACK_CONFIG` is the single source of truth for the config directory;
 when it is unset, scripts fall back to `<repo>/config`. See
 [config-repo.md](config-repo.md) and [getting-started.md](getting-started.md)
-(step 6, "Write your config").
+(the Setup step).
 
 ## OpenTofu version floor
 
@@ -126,25 +127,16 @@ best-effort. It may **silently skip** deletions when:
 
 Retention never breaks a build; it just may not happen.
 
-## mkdocs link validation is disabled
+## Documentation links are checked by the tests
 
-`mkdocs.yml` turns off the stricter checks:
+`mkdocs.yml` reports broken relative links and missing anchors as warnings, and the
+docs build runs with `--strict`, so a broken cross-reference fails the build.
+Absolute and non-page links (for example to files in the repository) are checked by
+the test suite (`tests/pytest/test_docs.py`).
 
-```yaml
-validation:
-  links:
-    absolute_links: ignore
-    unrecognized_links: ignore
-    anchors: ignore
-```
+## The end-to-end test spends real money and touches real accounts
 
-So **broken relative links and missing anchors are not caught by the docs
-build**. A green `mkdocs build` does not prove every cross-reference resolves;
-verify links by hand when you add one.
-
-## `just e2e` spends real money and touches real accounts
-
-`just e2e` (via `engine/sealedstack/e2e.py`) creates a real VM, bootstraps it, applies the
+The end-to-end test (`python3 -m sealedstack.e2e`, a contributor tool) creates a real VM, bootstraps it, applies the
 edge and platform stacks against a real Cloudflare/Tailscale/Bitwarden account,
 then destroys everything. It is intentionally hard to run by accident:
 

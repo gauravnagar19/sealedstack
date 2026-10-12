@@ -1,161 +1,228 @@
 # Getting started
 
-This is the full first-time setup: what accounts and credentials you need, where
-to get them, and the commands to go from an empty box to a running app.
+From nothing to a sealed server running your first app, **without installing
+anything**. You need a browser, a GitHub account and the accounts listed in
+[prerequisites](prerequisites.md). The engine runs in your own GitHub Actions; you
+only click, read and merge.
+
+This page is the short path. Every screen, comment and message is shown in the
+[user experience](user-experience.md); this page links there instead of repeating
+it.
+
+> **Status.** sealedstack is pre-release and has not run against live accounts
+> yet (see the [README](../README.md#providers)). The steps below are the signed-off
+> flow. Where the current implementation still differs from it, this page says so.
+
+| Time | |
+|---|---|
+| First setup, including creating accounts and tokens | about 45 minutes of your time |
+| `up`: empty server to a running `hello` app | 2 clicks, about 15 minutes |
 
 ## The stack
 
-sealedstack is assembled from **slots** — one implementation per external
-dependency — so "the stack" is simply your choice of provider in each slot. Pick
-it first. This guide sets up the **reference stack** below:
+sealedstack is assembled from **slots**, one implementation per external
+dependency. This guide uses the **golden path**:
 
-| Slot | Reference provider | Other options (`just providers <slot>`) |
-|---|---|---|
-| compute | hetzner | digitalocean, vultr, linode, scaleway, aws, gcp, azure, netcup, any-ssh |
-| mesh | tailscale | zerotier, netbird, headscale, … |
-| ingress | cloudflare | ngrok, caddy, traefik, nginx, frp, pangolin |
-| gate | cloudflare_access | authentik, authelia, oauth2-proxy, pomerium, keycloak, … |
-| secrets | bitwarden | sops, aws_ssm, gcp, azure_kv, openbao, vault |
-| backup | r2 | s3, b2, wasabi, spaces, minio, storj, … |
-| platform | dokploy | (more planned) |
-| user_auth | clerk | oidc (any provider) |
-| ci | github-actions | gitlab-ci, gitea-actions, woodpecker, … |
+| Slot | Golden path |
+|---|---|
+| compute | an existing server (`netcup` or `any-ssh`), or `hetzner` (created for you) |
+| mesh | tailscale |
+| ingress and gate | Cloudflare Tunnel and Cloudflare Access |
+| secrets | Bitwarden Secrets Manager (read-only) |
+| backup and state | R2 |
+| platform | Dokploy |
+| registry | GHCR |
+| user auth | Clerk (only for apps that use it) |
+| forge and CI | GitHub and GitHub Actions |
 
-**Any slot can be swapped** with one line in `config/stack.yaml`, and compute is
-chosen per server in `config/servers.yaml`. The sections below configure the
-reference stack; if you pick a different provider in a slot, use **its**
-credentials instead of the reference one (for example `DIGITALOCEAN_TOKEN`
-instead of `HCLOUD_TOKEN`, or `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` for a
-non-R2 backup). Cloudflare is used by the reference stack for DNS, R2 state and
-WAF; it is still needed unless you also change `slots.ingress`, `slots.gate` and
-`state.backend`. See [providers.md](providers.md).
+Other implementations exist but are experimental. See
+[providers](providers.md). If you pick one, use its credentials instead of the
+golden-path ones.
 
-## 0. What you need
+## 1. Create the infra repo
 
-| Thing | Why | Where |
-|---|---|---|
-| Domain on Cloudflare nameservers | tunnels + Access need a Cloudflare zone | dash.cloudflare.com |
-| Cloudflare account (Free plan) | Tunnel, Access, WAF, R2 | dash.cloudflare.com |
-| Tailscale account (MagicDNS on) | admin access over a private mesh | tailscale.com |
-| Bitwarden account + free org with Secrets Manager | machine secrets | bitwarden.com |
-| GitHub account + `gh` | app repos; `gh` reads `sealedstack.yaml` | github.com |
-| A server (or a provider token to create one) | the origin | see provider table |
-| Docker + `just` on your laptop | everything runs in the toolbox | `brew install just` |
-| Clerk account | only for `user_auth: clerk` apps | clerk.com |
+Create an **empty private repository** with any name (the examples use
+`my-infra`). In its settings, enable **Allow GitHub Actions to create and approve
+pull requests**. This is needed once, so the first Setup PR can be opened before
+the bot identity exists.
 
-## 1. Cloudflare
+## 2. Add two files
 
-1. Add your domain to Cloudflare and point the registrar at Cloudflare's
-   nameservers.
-2. Enable **Zero Trust** (pick a team name, e.g. `example`). The Access login
-   will be `example.cloudflareaccess.com`.
-3. Create an **API token** (My Profile → API Tokens → Create):
-   - Account: **Cloudflare Tunnel: Edit**, **Access: Apps and Policies: Edit**,
-     **Workers R2 Storage: Edit**
-   - Zone (`example.com`): **DNS: Edit**, **Zone WAF: Edit**,
-     **Bot Management: Edit**, **Single Redirect: Edit**
-4. Note your **Account ID** and **Zone ID** (not secrets).
+Commit both to `main`.
 
-## 2. Tailscale
+`sealedstack.version`
 
-1. Sign in; enable **MagicDNS** and **HTTPS certificates**.
-2. Create an **OAuth client** (Settings → OAuth clients) with scopes
-   `policy_file`, `auth_keys` and `devices:core`. This is
-   `TAILSCALE_OAUTH_CLIENT_ID` / `TAILSCALE_OAUTH_CLIENT_SECRET`; server auth
-   keys are minted from it (Task 4.2), so no long-lived API key is needed.
-
-## 3. Bitwarden Secrets Manager
-
-1. Create a free organisation and enable Secrets Manager.
-2. Create three projects: `infra`, `prod`, `staging`.
-3. Create one **machine account** for the laptop and copy its access token — this
-   is `BWS_ACCESS_TOKEN` (the only secret you handle directly).
-4. Add the `infra` secrets (see [providers](#5-provider-credentials) and
-   [prerequisites](prerequisites.md)):
-
-   | Secret | Value |
-   |---|---|
-   | `CLOUDFLARE_API_TOKEN` | from step 1 |
-   | `TAILSCALE_OAUTH_CLIENT_ID` / `TAILSCALE_OAUTH_CLIENT_SECRET` | from step 2 |
-   | `state_passphrase` | any long random string |
-   | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | created in step 4 |
-   | `admin_sudo_password` | a password for the Linux `admin_user` |
-   | `DOKPLOY_API_KEY` | created by Dokploy after first boot |
-   | provider tokens | `HCLOUD_TOKEN`, `DIGITALOCEAN_TOKEN`, ... |
-
-5. **R2 credentials** (for state + backups): Cloudflare dashboard → R2 → **Manage
-   R2 API Tokens** → Create → give it Object Read & Write. Copy the access key
-   id and secret key into `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`.
-
-## 4. GitHub
-
-Authenticate the toolbox's `gh` by exporting a token so `just render` can read
-app manifests:
-
-```sh
-export GH_TOKEN=$(gh auth token)   # or create a PAT with repo:read
+```
+<version>
 ```
 
-## 5. Provider credentials
+`.github/workflows/sealedstack.yml`
 
-Pick where the server runs. For providers that **create** the server, add the
-provider token to `infra`. For providers where you **bring your own** box, you
-need the box's root password on first boot.
-
-| Provider | Creates server? | Credential to add | Notes |
-|---|---|---|---|
-| hetzner | yes | `HCLOUD_TOKEN` | API token, read/write |
-| digitalocean | yes | `DIGITALOCEAN_TOKEN` | API token |
-| vultr | yes | `VULTR_API_KEY` | API key |
-| hostinger | yes | `HOSTINGER_TOKEN` | hPanel → API |
-| netcup | no | `NETCUP_API_USERNAME` / `NETCUP_API_PASSWORD` | order the VPS, note `external_id`; firewall via SCP API ([config](providers.md)) |
-| any-ssh | no | — | you provide the IP and apply the firewall |
-
-First boot also needs `ROOT_PASSWORD` (provider root password) and your
-your public key in `config/stack.yaml` (`admin.ssh_keys`).
-
-## 6. Write your config
-
-```sh
-just init                     # interactive wizard → writes config/
-# or copy and edit:
-cp config/stack.example.yaml config/stack.yaml
-cp config/servers.example.yaml config/servers.yaml
-cp config/apps.example.yaml config/apps.yaml
+```yaml
+name: sealedstack
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        type: choice
+        options: [setup, check, up, add-server, add-app, status, restore, drill]
+      args:
+        description: "e.g. --name server-1 (IP and root password come from the secret source)"
+        required: false
+  pull_request:
+  push:
+    branches: [main]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: "17 * * * *"          # hourly status + drift
+jobs:
+  sealedstack:
+    uses: <owner>/sealedstack/.github/workflows/infra.yml@v<version>
+    with:
+      command: ${{ inputs.command }}
+      args: ${{ inputs.args }}
+    secrets: inherit
+    permissions: { contents: write, pull-requests: write, issues: write, id-token: write }
 ```
 
-Set your `slots:` (the stack above), the `admin_user` and domain, and each
-server's `provider`. Anything you leave out uses the reference default.
+The version appears twice: in `sealedstack.version` and in the workflow ref
+(`@v<version>`), because GitHub needs a fixed ref there. `check` fails if they
+differ, and the upgrade bot always bumps both in one pull request.
 
-## 7. First run
+## 3. Run Setup
 
-```sh
-export BWS_ACCESS_TOKEN=...
-export GH_TOKEN=...
-# add your public key(s) to config/stack.yaml under admin.ssh_keys
-export ROOT_PASSWORD=...            # omit to be prompted
+**Actions, sealedstack, Run workflow, command `setup`**, with these `args`:
 
-just validate                       # schema + registry + compose lint
-just doctor                         # confirms secrets/tools for your providers
-just state-init                     # create the encrypted state bucket (once)
-just server-up web-1                # create + bootstrap (existing boxes read SERVER_IP_<NAME>)
-just apply                          # edge + platform
+```
+--domain example.com --email you@example.com --admin admin
+--server server-1 --provider netcup --secrets bitwarden
 ```
 
-## 8. Verify
+Setup asks for nothing else. It opens **PR #1 "sealedstack setup"** with
+`config/stack.yaml`, `config/servers.yaml`, `config/apps.yaml` (containing a
+`hello` app), `.devcontainer/devcontainer.json` and a README, and posts the living
+checklist as a comment ([example](user-experience.md#step-4-the-setup-pr-and-its-live-checklist)).
+
+Setup writes the **name of every secret** into `config/`, so you can always see
+which Bitwarden entry feeds which setting
+([details](user-experience.md#step-3b-the-secret-names-are-written-into-your-config-d-050)).
+You can rename any key, for example to reuse an existing entry.
+
+## 4. Create the prerequisites
+
+Work down the checklist. Each item links to the exact page and the exact
+permission list. The full list, with the exact key names, is in
+[prerequisites](prerequisites.md). In short:
+
+1. **Cloudflare.** Add your domain to Cloudflare, enable Zero Trust, and create
+   one API token with the [permissions listed here](prerequisites.md#cloudflare-api-token-permissions).
+2. **Tailscale.** Turn on MagicDNS and create an OAuth client with the scopes
+   `policy_file`, `auth_keys` and `devices:core`.
+3. **Bitwarden Secrets Manager.** Create a project (default `infra`) and a
+   **read-only machine account** for it. Put the Cloudflare token, the Tailscale
+   OAuth client, a state passphrase (at least 16 characters) and your server
+   credentials into that project. Only the machine account's access token goes
+   into GitHub, as the repository secret `BWS_ACCESS_TOKEN`.
+4. **Your server.** For an existing machine (Netcup, any-ssh), add its public IP
+   and root password to Bitwarden under the key names Setup wrote to
+   `servers.yaml` (`SERVER_IP_SERVER_1` and `ROOT_PASSWORD_SERVER_1` here), and
+   open TCP 22 at the provider firewall temporarily. A provider with an API
+   (Hetzner) needs only its token. See the [Netcup firewall](netcup-firewall.md)
+   guide.
+5. **The bot identity.** Click the checklist's *Create sealedstack-bot* link. It
+   creates a GitHub App through a manifest flow, which you then install on this
+   repository.
+6. **Your SSH public key** goes into `config/stack.yaml` under `admin.ssh_keys`
+   (it is not a secret).
+
+Comment **`/sealedstack check`** on the PR whenever you like. When the Tailscale
+OAuth client exists, `check` imports your current tailnet policy into
+`config/tailscale-policy.hujson` as a new commit on the Setup branch, so you can
+review it. If the policy still has Tailscale's default allow-all rule, the
+checklist explains how to narrow it (`mesh.narrow_allow_all: true`).
+
+## 5. Merge PR #1, then run Up
+
+When every item is green, **merge PR #1**. That is your approval of the
+configuration. Nothing outside the repository has changed yet.
+
+Then **Run workflow, command `up`**. The job waits for approval (an approver listed
+in `stack.yaml: approvers`, as described in the
+[user experience](user-experience.md#121-commands-ci-input-pr-comment-and-local-all-the-same)),
+and then reports its progress to the job summary and the Status issue
+([example](user-experience.md#step-7-run-up)). If a step fails, the summary names
+the step, the cause and the fix, and **running `up` again continues** where it
+stopped.
+
+> **Current limitation.** The Dokploy first-admin account and API key are still
+> created by hand on the first run: after the server is bootstrapped, open
+> `http://server-1:3000` over Tailscale, create the admin account, generate a key
+> under *Settings, Profile, API/CLI Keys* and store it in Bitwarden as
+> `DOKPLOY_API_KEY`, then run `up` again. Automating this is tracked in the
+> project backlog.
+
+## 6. Verify
+
+`up` verifies this itself and prints the result. To check by hand:
 
 ```sh
-curl -sI https://hello.example.com | head -1     # 302 → Access login
-ssh web-1                                         # over Tailscale
+curl -sI https://hello.example.com | head -1     # 302 to the Access login
+curl -sI https://hello.example.com/.env | head -1 # 403
 nc -zv <public-ip> 22 80 443 3000                 # all must time out
-just server-sync && just apply                    # no changes
 ```
+
+From a machine on your tailnet, `ssh server-1` works and
+`http://server-1:3000` shows the Dokploy panel. Re-running `up` afterwards
+reports no changes.
+
+When the first run is green, **close TCP 22 at the provider firewall** and delete
+`SERVER_IP_SERVER_1` and `ROOT_PASSWORD_SERVER_1` from Bitwarden. The server is
+reached only by its tailnet name from then on.
+
+## What next
+
+| I want to | Do this | Details |
+|---|---|---|
+| Add another server | Run workflow `add-server --name server-2` (existing machines) or add it to `servers.yaml` in a PR (API providers) | [user experience, journey B](user-experience.md#5-journey-b-add-another-server) |
+| Add an app | Run workflow `add-app --name example-app --repo you/example-app --host app.example.com --access owner-only`; merge the app PR first, then the infra PR | [journey C](user-experience.md#6-journey-c-add-an-app) |
+| Release or roll back an app | In the app repo: Actions, release, Run workflow, tag `v0.0.N` | [journey D](user-experience.md#7-journey-d-release-and-roll-back-app-developer) |
+| Change configuration | Edit `config/` in a pull request, read the plan comment, merge, approve | [journey E](user-experience.md#8-journey-e-day-2-changes) |
+| Upgrade sealedstack | Merge the bot's version-bump PR | [journey F](user-experience.md#9-journey-f-upgrade-sealedstack) |
+| Recover from a problem or restore a database | Follow the Status issue comment; `restore` and `drill` | [journey G](user-experience.md#10-journey-g-when-something-goes-wrong) |
+| Use GitLab instead | Swap the workflow file for the CI include | [journey H](user-experience.md#11-journey-h-moving-to-gitlab) |
+
+## Optional: a terminal in a Codespace
+
+Setup generates `.devcontainer/devcontainer.json` pinned to the engine image.
+Opening the infra repo in a Codespace gives you a terminal with `sealedstack`
+ready:
+
+```sh
+sealedstack check      # preflight, read-only
+sealedstack plan       # read-only
+sealedstack status     # read-only
+```
+
+Writes (`apply`, `up`, `server add`, `db restore`) are refused outside CI unless
+you pass `--break-glass`, which also requires a clean checkout equal to
+`origin/main`, takes the state lock, asks you to type the infra name and posts an
+audit line to the Status issue
+([break-glass](user-experience.md#break-glass-github-or-ci-is-down)).
 
 ## Troubleshooting
 
-- **`just doctor` lists missing secrets** — add them to Bitwarden `infra` or
-  export them as env vars of the same name.
-- **`just render` warns "manifest unresolved"** — set `GH_TOKEN`; harmless for
-  image-only apps.
-- **Server unreachable over Tailscale** — check the node joined with the right
-  hostname (`tailscale status`), and that MagicDNS is on.
+Every failure is reported as *what happened, why, the fix and a link*
+([message format](user-experience.md#123-message-format-every-error-everywhere)).
+The common ones:
+
+- **A checklist item is red because a secret is "not found".** The message names
+  both the logical secret and its key in the secret source. Add that key to the
+  Bitwarden project, or change the mapping in `config/stack.yaml: secrets.keys`.
+- **`BWS_ACCESS_TOKEN` is not set.** Add it as a repository secret (see step 4).
+- **The version pins do not match.** Make `sealedstack.version` and the workflow
+  `@v<version>` ref equal in one pull request.
+- **The server is unreachable over Tailscale.** Check that the node joined with
+  the right hostname and that MagicDNS is on. See [limitations](limitations.md).
+- **The first bootstrap cannot connect.** Confirm TCP 22 is open at the provider
+  firewall and that the IP and password keys in Bitwarden match `servers.yaml`.

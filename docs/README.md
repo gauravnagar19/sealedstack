@@ -5,8 +5,8 @@ started, and [AGENTS.md](../AGENTS.md) if you are extending the project.
 
 ## Get started
 
-- [Getting started](getting-started.md) — accounts, credentials and the first run.
-- [Prerequisites](prerequisites.md) — the checklist and environment variables.
+- [Getting started](getting-started.md): from an empty repo to a running app, with zero installs.
+- [Prerequisites](prerequisites.md): the accounts, credentials and exact secret names.
 - [Known limitations and caveats](limitations.md) — what does not work yet, and why.
 
 ## Configure and operate

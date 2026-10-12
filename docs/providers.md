@@ -5,8 +5,8 @@ dependency is a slot with a catalog of implementations, so you can swap
 providers with a one-line config change. The catalog is the **registry**.
 
 ```sh
-just providers              # every slot
-just providers backup       # one slot
+sealedstack debug providers              # every slot
+sealedstack debug providers backup       # one slot
 ```
 
 The registry files are `registry/<slot>.yaml`, validated against
@@ -14,13 +14,13 @@ The registry files are `registry/<slot>.yaml`, validated against
 
 - `status`: `supported` (passed the live acceptance suite) ·
   `experimental` (code exists, not live-tested) · `planned` (no implementation)
-- `secrets`: the secret names it needs (checked by `just doctor`)
+- `secrets`: the secret names it needs (checked by `sealedstack check`)
 - `config`: the per-server/per-app config keys it reads
 - `impl`: where the code lives (`tofu_module`, `ansible_role`, `adapter`, `stack`)
-- `creates_server` (compute only): `just server-up` will provision it and
-  discover the IP
+- `creates_server` (compute only): `sealedstack server add` / `up` will provision it
+  and discover the IP
 
-`just validate` fails if you select an implementation that is missing or still
+`sealedstack check` fails if you select an implementation that is missing or still
 `planned` — you never get a silent wrong deploy.
 
 ## Status by slot
@@ -99,11 +99,11 @@ for the provider itself.
 3. **Add a sample** under `config/providers/<slot>_<impl>.example.yaml` if it
    needs non-secret config, and list the secrets in the registry entry.
 
-4. Run `just validate` and `just doctor`.
+4. Run `sealedstack check`.
 
 ### Compute providers
 
-`just server-up <name>` provisions the server when the registry entry has
+`sealedstack server add <name>` (and `up`) provisions the server when the registry entry has
 `creates_server: true` (hetzner, hostinger, digitalocean, vultr, linode,
 scaleway, aws, gcp, azure, oracle, upcloud, ovh, civo) and discovers the IP.
 Otherwise (netcup, contabo, any-ssh) you pass the IP. Firewall handling is
@@ -114,7 +114,7 @@ declared per provider as `firewall: native | api | manual | none`:
   rule table opens **TCP 22** temporarily so `server-up` can SSH in before the
   mesh is up; the host firewall (UFW + DOCKER-USER) closes 22 on the WAN
   interface after `site.yml`.
-- **manual** — `just server-up` prints the rule table and waits for you
+- **manual** — `sealedstack server add` prints the rule table and waits for you
   ([netcup-firewall.md](netcup-firewall.md)); this is netcup, contabo and
   any-ssh today.
 - **api** — the REST adapter applies the rule table automatically once
