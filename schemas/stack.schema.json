@@ -1,6 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sealedstack.dev/schemas/stack.schema.json",
+  "allOf": [
+    {
+      "if": {
+        "required": ["slots"],
+        "properties": { "slots": { "required": ["ci"] } }
+      },
+      "then": { "required": ["approvers"] }
+    }
+  ],
   "title": "sealedstack stack.yaml",
   "description": "Slot selection and global settings (spec section 5.1).",
   "type": "object",
@@ -297,6 +306,14 @@
           "description": "Logical secret name -> source key."
         }
       }
+    },
+    "approvers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$"
+      },
+      "description": "GitHub usernames allowed to approve write commands in CI (D-052). Required when slots.ci is set."
     },
     "admin": {
       "type": "object",

@@ -12,10 +12,25 @@ secret source.
 """
 from __future__ import annotations
 
+import re
+import subprocess
 from dataclasses import dataclass, field
 from typing import Mapping, Optional
 
 from .http import HttpClient, UrllibClient
+
+
+def repo_from_git(code_root) -> str:
+    """Derive ``owner/name`` from the origin remote, or ""."""
+    try:
+        url = subprocess.run(
+            ["git", "-C", str(code_root), "remote", "get-url", "origin"],
+            capture_output=True, text=True, check=True, timeout=15,
+        ).stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+    match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+    return match.group(1) if match else ""
 
 
 class ForgeError(RuntimeError):
@@ -32,6 +47,14 @@ class Forge:
         raise NotImplementedError
 
     def upsert_comment(self, repo: str, number: int, body: str, *, marker: str = "") -> int:  # pragma: no cover
+        raise NotImplementedError
+
+    def issue_comments(self, repo: str, number: int) -> list:  # pragma: no cover
+        """Comments on an issue/PR, oldest first: ``[{author, body}, ...]``."""
+        raise NotImplementedError
+
+    def pull_requests_for_commit(self, repo: str, sha: str) -> list:  # pragma: no cover
+        """PRs that contain a commit: ``[{number, merged}, ...]``."""
         raise NotImplementedError
 
     def set_variable(self, repo: str, name: str, value: str) -> None:  # pragma: no cover
@@ -126,6 +149,17 @@ class GitHubForge(Forge):
         created = self._request("POST", f"/repos/{repo}/issues/{number}/comments", json_body={"body": body})
         return int(created["id"])
 
+    def issue_comments(self, repo: str, number: int) -> list:
+        comments = self._request("GET", f"/repos/{repo}/issues/{number}/comments?per_page=100") or []
+        return [{"author": (c.get("user") or {}).get("login", ""), "body": c.get("body") or ""} for c in comments]
+
+    def pull_requests_for_commit(self, repo: str, sha: str) -> list:
+        prs = self._request("GET", f"/repos/{repo}/commits/{sha}/pulls") or []
+        return [
+            {"number": int(pr.get("number", 0)), "merged": bool(pr.get("merged_at"))}
+            for pr in prs
+        ]
+
     def set_variable(self, repo: str, name: str, value: str) -> None:
         try:
             self._request("POST", f"/repos/{repo}/actions/variables", json_body={"name": name, "value": value})
@@ -212,6 +246,7 @@ def libsodium_sealer():
 class _Comment:
     id: int
     body: str
+    author: str = ""
 
 
 @dataclass
@@ -226,11 +261,24 @@ class InMemoryForge(Forge):
     issues: dict = field(default_factory=dict)
     permissions: dict = field(default_factory=dict)
     environments: set = field(default_factory=set)
+    commit_prs: dict = field(default_factory=dict)
     _next: int = 1000
 
     def _id(self) -> int:
         self._next += 1
         return self._next
+
+    def add_comment(self, repo: str, number: int, author: str, body: str) -> int:
+        """Record a comment with a known author (for approval tests)."""
+        comment = _Comment(self._id(), body, author)
+        self.comments.setdefault((repo, number), []).append(comment)
+        return comment.id
+
+    def issue_comments(self, repo: str, number: int) -> list:
+        return [{"author": c.author, "body": c.body} for c in self.comments.get((repo, number), [])]
+
+    def pull_requests_for_commit(self, repo: str, sha: str) -> list:
+        return list(self.commit_prs.get((repo, sha), []))
 
     def read_file(self, repo: str, path: str, ref: str = "main") -> str:
         return self.files.get((repo, ref, path), "")

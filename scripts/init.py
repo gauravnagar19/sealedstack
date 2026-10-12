@@ -357,6 +357,8 @@ def main() -> int:
         "owner_email": owner_email,
         "admin_user": admin_user,
         "admin": {"ssh_keys": [admin_ssh_key] if admin_ssh_key else []},
+        # D-052: who may approve write commands in CI. Defaults to the owner.
+        "approvers": [args.owner] if args.owner else [],
         "slots": {
             "compute": "any-ssh",
             "mesh": "tailscale",

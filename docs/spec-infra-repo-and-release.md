@@ -318,7 +318,7 @@ ci: github-actions     # github-actions | gitlab-ci
 ### 9.1 Rules (D-037)
 
 - **Nothing writes directly to `main`.** Setup, Add app and version bumps all open PRs/MRs. Users enable branch protection: a PR/MR is required, and the plan check must pass.
-- **Apply runs only from `main`, after merge,** gated by the protected `production` environment.
+- **Apply runs only from `main`, after merge.** On paid tiers a protected `production` environment with required reviewers gates it; on GitHub Free private repos — where environment reviewers and branch protection are unavailable — sealedstack enforces approval itself (D-052): the commit must be merged through a PR (a direct push to `main` is refused) and an approver listed in `stack.yaml: approvers` must have dispatched the run or commented `/sealedstack approve` on the PR after the latest plan. The environment is still used as a second gate where the plan supports it.
 - **Apply never commits.** Machine-produced data goes to encrypted state (R2), forge CI variables, or the Status issue.
 - **CI is the only normal writer (D-045).** Local runs are read-only, plus the guarded `--break-glass` mode (§6.6). All writes, from CI or break-glass, take the state lock.
 

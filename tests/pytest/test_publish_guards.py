@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-NO_REPLY = "19661833+gauravnagar19@users.noreply.github.com"
+NO_REPLY = "12345+octocat@users.noreply.github.com"
 ZERO = "0" * 40
 
 
@@ -44,7 +44,7 @@ def test_metadata_fails_on_non_no_reply_identity(tmp_path):
 
 def test_metadata_passes_with_no_reply_identity(tmp_path):
     repo = _make_repo(tmp_path)
-    _commit(repo, "gauravnagar19", NO_REPLY)
+    _commit(repo, "octocat", NO_REPLY)
     result = _metadata(repo)
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -61,7 +61,7 @@ def _run_hook(repo: Path, stdin: str):
 
 def test_hook_refuses_a_disallowed_branch(tmp_path):
     repo = _make_repo(tmp_path)
-    head = _commit(repo, "gauravnagar19", NO_REPLY)
+    head = _commit(repo, "octocat", NO_REPLY)
     result = _run_hook(repo, f"refs/heads/history-old {head} refs/heads/history-old {ZERO}\n")
     assert result.returncode != 0
     assert "refusing" in result.stderr
@@ -69,7 +69,7 @@ def test_hook_refuses_a_disallowed_branch(tmp_path):
 
 def test_hook_allows_main_with_neutral_identity(tmp_path):
     repo = _make_repo(tmp_path)
-    head = _commit(repo, "gauravnagar19", NO_REPLY)
+    head = _commit(repo, "octocat", NO_REPLY)
     result = _run_hook(repo, f"refs/heads/main {head} refs/heads/main {ZERO}\n")
     assert result.returncode == 0, result.stderr
 

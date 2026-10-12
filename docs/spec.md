@@ -19,7 +19,7 @@
 
 ## 1. What it is
 
-sealedstack takes **an empty Linux box you can SSH into** and turns it into a **sealed origin** that runs your apps. It is generic, but the MVP targets exactly one setup: the author's.
+sealedstack takes **an empty Linux box you can SSH into** and turns it into a **sealed origin** that runs your apps. It is generic across providers, domains and apps.
 
 A sealed origin works like this:
 

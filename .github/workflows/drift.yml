@@ -5,7 +5,7 @@ name: drift
 # which reads `prod` only — spec §6). Configure these repository secrets:
 #   TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET  (Tailscale OAuth client, tag:ci)
 #   BWS_ACCESS_TOKEN, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
-#   TAILSCALE_API_KEY, state_passphrase
+#   state_passphrase
 on:
   schedule:
     - cron: "0 6 * * *"
@@ -41,7 +41,8 @@ jobs:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          TAILSCALE_API_KEY: ${{ secrets.TAILSCALE_API_KEY }}
+          TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TAILSCALE_OAUTH_CLIENT_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
           TF_VAR_state_passphrase: ${{ secrets.state_passphrase }}
         run: |
           set -euo pipefail
@@ -50,20 +51,21 @@ jobs:
           # tailscale action joined on the runner.
           docker run --rm --network host -v "$PWD:/work" -w /work \
             -e BWS_ACCESS_TOKEN -e CLOUDFLARE_API_TOKEN -e CLOUDFLARE_ACCOUNT_ID \
-            -e TAILSCALE_API_KEY -e TF_VAR_state_passphrase \
-            sealedstack-toolbox:ci bash -lc '
+            -e TAILSCALE_OAUTH_CLIENT_ID -e TAILSCALE_OAUTH_CLIENT_SECRET \
+            -e TF_VAR_state_passphrase sealedstack-toolbox:ci bash -lc '
               set -euo pipefail
+              export PYTHONPATH=/work/engine
               python3 scripts/render.py
               python3 scripts/mesh-policy.py
-              scripts/build-env.sh
-              scripts/user-auth.sh
+              python3 -m sealedstack.buildenv
+              python3 -m sealedstack.userauth
               drift=0
               stacks=""
               for stack in edge platform; do
                 set +e
                 # Exit code 2 means "changes present" (drift); 0 means none.
                 TF_CLI_ARGS_plan="-detailed-exitcode -no-color" \
-                  scripts/${stack}.sh plan
+                  python3 -m "sealedstack.${stack}" plan
                 rc=$?
                 set -e
                 echo "${stack}: plan exit ${rc}"
@@ -87,6 +89,6 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `Drift detected on ${new Date().toISOString().slice(0, 10)}`,
-              body: `\`tofu plan -detailed-exitcode\` reported changes for: ${stacks}.\n\nRun \`just plan\` locally and reconcile.`,
+              body: `\`tofu plan -detailed-exitcode\` reported changes for: ${stacks}.\n\nRun \`sealedstack plan\` and reconcile.`,
               labels: ["drift"],
             });

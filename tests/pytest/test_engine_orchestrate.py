@@ -112,3 +112,30 @@ def test_up_completes_on_rerun():
     assert rc == 0
     joined = " ".join(record)
     assert "sealedstack.stateinit" in joined and "sealedstack.platform apply" in joined and "sealedstack.postapply" in joined
+
+
+def test_up_resumes_skipping_completed_phases(tmp_path):
+    state = tmp_path / "phases-up.json"
+    first = []
+
+    def fail_at_platform(argv, code_root):
+        joined = " ".join(list(argv))
+        first.append(joined)
+        return 3 if "sealedstack.platform apply" in joined else 0
+
+    rc = orchestrate.run_phases("up", code_root=Path("/repo"), runner=fail_at_platform, servers=["web-1"], state_path=state)
+    assert rc == 3
+
+    second = []
+
+    def ok(argv, code_root):
+        second.append(" ".join(list(argv)))
+        return 0
+
+    rc2 = orchestrate.run_phases("up", code_root=Path("/repo"), runner=ok, servers=["web-1"], state_path=state)
+    assert rc2 == 0
+    rerun = " ".join(second)
+    assert "sealedstack.stateinit" not in rerun  # finished phases are skipped
+    assert "sealedstack.edge apply" not in rerun
+    assert "sealedstack.platform apply" in rerun  # the failed phase is redone
+    assert not state.exists()  # cleared once complete

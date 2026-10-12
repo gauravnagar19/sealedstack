@@ -84,6 +84,24 @@ jobs:
             exit 1
           fi
 
+      - name: Approval gate (D-052)
+        if: >-
+          contains(fromJSON('["apply","up","add-server","restore","server sync"]'), inputs.command)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          SEALEDSTACK_PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/infra" -w /infra \
+            -e SEALEDSTACK_CONFIG=/infra/config \
+            -e GH_TOKEN -e GITHUB_REPOSITORY -e GITHUB_SHA -e GITHUB_ACTOR -e SEALEDSTACK_PR \
+            "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
+            approve-check "${{ inputs.command }}"
+
       - name: sealedstack ${{ inputs.command }}
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}

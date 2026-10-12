@@ -9,7 +9,7 @@
 # Usage:
 #   scripts/publish-check.sh              content + patterns over tracked files
 #   scripts/publish-check.sh --strict     the above, plus the git identity/metadata
-                                        scan and gitleaks over `git archive HEAD`
+#                                        scan and gitleaks over `git archive HEAD`
 #   scripts/publish-check.sh --metadata   git history/tags only: identities, messages, tags
 #   scripts/publish-check.sh --colors     force colour
 #   scripts/publish-check.sh --no-colors  disable colour (alias: --fixed)
@@ -32,7 +32,7 @@ deny-list internal/publish-denylist.txt and for personal patterns
 Usage:
   scripts/publish-check.sh              content + patterns over tracked files
   scripts/publish-check.sh --strict     the above, plus the git identity/metadata
-                                        scan and gitleaks over `git archive HEAD`
+#                                        scan and gitleaks over `git archive HEAD`
   scripts/publish-check.sh --metadata   git history/tags only: identities, messages, tags
   scripts/publish-check.sh --colors     force colour
   scripts/publish-check.sh --no-colors  disable colour (alias: --fixed)
@@ -321,8 +321,11 @@ for record in log.split(end):
     an, ae, cn, ce = parts[1], parts[2], parts[3], parts[4]
     message = sep.join(parts[5:]) if len(parts) > 5 else ""
     for who, name, email in (("author", an, ae), ("committer", cn, ce)):
-        if not neutral(name, email):
-            bad_identity.setdefault((who, name, email), set()).add(sha)
+        if neutral(name, email):
+            # The GitHub no-reply identity is the allowed identity; its email
+            # contains the username by design, so deny-list terms don't apply.
+            continue
+        bad_identity.setdefault((who, name, email), set()).add(sha)
         for term in has_term(f"{name} <{email}>"):
             identity_terms.setdefault((term, who), set()).add(sha)
     for term in has_term(message):
@@ -343,7 +346,8 @@ for line in raw_tags.splitlines():
     contents = sep.join(fields[3:]) if len(fields) > 3 else ""
     if tagger and not neutral(tagger, tagger_email):
         bad_identity.setdefault(("tagger", tagger, tagger_email), set()).add(name)
-    for term in has_term(f"{name} {tagger} {tagger_email} {contents}"):
+    scan_value = f"{name} {contents}" if neutral(tagger, tagger_email) else f"{name} {tagger} {tagger_email} {contents}"
+    for term in has_term(scan_value):
         tag_terms.setdefault(term, set()).add(name)
 
 print("== git metadata ==")

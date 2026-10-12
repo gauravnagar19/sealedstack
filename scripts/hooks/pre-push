@@ -9,7 +9,7 @@
 # only if you know exactly why.
 set -euo pipefail
 
-ZERO="0000000000000000000000000000000000000000"
+ZERO="$(printf '0%.0s' {1..40})"
 status=0
 
 allowed_ref() {
@@ -32,7 +32,7 @@ email_ok() {
 }
 
 check_emails() {
-  local label="$1" range="$2" who email
+  local label="$1" range="$2" type email
   while read -r type email; do
     [[ -n "${email}" ]] || continue
     if ! email_ok "${email}"; then

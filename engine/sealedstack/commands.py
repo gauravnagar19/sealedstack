@@ -26,6 +26,7 @@ COMMANDS = {
     "restore",
     "drill",
     "drift",
+    "approve",
 }
 
 
@@ -75,5 +76,8 @@ def handle(f: forge_mod.Forge, repo: str, number: int, body: str, actor: str) ->
             f"@{actor} thanks! Only users with write access can run `{PREFIX} {parsed.command}`.",
         )
         return None
+    if parsed.command == "approve":
+        f.upsert_comment(repo, number, f"@{actor} approval recorded for this PR (D-052).")
+        return parsed
     f.upsert_comment(repo, number, f"Running `/sealedstack {parsed.command}`…")
     return parsed

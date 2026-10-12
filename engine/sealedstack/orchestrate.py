@@ -91,6 +91,33 @@ def phases(
     raise ValueError(f"no orchestration for {command!r}")
 
 
+def _load_done(state_path: Optional[Path]) -> set:
+    if state_path is None or not Path(state_path).exists():
+        return set()
+    try:
+        return set(json.loads(Path(state_path).read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, OSError):
+        return set()
+
+
+def _save_done(state_path: Optional[Path], done: set) -> None:
+    if state_path is None:
+        return
+    try:
+        Path(state_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(state_path).write_text(json.dumps(sorted(done)), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _clear_done(state_path: Optional[Path]) -> None:
+    if state_path is not None:
+        try:
+            Path(state_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def run_phases(
     command: str,
     *,
@@ -101,8 +128,13 @@ def run_phases(
     server_ips: Optional[dict] = None,
     json_output: bool = False,
     stream=None,
+    state_path: Optional[Path] = None,
 ) -> int:
-    """Run the phases in order; stop at the first failure. Re-runnable."""
+    """Run the phases in order; stop at the first failure. Re-runnable.
+
+    When ``state_path`` is given, completed phases are recorded there and skipped
+    on a re-run, so ``up`` resumes after a mid-way failure (C3).
+    """
     out = stream if stream is not None else sys.stderr
     plan = phases(
         command,
@@ -112,22 +144,31 @@ def run_phases(
         server_ips=server_ips,
     )
 
+    done = _load_done(state_path)
     records = []
     for phase in plan:
+        if phase.name in done:
+            print(f"==> {phase.name} (already done; skipping)", file=out)
+            records.append({"phase": phase.name, "rc": 0, "skipped": True})
+            continue
         print(f"==> {phase.name}", file=out)
         rc = runner(phase.argv, code_root)
         records.append({"phase": phase.name, "rc": rc})
         if rc != 0:
+            _save_done(state_path, done)
             if json_output:
                 print(json.dumps({"command": command, "failed": phase.name, "phases": records}))
             else:
                 print(
                     f"sealedstack: '{phase.name}' failed (exit {rc}). "
-                    f"Fix the cause and re-run `sealedstack {command}`; every step is safe to repeat.",
+                    f"Fix the cause and re-run `sealedstack {command}`; finished steps are skipped.",
                     file=out,
                 )
             return rc
+        done.add(phase.name)
+        _save_done(state_path, done)
 
+    _clear_done(state_path)
     if json_output:
         print(json.dumps({"command": command, "ok": True, "phases": records}))
     return 0

@@ -359,6 +359,8 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 
 **Comment commands** run only for users with **write** access to the repo; others get a polite refusal.
 
+**Approval (D-052).** Write commands (`apply`, `up`, `restore`, `add-server`, `server sync`) run only when the commit is merged through a PR (a direct push to `main` is refused) **and** an approver has agreed — either the run was dispatched by a user in `stack.yaml: approvers`, or an approver commented **`/sealedstack approve`** on the PR after the latest plan comment. This is enforced by the engine, so it works on private GitHub Free repos where the `production` environment has no required reviewers; the environment is still used as a second gate where your plan supports it.
+
 ### 12.2 What lives where (user view)
 
 | You edit | You never edit |

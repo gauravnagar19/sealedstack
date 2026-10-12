@@ -13,10 +13,14 @@ def _release() -> dict:
     return yaml.safe_load((REPO / ".github" / "workflows" / "release.yml").read_text())
 
 
-def test_release_triggers_on_tags_and_manual():
+def test_release_is_manual_and_authorized():
     on = _release().get("on", _release().get(True))
-    assert "v*" in on["push"]["tags"]
+    # manual dispatch only (D-052/B2): no tag trigger
+    assert "push" not in on
     assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is False
+    # the dispatcher must be in the repo-level approvers list
+    authorize = _release()["jobs"]["authorize"]["steps"][0]
+    assert "RELEASE_APPROVERS" in authorize["env"]["APPROVERS"]
 
 
 def test_release_pushes_only_after_approval():
@@ -55,3 +59,15 @@ def test_upgrade_pr_template_exists():
     text = (REPO / "examples" / "upgrade-pr-template.md").read_text()
     assert "sealedstack.version" in text
     assert "Roll back" in text
+
+
+def test_no_legacy_tailscale_api_key_anywhere():
+    import glob
+
+    hits = []
+    for pattern in ("engine/sealedstack/*.py", ".github/workflows/*.yml"):
+        for path in glob.glob(str(REPO / pattern)):
+            text = Path(path).read_text()
+            if "TAILSCALE_API_KEY" in text:
+                hits.append(path)
+    assert hits == [], f"TAILSCALE_API_KEY still present in {hits}"

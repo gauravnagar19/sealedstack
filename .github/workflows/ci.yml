@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the publication-hygiene step checks history identities
       - name: Build the toolbox
         run: docker build -t sealedstack-toolbox:ci toolbox
       - name: Build the tool image
@@ -48,10 +50,11 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
             bash -lc "shellcheck scripts/*.sh"
       - name: publication hygiene
-        # Catches personal values (if the deny-list is present) and any public IP.
+        # Deny-list (if present), personal patterns, git identity/metadata and
+        # gitleaks (A7, D-051).
         run: |
           docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
-            bash -lc "scripts/publish-check.sh"
+            bash -lc "scripts/publish-check.sh --strict --metadata"
       - name: tests (pytest, incl. the engine)
         run: |
           docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \

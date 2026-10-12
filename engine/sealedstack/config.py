@@ -151,6 +151,12 @@ class Config:
         spec = (self.apps.get("apps") or {}).get(app) or {}
         return str((spec.get("secrets") or {}).get(name, f"{app}.{name}"))
 
+    # -- approval (D-052) ---------------------------------------------------
+
+    def approvers(self) -> list[str]:
+        """GitHub usernames allowed to approve write commands in CI (D-052)."""
+        return [str(name) for name in (self.stack.get("approvers") or [])]
+
 
 def load_config(
     config_dir: Path | None = None,
@@ -261,6 +267,9 @@ class Runtime:
         break_glass: bool = False,
         confirm_fn: Callable[[str], str] | None = None,
         audit_fn: Callable[[str], None] | None = None,
+        forge=None,
+        repo: str = "",
+        lock=None,
     ) -> None:
         """Refuse a local write, or run the break-glass guards (spec 6.6)."""
         if command not in WRITE_COMMANDS or self.is_ci:
@@ -285,30 +294,41 @@ class Runtime:
             )
 
         # Condition 2 (spec 6.6): take the state lock so CI cannot run at the
-        # same time. O_EXCL creation; released on process exit.
-        workdir = Path(self.env.get("SEALEDSTACK_WORKDIR") or (self.code_root / ".sealedstack"))
-        workdir.mkdir(parents=True, exist_ok=True)
-        lock = workdir / "state.lock"
-        try:
-            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError as exc:
-            # Re-entrant within one process (the engine is one command per
-            # process); a different pid means a concurrent run.
+        # same time. Prefer the remote R2 lock (shared with CI); fall back to a
+        # local file lock when no R2 credentials are available.
+        if lock is not None:
             try:
-                held = lock.read_text(encoding="utf-8")
-            except OSError:
-                held = ""
-            if f"pid={os.getpid()} " in held:
-                pass
-            else:
+                info = lock.acquire()
+            except Exception as exc:  # noqa: BLE001 - LockHeld
                 raise BreakGlassError(
-                    f"{command}: another sealedstack run holds the state lock ({lock}); "
-                    "wait for it to finish, or remove the file if it is stale."
+                    f"{command}: {exc}. Wait for it to finish, or clear it with "
+                    "`sealedstack --force-unlock <id>` if it is stale."
                 ) from exc
+            atexit.register(lambda: lock.release(info))
         else:
-            os.write(fd, f"pid={os.getpid()} command={command}\n".encode("utf-8"))
-            os.close(fd)
-            atexit.register(lambda: lock.unlink(missing_ok=True))
+            workdir = Path(self.env.get("SEALEDSTACK_WORKDIR") or (self.code_root / ".sealedstack"))
+            workdir.mkdir(parents=True, exist_ok=True)
+            lock_file = workdir / "state.lock"
+            try:
+                fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError as exc:
+                # Re-entrant within one process (the engine is one command per
+                # process); a different pid means a concurrent run.
+                try:
+                    held = lock_file.read_text(encoding="utf-8")
+                except OSError:
+                    held = ""
+                if f"pid={os.getpid()} " in held:
+                    pass
+                else:
+                    raise BreakGlassError(
+                        f"{command}: another sealedstack run holds the state lock ({lock_file}); "
+                        "wait for it to finish, or remove the file if it is stale."
+                    ) from exc
+            else:
+                os.write(fd, f"pid={os.getpid()} command={command}\n".encode("utf-8"))
+                os.close(fd)
+                atexit.register(lambda: lock_file.unlink(missing_ok=True))
 
         if not stack_name:
             raise BreakGlassError(
@@ -323,4 +343,16 @@ class Runtime:
             )
 
         line = audit_line(command, info, stack_name, self.env)
+        if forge is not None and repo:
+            try:
+                from . import statusissue
+
+                statusissue.post_problem(forge, repo, line)
+                return
+            except Exception as exc:  # noqa: BLE001 - fall back, but say so
+                print(
+                    f"sealedstack: could not post the audit to the Status issue ({exc}); "
+                    "falling back to stderr",
+                    file=sys.stderr,
+                )
         (audit_fn or (lambda text: print(text, file=sys.stderr)))(line)

@@ -50,6 +50,8 @@ def _add_globals(parser: argparse.ArgumentParser) -> None:
                         help="machine-readable JSON output (check/plan/status)")
     parser.add_argument("--break-glass", action="store_true", default=argparse.SUPPRESS,
                         help="allow a local write command, guarded (spec 6.6)")
+    parser.add_argument("--force-unlock", metavar="ID", default=argparse.SUPPRESS,
+                        help="clear a stale remote state lock by id (D-045 / C1)")
 
 
 def _leaf(parent: argparse._SubParsersAction, name: str, help: str = "") -> argparse.ArgumentParser:
@@ -126,6 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
         leaf = _leaf(sub, verb, help)
         leaf.add_argument("app")
         leaf.add_argument("extras", nargs="*")
+    _leaf(sub, "approve-check", "enforce the D-052 approval gate for a write command").add_argument("command")
     return parser
 
 
@@ -145,6 +148,27 @@ def _script(code_root: Path, name: str) -> str:
     return str(code_root / "scripts" / name)
 
 
+def _state_lock(config, env):
+    """Build the remote R2 state lock, or None when R2 credentials are absent."""
+    if config is None:
+        return None
+    try:
+        from . import lock as lock_mod
+        from . import s3 as s3_mod
+        from . import secrets as secrets_mod
+
+        account = str((config.stack.get("cloudflare") or {}).get("account_id") or "")
+        source = secrets_mod.build_source(config.stack, config.config_dir, env)
+        access = source.get(config.secret_key("R2_ACCESS_KEY_ID"))
+        secret = source.get(config.secret_key("R2_SECRET_ACCESS_KEY"))
+        if not (account and access.found and secret.found):
+            return None
+        client = s3_mod.S3Client(f"https://{account}.r2.cloudflarestorage.com", access.value, secret.value)
+        return lock_mod.StateLock(lock_mod.S3LockBackend(client), owner=config.name or "sealedstack")
+    except Exception:  # noqa: BLE001 - fall back to the local lock
+        return None
+
+
 def _orchestrate_handler(command: str) -> Callable:
     """A native handler that runs the Python phase list for plan/apply/up."""
 
@@ -153,6 +177,8 @@ def _orchestrate_handler(command: str) -> Callable:
         # `up` bootstraps the first configured server; additional servers are
         # added explicitly with `server add`.
         up_servers = servers[:1] if command == "up" else []
+        workdir = env.get("SEALEDSTACK_WORKDIR") or str(code_root / ".sealedstack")
+        state_path = Path(workdir) / f"phases-{command}.json"
         return orchestrate.run_phases(
             command,
             code_root=code_root,
@@ -160,6 +186,7 @@ def _orchestrate_handler(command: str) -> Callable:
             stack_name=(config.name if config else ""),
             servers=up_servers,
             json_output=json_output,
+            state_path=state_path,
         )
 
     return handler
@@ -167,6 +194,38 @@ def _orchestrate_handler(command: str) -> Callable:
 
 def _status_handler(config, env, code_root, json_output, runner):
     return status_mod.run(code_root=code_root, env=env, json_output=json_output)
+
+
+def _approve_handler(write_command: str) -> Callable:
+    """Enforce the D-052 approval gate for a write command (used by CI)."""
+
+    def handler(config, env, code_root, json_output, runner):
+        from . import approval as approval_mod
+        from . import forge as forge_mod
+
+        approvers = config.approvers() if config else []
+        request = approval_mod.env_request(env)
+        try:
+            f = forge_mod.GitHubForge.from_env(env)
+        except forge_mod.ForgeError as exc:
+            print(f"approve-check: {exc}", file=sys.stderr)
+            return 1
+        decision = approval_mod.check(
+            f,
+            request["repo"],
+            write_command,
+            commit_sha=request["commit_sha"],
+            actor=request["actor"],
+            approvers=approvers,
+            pr_number=request["pr_number"],
+        )
+        if decision.approved:
+            print(f"approve-check: approved — {decision.reason}", file=sys.stderr)
+            return 0
+        print(f"approve-check: refused — {decision.reason}", file=sys.stderr)
+        return 1
+
+    return handler
 
 
 def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
@@ -188,6 +247,8 @@ def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
         return Action(command, handler=_orchestrate_handler("up"))
     if command == "status":
         return Action(command, handler=_status_handler)
+    if command == "approve-check":
+        return Action(command, handler=_approve_handler(getattr(args, "command", "")))
     if command == "server add":
         # The public IP is a bootstrap secret, never a job input (D-049).
         return Action(command, argv=[[python, "-m", "sealedstack.server", "up", args.name]])
@@ -283,7 +344,27 @@ def run(
         config = None
     stack_name = config.name if config else ""
 
+    force_unlock = getattr(args, "force_unlock", None)
+    if force_unlock:
+        lock_obj = _state_lock(config, env)
+        if lock_obj is None:
+            print(f"{PROG}: no R2 state lock configured (need R2 credentials)", file=sys.stderr)
+            return 2
+        ok = lock_obj.force_unlock(force_unlock)
+        print(f"{PROG}: {'cleared stale state lock' if ok else 'no lock with that id'}", file=sys.stderr)
+        return 0 if ok else 1
+
     if command in cfg.WRITE_COMMANDS:
+        forge_obj = None
+        repo = env.get("GITHUB_REPOSITORY", "")
+        if env.get("GH_TOKEN") or env.get("GITHUB_TOKEN"):
+            try:
+                from . import forge as forge_mod
+
+                forge_obj = forge_mod.GitHubForge.from_env(env)
+                repo = repo or forge_mod.repo_from_git(code_root)
+            except Exception:  # noqa: BLE001 - audit falls back to stderr
+                forge_obj = None
         try:
             runtime.guard_write(
                 command,
@@ -291,6 +372,9 @@ def run(
                 break_glass=break_glass,
                 confirm_fn=confirm_fn,
                 audit_fn=audit_fn,
+                forge=forge_obj,
+                repo=repo,
+                lock=_state_lock(config, env),
             )
         except cfg.BreakGlassError as exc:
             print(str(exc), file=sys.stderr)
