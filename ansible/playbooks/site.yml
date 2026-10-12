@@ -101,7 +101,7 @@
     # Alternative self-hosted ingress (nginx + certbot).
     - role: ingress_nginx
       when: slots.ingress | default('cloudflare') == 'nginx'
-    # Security hardening (docs/security-hardening.md).
+    # Security hardening (docs/limitations.md).
     - role: cis_baseline
       when: cis_baseline_enabled | default(true) | bool
     - role: crowdsec

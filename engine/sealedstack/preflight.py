@@ -389,7 +389,7 @@ def check_versions(ctx: CheckContext) -> list[Result]:
                 "fail",
                 detail="VERSION file is missing from the engine code root",
                 fix="reinstall/rebuild the engine image",
-                docs="docs/operations.md",
+                docs="docs/limitations.md",
             )
         ]
     if version in AFFECTED_VERSIONS:
@@ -400,7 +400,7 @@ def check_versions(ctx: CheckContext) -> list[Result]:
                 "fail",
                 detail=f"engine {version} is affected by {AFFECTED_VERSIONS[version]}",
                 fix="merge the version-bump PR to a fixed release",
-                docs="docs/operations.md",
+                docs="docs/limitations.md",
             )
         ]
     base = f"engine {version}; newest available: {newest}"
@@ -412,10 +412,10 @@ def check_versions(ctx: CheckContext) -> list[Result]:
                 "warn",
                 detail=f"{base}; {DEPRECATED_BELOW}+ recommended",
                 fix="merge the version-bump PR",
-                docs="docs/operations.md",
+                docs="docs/limitations.md",
             )
         ]
-    return [Result("versions.engine", "versions", "ok", detail=base, docs="docs/operations.md")]
+    return [Result("versions.engine", "versions", "ok", detail=base, docs="docs/limitations.md")]
 
 
 # --------------------------------------------------------------------------- #
@@ -934,7 +934,7 @@ def _check_gitlab(ctx: CheckContext) -> list[Result]:
 def check_servers(ctx: CheckContext) -> list[Result]:
     servers = ctx.config.servers.get("servers") or {}
     if not servers:
-        return [Result("servers.none", "servers", "skip", detail="no servers configured", docs="docs/operations.md")]
+        return [Result("servers.none", "servers", "skip", detail="no servers configured", docs="docs/limitations.md")]
 
     tailnet = str((ctx.config.stack.get("mesh") or {}).get("tailnet") or "")
     if not tailnet:
@@ -955,7 +955,7 @@ def check_servers(ctx: CheckContext) -> list[Result]:
         try:
             reachable = bool(ctx.tcp_probe(host, 22, 5.0))
         except Exception as exc:  # noqa: BLE001
-            results.append(Result(f"servers.{name}", "servers", "fail", detail=str(exc), docs="docs/operations.md"))
+            results.append(Result(f"servers.{name}", "servers", "fail", detail=str(exc), docs="docs/limitations.md"))
             continue
         if reachable:
             results.append(
@@ -977,7 +977,7 @@ def check_servers(ctx: CheckContext) -> list[Result]:
                     "skip",
                     detail=f"{host}:22 not reachable yet; sealedstack creates this server — run `sealedstack up`",
                     fix="run `sealedstack up`",
-                    docs="docs/operations.md",
+                    docs="docs/limitations.md",
                 )
             )
             continue
@@ -994,7 +994,7 @@ def check_servers(ctx: CheckContext) -> list[Result]:
                     "fail",
                     detail=f"{host}:22 not reachable and required bootstrap secret(s) missing: {', '.join(missing)}",
                     fix=f"add {', '.join(missing)} to the secret source (the public IP is a secret, D-049)",
-                    docs="docs/operations.md",
+                    docs="docs/limitations.md",
                 )
             )
         else:

@@ -13,24 +13,17 @@ nav:
       - Getting started: getting-started.md
       - User experience: user-experience.md
       - Prerequisites: prerequisites.md
-      - Adopting existing resources: adopt.md
       - Known limitations: limitations.md
   - Configuration:
       - Providers: providers.md
       - Config repository: config-repo.md
+      - Infra repo and the tool image: infra-repo.md
       - CI/CD: ci-cd.md
   - Operations:
-      - Operations: operations.md
-      - Security hardening: security-hardening.md
-      - Monitoring: monitoring.md
-      - Staging: staging.md
-      - Preview environments: preview-environments.md
-      - Full rebuild drill: rebuild-drill.md
       - Netcup firewall: netcup-firewall.md
   - Design:
       - Architecture: architecture.md
       - Design spec: spec.md
-      - "Spec: infra repos and releases": spec-infra-repo-and-release.md
       - Decision log: decisions.md
   - Contributing: development.md
 markdown_extensions:

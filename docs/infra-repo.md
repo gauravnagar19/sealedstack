@@ -7,7 +7,7 @@ sealedstack source is never copied in, and the only thing the laptop needs is
 **Docker**.
 
 This page describes that model. For the design, see
-[spec-infra-repo-and-release.md](spec-infra-repo-and-release.md); for the
+[spec.md](spec.md); for the
 commands, see [getting-started.md](getting-started.md).
 
 ## Three repositories
@@ -83,8 +83,7 @@ bin/sealedstack doctor       # check tokens, permissions and the zone
 ```
 
 The wrapper passes `BWS_ACCESS_TOKEN` and `GH_TOKEN` through from your shell and
-mounts the SSH agent (see [§6.4 of the
-spec](spec-infra-repo-and-release.md) for macOS/Bitwarden notes).
+mounts the SSH agent (see [spec.md](spec.md) for macOS/Bitwarden notes).
 
 ## `sealedstack.version`
 
@@ -126,4 +125,4 @@ upgrade bot bumps both in one PR.
 
 - [Getting started](getting-started.md) — accounts, credentials and the first run.
 - [Config repository](config-repo.md) — the `SEALEDSTACK_CONFIG` contract.
-- [Spec: infra repos and releases](spec-infra-repo-and-release.md) — the design.
+- [Design spec](spec.md) — the architecture and contracts.

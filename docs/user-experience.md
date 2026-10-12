@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | **Final (v1 UX): signed off by the owner on 2026-10-11.** This document is authoritative for everything a user sees and does. [spec-infra-repo-and-release.md](spec-infra-repo-and-release.md) §6 defers to it. Changes need a new decision in [decisions.md](decisions.md). |
+| Status | **Final (v1 UX): signed off by the owner on 2026-10-11.** This document is authoritative for everything a user sees and does. [spec.md](spec.md) §6 defers to it. Changes need a new decision in [decisions.md](decisions.md). |
 | Date | 2026-10-11 |
 | Decisions | D-034 to D-047 ([decisions.md](decisions.md)) |
 

@@ -126,7 +126,7 @@ locals {
   # needs.object_storage -> one R2 bucket per app + S3 env vars (spec section
   # 5.4). Scoped R2 tokens are not managed by OpenTofu (Q1), so the app reuses
   # the R2 account credentials already passed for the backup destination; a
-  # per-bucket scoped token is a documented follow-up (docs/operations.md).
+  # per-bucket scoped token is a documented follow-up (docs/limitations.md).
   object_storage_needs = {
     for name, app in local.deployable :
     name => try(app.manifest.needs.object_storage, null)
@@ -171,7 +171,7 @@ locals {
 # --- object storage (spec section 5.4, needs.object_storage) ----------------
 # One R2 bucket per app that declares needs.object_storage. The S3 credentials
 # are shared (Q1: OpenTofu does not manage R2 API tokens); see
-# docs/operations.md for the manual scoping steps.
+# docs/limitations.md for the manual scoping steps.
 
 resource "cloudflare_r2_bucket" "app" {
   for_each = local.platform_is_dokploy ? local.object_storage : {}
@@ -182,7 +182,7 @@ resource "cloudflare_r2_bucket" "app" {
 
   lifecycle {
     # App uploads live here; never destroy a bucket because an app was removed
-    # from the render. Empty and remove it by hand (docs/operations.md).
+    # from the render. Empty and remove it by hand (docs/limitations.md).
     prevent_destroy = true
   }
 }

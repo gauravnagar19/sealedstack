@@ -11,7 +11,7 @@
 ---
 
 > **Update (2026-10-11):** distribution and releases changed — see
-> [spec-infra-repo-and-release.md](spec-infra-repo-and-release.md) (D-022..D-033). It
+> [decisions.md](decisions.md) (D-022..D-033). It
 > supersedes this document for: repos and layout (§3), the `registry` slot and
 > provider maturity (§4), the app manifest `build` block (§5.4), Tailscale policy
 > management (§8), the Dokploy ownership/env contract (§9), commands (§10, now a CLI),
@@ -486,7 +486,7 @@ implementation; the `config/` split into its own repo (`SEALEDSTACK_CONFIG`);
 public docs; CI for this repo (ansible-lint, `tofu validate`, gitleaks); publish
 the toolbox image to GHCR. Kept in beta until v1.0.
 
-### M0–M5 (see spec-infra-repo-and-release.md §11)
+### M0–M5
 
 The infra-repo/release track inserts milestones **M0** (green and safe), **M1**
 (tool image + infra repo), **M2** (build modes + registry + ownership), **M3**

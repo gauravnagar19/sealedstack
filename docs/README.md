@@ -11,17 +11,11 @@ started, and [AGENTS.md](../AGENTS.md) if you are extending the project.
 
 ## Configure and operate
 
-- [Adopting existing resources](adopt.md) — import an existing tunnel/DNS/rules/tailnet.
-
 - [Providers](providers.md) — the slot registry and how to plug in a provider.
 - [Config repository](config-repo.md) — keep `config/` in a private repo (`SEALEDSTACK_CONFIG`).
 - [Infra repo and the tool image](infra-repo.md) — the three-repo model, `bin/sealedstack`, upgrades.
 - [CI/CD](ci-cd.md) — releases from GitHub, GitLab, Gitea and others.
-- [Operations](operations.md) — status of scaling, backups and hardening.
-- [Security hardening](security-hardening.md) — CIS baseline, SBOM, audit, FIDO2.
-- [Monitoring](monitoring.md) — uptime heartbeat and Dokploy monitoring.
-- [Staging](staging.md) and [preview environments](preview-environments.md).
-- [Full rebuild drill](rebuild-drill.md) · [Netcup firewall](netcup-firewall.md).
+- [Netcup firewall](netcup-firewall.md) — the manual rule table for the Netcup SCP adapter.
 
 ## Design
 
@@ -29,7 +23,6 @@ started, and [AGENTS.md](../AGENTS.md) if you are extending the project.
 - [Design spec](spec.md) — the original architecture and contracts.
 - [Decision log](decisions.md) — what was decided and why.
 - [User experience (final)](user-experience.md) — every journey, with mockups, commands and defaults.
-- [Spec: infra repos, build modes and releases](spec-infra-repo-and-release.md) — the next build track (M0–M9).
 
 ## Contributing
 

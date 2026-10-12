@@ -134,12 +134,12 @@ Adding a provider is a registry entry plus a module, role or adapter — see
 
 Start with [docs/README.md](docs/README.md):
 
-- **Get started:** [getting-started](docs/getting-started.md), [prerequisites](docs/prerequisites.md), [adopting existing resources](docs/adopt.md), [config repository](docs/config-repo.md)
+- **Get started:** [getting-started](docs/getting-started.md), [prerequisites](docs/prerequisites.md), [config repository](docs/config-repo.md)
 - **Known limitations:** [limitations and caveats](docs/limitations.md) — what does not work yet, and the requirements behind it
-- **Configure & operate:** [providers](docs/providers.md), [CI/CD](docs/ci-cd.md), [operations](docs/operations.md), [security](docs/security-hardening.md), [monitoring](docs/monitoring.md)
+- **Configure & operate:** [providers](docs/providers.md), [CI/CD](docs/ci-cd.md), [netcup firewall](docs/netcup-firewall.md)
 - **Architecture:** [architecture](docs/architecture.md)
-- **Design:** [spec](docs/spec.md), [decisions](docs/decisions.md)
-- **Distribution:** [infra repo + tool image](docs/infra-repo.md) · [design spec (infra/release)](docs/spec-infra-repo-and-release.md)
+- **Design:** [spec](docs/spec.md), [decisions](docs/decisions.md), [user experience](docs/user-experience.md)
+- **Distribution:** [infra repo + tool image](docs/infra-repo.md)
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md), [development](docs/development.md), [AGENTS.md](AGENTS.md)
 
 ## Licence

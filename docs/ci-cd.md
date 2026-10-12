@@ -7,7 +7,7 @@
 > [examples/app-template/.github/workflows/release.yml](../examples/app-template/.github/workflows/release.yml)
 > and the `build` block in `sealedstack.yaml`. `build.mode: server` (Dokploy builds
 > on the host) is the opt-in alternative. Ownership of Dokploy fields is one-writer
-> per field (spec §5, D-032). Full detail: [spec-infra-repo-and-release.md](spec-infra-repo-and-release.md).
+> per field (spec §5, D-032). Full detail: [spec.md](spec.md).
 
 The **Release** layer ([spec.md §2](spec.md#2-architecture-golden-path)) is the
 app repo's own CI. sealedstack builds the place (a Dokploy compose service);
