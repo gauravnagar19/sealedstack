@@ -174,6 +174,46 @@ python3 scripts/init.py --owner <your-gh-owner>
 Otherwise the generated `bin/sealedstack` and CI snippets point at an image
 namespace that is not yours.
 
+## Approvals on GitHub Free private repositories: what they do and don't protect
+
+**Background.** On a **private** repository on the **GitHub Free** plan, GitHub doesn't
+offer branch protection, rulesets, or environment protection rules (required
+reviewers, deployment-branch limits). sealedstack therefore enforces its own gate
+(D-052) for every write command (`apply`, `up`, `restore`, `add-server`,
+`server sync`). A write runs only when **all** of these hold:
+
+1. the run is on the default branch (`refs/heads/main`) **and** its commit is the
+   current head of that branch;
+2. the forge reports the commit as **merged through a pull request** (direct
+   pushes are refused);
+3. it is **approved**: dispatched by someone in `stack.yaml: approvers`, or an
+   approver commented `/sealedstack approve` on that PR after the latest plan.
+
+When your plan *does* support environment protection (public repos, or paid
+plans), sealedstack uses it as well, as a second layer.
+
+**What this protects against:** mistakes and unreviewed changes. A config edit can't
+reach your servers until it is merged through a PR and approved by an approver.
+
+**What it does *not* protect against: a malicious collaborator with write access.**
+On Free private repos, CI secrets (such as `BWS_ACCESS_TOKEN`) are *repository*
+secrets, readable by a workflow on **any** branch. Anyone who can push a branch can
+edit a workflow on that branch and use the secrets directly, without going
+through sealedstack at all. No check inside sealedstack can prevent that.
+
+**Recommendations:**
+
+- **Keep write access to your infra repo to people you'd trust with your servers.**
+  A single-writer infra repo is the safe default.
+- If several people need write access, use a plan that supports environments,
+  and put the secrets in a `production` **environment** limited to the default
+  branch with required reviewers. sealedstack's workflows already reference that
+  environment.
+- **Minimise what the CI secret can do:** give the Bitwarden machine account
+  **read-only** access to the `infra` project only, and scope every provider
+  token to the exact permissions in [prerequisites](prerequisites.md).
+- **Rotate** the CI-held secrets when someone leaves the repo.
+
 ## Other open caveats
 
 These are tracked in status (private) and verification log (private):

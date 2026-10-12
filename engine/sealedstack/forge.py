@@ -83,6 +83,10 @@ class Forge:
         """One of admin|write|read|none (used to gate comment commands)."""
         raise NotImplementedError
 
+    def branch_head(self, repo: str, branch: str) -> str:  # pragma: no cover
+        """The commit SHA at the tip of ``branch`` (empty if unknown)."""
+        raise NotImplementedError
+
 
 # --------------------------------------------------------------------------- #
 # GitHub (reference)
@@ -159,6 +163,10 @@ class GitHubForge(Forge):
             {"number": int(pr.get("number", 0)), "merged": bool(pr.get("merged_at"))}
             for pr in prs
         ]
+
+    def branch_head(self, repo: str, branch: str) -> str:
+        data = self._request("GET", f"/repos/{repo}/branches/{branch}") or {}
+        return str(((data.get("commit") or {}).get("sha")) or "")
 
     def set_variable(self, repo: str, name: str, value: str) -> None:
         try:
@@ -262,6 +270,7 @@ class InMemoryForge(Forge):
     permissions: dict = field(default_factory=dict)
     environments: set = field(default_factory=set)
     commit_prs: dict = field(default_factory=dict)
+    branch_heads: dict = field(default_factory=dict)
     _next: int = 1000
 
     def _id(self) -> int:
@@ -333,3 +342,6 @@ class InMemoryForge(Forge):
 
     def permission(self, repo: str, user: str) -> str:
         return self.permissions.get((repo, user), "none")
+
+    def branch_head(self, repo: str, branch: str) -> str:
+        return str(self.branch_heads.get((repo, branch), ""))

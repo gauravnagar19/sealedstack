@@ -11,7 +11,7 @@ Adapted from [spec.md §14](spec.md#14-prerequisites).
 | Cloudflare account, Free plan, Zero Trust enabled | ✅ | Zero Trust and R2 may ask for a payment method even on free plans. |
 | Cloudflare API token | ✅ | Permissions below. |
 | Tailscale account | ✅ | API access token (or OAuth client) with ACL and auth-key scopes; MagicDNS on. |
-| Bitwarden account + free organisation with Secrets Manager | ✅ | One machine-account token for the laptop. |
+| Bitwarden account + free organisation with Secrets Manager | ✅ | One machine-account token. Give it **read-only** access to the `infra` project only: it is the only secret CI holds (see [limitations](limitations.md#approvals-on-github-free-private-repositories-what-they-do-and-dont-protect)). |
 | GitHub account with `gh` authenticated | ✅ | App repos and `just render`. |
 | A server: Ubuntu 24.04 or Debian 12 | ✅ | Control: ≥ 2 vCPU / 4 GB / 40 GB. Worker: ≥ 1 vCPU / 2 GB. |
 | Docker on the laptop | ✅ | Everything else runs in the toolbox image. |

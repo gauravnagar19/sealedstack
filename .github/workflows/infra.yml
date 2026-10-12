@@ -92,13 +92,16 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REF: ${{ github.ref }}
+          SEALEDSTACK_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           SEALEDSTACK_PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           docker run --rm \
             -v "$PWD:/infra" -w /infra \
             -e SEALEDSTACK_CONFIG=/infra/config \
-            -e GH_TOKEN -e GITHUB_REPOSITORY -e GITHUB_SHA -e GITHUB_ACTOR -e SEALEDSTACK_PR \
+            -e GH_TOKEN -e GITHUB_REPOSITORY -e GITHUB_SHA -e GITHUB_ACTOR -e GITHUB_REF \
+            -e SEALEDSTACK_DEFAULT_BRANCH -e SEALEDSTACK_PR \
             "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
             approve-check "${{ inputs.command }}"
 

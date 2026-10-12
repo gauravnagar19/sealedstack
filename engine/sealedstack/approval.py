@@ -66,6 +66,8 @@ def check(
     actor: str = "",
     approvers: Sequence[str] = (),
     pr_number: Optional[int] = None,
+    ref: str = "",
+    branch: str = "main",
 ) -> Decision:
     if not requires_approval(command):
         return Decision(True, "no approval required for this command")
@@ -73,6 +75,18 @@ def check(
         return Decision(False, "no approvers configured (set stack.yaml: approvers)")
     if not repo or not commit_sha:
         return Decision(False, "missing repository or commit sha for the approval check")
+
+    # Writes run only from the tip of the protected branch (review R3-2): a
+    # dispatch on another branch, even one whose head is a merged PR commit,
+    # would apply a stale tree.
+    expected_ref = f"refs/heads/{branch}"
+    if ref != expected_ref:
+        return Decision(False, f"write commands run only on {expected_ref} (this run is on '{ref or 'unknown'}')")
+    head = f.branch_head(repo, branch)
+    if not head:
+        return Decision(False, f"could not read the head of {branch}; refusing")
+    if head != commit_sha:
+        return Decision(False, f"the commit is not the current head of {branch} ({commit_sha[:7]} != {head[:7]}); re-run on the latest {branch}")
 
     merged, pr = _merged_through_pr(f, repo, commit_sha)
     if not merged:
@@ -98,4 +112,6 @@ def env_request(env: Mapping[str, str]) -> dict:
         "commit_sha": env.get("GITHUB_SHA") or env.get("SEALEDSTACK_COMMIT", ""),
         "actor": env.get("GITHUB_ACTOR", ""),
         "pr_number": int(env["SEALEDSTACK_PR"]) if env.get("SEALEDSTACK_PR", "").isdigit() else None,
+        "ref": env.get("GITHUB_REF", "") or env.get("SEALEDSTACK_REF", ""),
+        "branch": env.get("SEALEDSTACK_DEFAULT_BRANCH", "") or "main",
     }

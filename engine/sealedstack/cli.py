@@ -218,6 +218,8 @@ def _approve_handler(write_command: str) -> Callable:
             actor=request["actor"],
             approvers=approvers,
             pr_number=request["pr_number"],
+            ref=request["ref"],
+            branch=request["branch"],
         )
         if decision.approved:
             print(f"approve-check: approved — {decision.reason}", file=sys.stderr)
