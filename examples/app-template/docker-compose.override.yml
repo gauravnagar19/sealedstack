@@ -1,0 +1,15 @@
+# Local development only. `docker compose up --build` loads this file
+# automatically; sealedstack ignores it and deploys docker-compose.yml.
+# Needs Docker Compose 2.24 or newer (for `!reset`).
+services:
+  web:
+    # APP_VERSION is set by CI in production; default it for a local build.
+    image: ghcr.io/example-owner/example-web:${APP_VERSION:-dev}
+    ports:
+      - "3000:3000"
+
+networks:
+  dokploy-network:
+    # On a server the network is shared with Traefik (external). Locally Compose
+    # simply creates it.
+    external: !reset null

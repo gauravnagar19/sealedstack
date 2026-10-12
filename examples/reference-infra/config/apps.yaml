@@ -1,0 +1,6 @@
+apps:
+  example:
+    source: { repo: example-owner/example, ref: main }
+    servers: [server-1]
+    hostnames: [example.example.com]
+    access: owner-only

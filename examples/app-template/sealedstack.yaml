@@ -15,5 +15,3 @@ needs:
     version: "7"
     env: REDIS_URL
 secrets: [EXAMPLE_SECRET]
-user_auth:
-  webhook_paths: [/api/webhooks/auth]

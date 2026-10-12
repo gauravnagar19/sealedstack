@@ -1,19 +1,24 @@
-# Example app compose file.
+# Reference app compose file.
 #
-# sealedstack rules (checked by `just validate`):
+# sealedstack rules (checked by `sealedstack check`):
 #   - no `ports:` on any service; traffic arrives through Traefik on dokploy-network
 #   - no database service here when it is declared under needs: in sealedstack.yaml
+#   - every service with `build:` also pins image: <registry>/<owner>/<repo>-<service>:${APP_VERSION}
+#     (build.mode: ci, D-030); the image is built in CI, Dokploy only pulls it
+#
+# For local development docker-compose.override.yml is loaded automatically
+# (ports, a local network, a default version); sealedstack ignores it.
 services:
   web:
     build: .
-    image: ghcr.io/example/example:${APP_VERSION}
+    image: ghcr.io/example-owner/example-web:${APP_VERSION}
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-      EXAMPLE_SECRET: ${EXAMPLE_SECRET}
+      DATABASE_URL: ${DATABASE_URL:-}
+      REDIS_URL: ${REDIS_URL:-}
+      EXAMPLE_SECRET: ${EXAMPLE_SECRET:-}
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -39,7 +39,8 @@ import lint_compose
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONFIG = configdir.config_dir()
-BUILD = ROOT / ".build"
+# SEALEDSTACK_BUILD_DIR keeps test runs from writing into the repo's own .build/.
+BUILD = pathlib.Path(os.environ.get("SEALEDSTACK_BUILD_DIR") or ROOT / ".build")
 
 DEFAULT_WEB = {"service": "web", "port": 80}
 
@@ -54,6 +55,13 @@ REGISTRY_URLS = {
 
 class RenderError(RuntimeError):
     """Raised when an app manifest cannot be resolved in strict mode."""
+
+
+def _display(path: pathlib.Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
 
 
 def load_yaml(path: pathlib.Path) -> dict:
@@ -95,7 +103,27 @@ def gh_api_raw(endpoint: str) -> str:
         raise RenderError(f"could not reach the GitHub API: {exc.reason}") from exc
 
 
+def local_app_dir(repo: str) -> pathlib.Path | None:
+    """A local checkout standing in for an app repo, from ``SEALEDSTACK_LOCAL_APPS``.
+
+    ``SEALEDSTACK_LOCAL_APPS="owner/repo=/path/to/checkout,other/repo=/path2"``.
+    Lets CI and developers validate an app against an infra config without GitHub
+    access (the reference-app job uses it); nothing in production sets it.
+    """
+    for item in os.environ.get("SEALEDSTACK_LOCAL_APPS", "").split(","):
+        name, _, directory = item.strip().partition("=")
+        if name == repo and directory:
+            return pathlib.Path(directory)
+    return None
+
+
 def fetch_repo_file(repo: str, ref: str, path: str) -> str:
+    local = local_app_dir(repo)
+    if local is not None:
+        target = local / path
+        if not target.is_file():
+            raise RenderError(f"{repo}: {path} not found in the local checkout {local}")
+        return target.read_text(encoding="utf-8")
     endpoint = f"repos/{repo}/contents/{path}?ref={ref}"
     return gh_api_raw(endpoint)
 
@@ -347,7 +375,7 @@ def main() -> int:
             extra = " (+ deploy compose)" if app.get("_deploy_compose") else ""
             print(f"  {name}: rendered (build.mode: {mode}{extra})")
 
-    print(f"render: wrote {len([a for a in rendered.values() if not a.get('_disabled')])} app(s) to {BUILD.relative_to(ROOT)}/")
+    print(f"render: wrote {len([a for a in rendered.values() if not a.get('_disabled')])} app(s) to {_display(BUILD)}/")
     return 0
 
 

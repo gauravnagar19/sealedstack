@@ -1,0 +1,9 @@
+servers:
+  server-1:
+    provider: any-ssh
+    role: control
+    os: ubuntu-24.04
+    bootstrap:
+      method: password
+      ip_secret: SERVER_IP_SERVER_1
+      password_secret: ROOT_PASSWORD_SERVER_1

@@ -1,0 +1,48 @@
+# Sample stack for validating the reference app offline. No secrets (D-008).
+name: reference-infra
+domain: example.com
+owner_email: you@example.com
+admin_user: admin
+admin:
+  ssh_keys: []
+approvers: [example-owner]
+
+slots:
+  compute: any-ssh
+  mesh: tailscale
+  ingress: cloudflare
+  gate: cloudflare_access
+  secrets: bitwarden
+  backup: r2
+  platform: dokploy
+  registry: ghcr
+
+secrets:
+  project: infra
+  keys: {}
+
+providers:
+  registry_ghcr: { owner: example-owner }
+
+cloudflare:
+  account_id: REPLACE_ME      # a placeholder; validation never calls Cloudflare
+  zone: example.com
+  team_name: example
+
+gate:
+  policies:
+    owner-only: { emails: [you@example.com], session: 24h }
+  catch_all: true
+
+edge_security:
+  bot_fight_mode: true
+  block_ai_bots: true
+  blocked_paths: ["/.env", "/.git", "xmlrpc.php", "/wp-", "*.php"]
+
+state:
+  backend: r2
+  bucket: sealedstack-state
+
+mesh:
+  policy: unmanaged
+  tailnet: example.ts.net
