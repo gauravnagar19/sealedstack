@@ -486,7 +486,12 @@ def transform_compose(
             shown = f"{registry_prefix}/{repo_slug}-{{{tail}}}:${{APP_VERSION}}"
         changes.append(f"added `image: {shown}` (`build:` kept for local development)")
 
-    new_text = "\n".join(lines).rstrip("\n") + ("\n" if text.endswith("\n") else "")
+    collapsed: list[str] = []
+    for line in lines:
+        if not line.strip() and collapsed and not collapsed[-1].strip():
+            continue  # removals can leave two blank lines in a row
+        collapsed.append(line)
+    new_text = "\n".join(collapsed).rstrip("\n") + ("\n" if text.endswith("\n") else "")
     # a final parse proves the edits left valid YAML with the intended shape
     try:
         parsed = yaml.safe_load(new_text) or {}
@@ -549,12 +554,15 @@ def render_override(result: ComposeResult, original_text: str) -> str:
         "# Local development only. `docker compose up --build` loads this file",
         "# automatically; sealedstack ignores it and deploys docker-compose.yml.",
         "# It restores what sealedstack removes from the deployed compose file:",
-        "# published ports and the in-compose database.",
+        "# published ports and the in-compose database, and it defaults APP_VERSION so",
+        "# the pinned image tag is valid without CI.",
         "services:",
     ]
-    touched = list(dict.fromkeys([*removed.ports, *removed.env, *removed.depends_on]))
+    touched = list(dict.fromkeys([*result.images, *removed.ports, *removed.env, *removed.depends_on]))
     for service in touched:
         out.append(f"  {service}:")
+        if service in result.images:
+            out.append(f"    image: {result.images[service].replace('${APP_VERSION}', '${APP_VERSION:-dev}')}")
         if service in removed.ports:
             out.append("    ports:")
             out.extend(f'      - "{entry}"' for entry in removed.ports[service])
@@ -633,10 +641,12 @@ def render_manifest(name: str, compose_path: str, result: ComposeResult, *, back
     return "\n".join(lines) + "\n", manifest
 
 
-RELEASE_TEMPLATE = """# App release CI: a thin caller of sealedstack's reusable workflow (spec 4.3).
-# Replace <owner> with the account that owns the sealedstack repo, and keep the
-# version pinned to the sealedstack release you run (sealedstack.version).
-name: release
+RELEASE_HEADER = """# App release CI: a thin caller of sealedstack's reusable workflow.
+# Keep the version pinned to the sealedstack release your infra repo runs
+# (sealedstack.version there); the infra repo's upgrade PR tells you when to bump it.
+"""
+
+RELEASE_BODY = """name: release
 
 on:
   push:
@@ -663,7 +673,7 @@ jobs:
 
 
 def render_release_workflow(tool_owner: str, version: str) -> str:
-    return RELEASE_TEMPLATE.replace("<owner>", tool_owner).replace("<version>", version)
+    return RELEASE_HEADER + RELEASE_BODY.replace("<owner>", tool_owner).replace("<version>", version)
 
 
 def generate(
@@ -703,7 +713,7 @@ def generate(
     notes = list(result.notes)
     changes = list(result.changes)
 
-    needs_override = bool(result.removed.ports or result.removed.services or result.removed.env)
+    needs_override = bool(result.images or result.removed.ports or result.removed.services or result.removed.env)
     override_note = ""
     if needs_override:
         if OVERRIDE_PATH in files:
@@ -714,7 +724,8 @@ def generate(
         else:
             out[OVERRIDE_PATH] = render_override(result, files[compose_path])
             override_note = (
-                "local development only; it restores the ports"
+                "local development only; it defaults `APP_VERSION`"
+                + (", restores the ports" if result.removed.ports else "")
                 + (" and the database" if result.removed.services else "")
                 + " for `docker compose up`, and sealedstack ignores it"
             )
@@ -789,7 +800,7 @@ def render_pr_body(
     lines += [
         "",
         "Local development is unchanged: `docker compose up --build` still works"
-        + (f" (`{OVERRIDE_PATH}` supplies the ports and database)." if override_note else "."),
+        + (f" (`{OVERRIDE_PATH}` supplies what was removed)." if override_note else "."),
         "",
         "**Merge this PR first.** The infra-repo PR that places this app waits for it.",
     ]

@@ -1,12 +1,15 @@
 # Local development only. `docker compose up --build` loads this file
 # automatically; sealedstack ignores it and deploys docker-compose.yml.
 # It restores what sealedstack removes from the deployed compose file:
-# published ports and the in-compose database.
+# published ports and the in-compose database, and it defaults APP_VERSION so
+# the pinned image tag is valid without CI.
 services:
   ui:
+    image: ghcr.io/example-owner/example-app-ui:${APP_VERSION:-dev}
     ports:
       - "8080:80"
   api:
+    image: ghcr.io/example-owner/example-app-api:${APP_VERSION:-dev}
     ports:
       - "3000:3000"
     environment:

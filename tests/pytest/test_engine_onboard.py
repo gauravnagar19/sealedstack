@@ -84,6 +84,9 @@ def test_generated_files_pass_sealedstack_validation():
 
 def test_override_restores_ports_and_database_for_development():
     plan = generate()
+    override_images = yaml.safe_load(plan.files["docker-compose.override.yml"])["services"]
+    assert override_images["ui"]["image"] == "ghcr.io/example-owner/example-app-ui:${APP_VERSION:-dev}"
+    assert override_images["api"]["image"] == "ghcr.io/example-owner/example-app-api:${APP_VERSION:-dev}"
     base = yaml.safe_load(plan.files["docker-compose.yml"])
     override = yaml.safe_load(plan.files["docker-compose.override.yml"])
     original = yaml.safe_load((FIXTURE / "docker-compose.yml").read_text(encoding="utf-8"))
@@ -114,7 +117,10 @@ def test_a_script_still_used_by_another_workflow_is_kept():
 
 def test_release_template_matches_the_reference_app():
     reference = (REPO / "examples" / "app-template" / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-    assert onboard.render_release_workflow("<owner>", "0.5.0") == reference.replace("@v0.5.0", "@v0.5.0")
+    generated = onboard.render_release_workflow("<owner>", "0.5.0")
+    # the same workflow; only the explanatory comment at the top differs
+    assert generated[generated.index("name: release") :] == reference[reference.index("name: release") :]
+    assert "<owner>" not in onboard.render_release_workflow("example-owner", "0.5.0")
 
 
 # --------------------------------------------------------------------------- #
@@ -132,7 +138,9 @@ def test_compose_without_ports_only_gains_the_image():
     )
     assert len(result.changes) == 1 and "added `image:" in result.changes[0]
     plan = generate({"docker-compose.yml": text})
-    assert "docker-compose.override.yml" not in plan.files  # nothing to restore for dev
+    # the only thing a developer needs is a valid tag for the pinned image
+    override = yaml.safe_load(plan.files["docker-compose.override.yml"])
+    assert override["services"] == {"web": {"image": "ghcr.io/example-owner/example-app-web:${APP_VERSION:-dev}"}}
 
 
 def test_multiple_services_all_lose_ports_and_the_first_is_the_web_service():
@@ -326,3 +334,15 @@ def test_cli_exposes_debug_onboard_with_its_flags():
     args.extras = tail
     action = cli.plan_action(args, code_root=REPO)
     assert action.argv == [[sys.executable, "-m", "sealedstack.onboard", "--path", ".", "--name", "x", "--repo", "a/b", "--health", "/api/health"]]
+
+
+def test_removals_do_not_leave_runs_of_blank_lines_and_trailing_comments_stay():
+    text = (
+        "services:\n  web:\n    build: .\n    ports: ['80:80']\n\n"
+        "  db:\n    image: postgres:16\n    volumes:\n      - data:/var/lib/postgresql/data\n\n"
+        "volumes:\n  data:\n# keep me\n"
+    )
+    result = transform(text)
+    assert "\n\n\n" not in result.text
+    assert result.text.endswith("# keep me\n")
+    assert "volumes" not in yaml.safe_load(result.text)

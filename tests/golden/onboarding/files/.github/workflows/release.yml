@@ -1,6 +1,6 @@
-# App release CI: a thin caller of sealedstack's reusable workflow (spec 4.3).
-# Replace example-owner with the account that owns the sealedstack repo, and keep the
-# version pinned to the sealedstack release you run (sealedstack.version).
+# App release CI: a thin caller of sealedstack's reusable workflow.
+# Keep the version pinned to the sealedstack release your infra repo runs
+# (sealedstack.version there); the infra repo's upgrade PR tells you when to bump it.
 name: release
 
 on:
