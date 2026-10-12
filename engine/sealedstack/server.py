@@ -42,7 +42,15 @@ def _default_io() -> ServerIO:
         proc = subprocess.run(argv, env=dict(env), capture_output=True, text=True)
         return proc.returncode, proc.stdout
 
-    return ServerIO(run=run, capture=capture, prompt=input)
+    def prompt(message):
+        # CI has no terminal: print the instruction and carry on instead of
+        # crashing on EOF after the server is already up.
+        if sys.stdin is not None and sys.stdin.isatty():
+            return input(message)
+        print(f"{message}(non-interactive run: continuing)", flush=True)
+        return ""
+
+    return ServerIO(run=run, capture=capture, prompt=prompt)
 
 
 def write_vars(path: Path, values: Mapping[str, str]) -> None:
@@ -112,31 +120,46 @@ def up(
         )
 
     root_password = ""
+    ip = ""
+    already_bootstrapped = False
     if creates_server(code_root, provider):
         print(f"==> provisioning {name} via {provider}", file=out)
         rc, stdout = io.capture([sys.executable, "-m", "sealedstack.compute", name, "apply"], env)
         if rc != 0:
             raise config_mod.ConfigError(f"compute apply failed for {name} (exit {rc})")
         ip = stdout.strip().splitlines()[-1] if stdout.strip() else ""
+    elif not source.get(ip_key).found and not source.get(pw_key).found:
+        # D-049: both bootstrap secrets are deleted after the first bootstrap, so
+        # their absence means "already bootstrapped". Skip the public-SSH bootstrap
+        # and only re-assert the baseline over the mesh; this keeps `up` re-runnable.
+        already_bootstrapped = True
+        print(
+            f"==> {name}: no bootstrap secrets ({ip_key}, {pw_key}); assuming it is already "
+            "bootstrapped and re-asserting the baseline over the mesh",
+            file=out,
+        )
     else:
         ip = _require(source, ip_key)
         root_password = _require(source, pw_key)
 
-    if not ip:
+    if not ip and not already_bootstrapped:
         raise config_mod.ConfigError(f"could not determine the public IP for '{name}'")
-    print(f"==> {name}: using the bootstrap IP from the secret source (redacted)", file=out)
+    if not already_bootstrapped:
+        print(f"==> {name}: using the bootstrap IP from the secret source (redacted)", file=out)
 
     import tempfile
 
-    auth_key = _capture_required(
-        io,
-        [sys.executable, "-m", "sealedstack.tailscalekey"],
-        {
-            **env,
-            "TAILSCALE_OAUTH_CLIENT_ID": _require(source, config.secret_key("TAILSCALE_OAUTH_CLIENT_ID")),
-            "TAILSCALE_OAUTH_CLIENT_SECRET": _require(source, config.secret_key("TAILSCALE_OAUTH_CLIENT_SECRET")),
-        },
-    )
+    auth_key = ""
+    if not already_bootstrapped:
+        auth_key = _capture_required(
+            io,
+            [sys.executable, "-m", "sealedstack.tailscalekey"],
+            {
+                **env,
+                "TAILSCALE_OAUTH_CLIENT_ID": _require(source, config.secret_key("TAILSCALE_OAUTH_CLIENT_ID")),
+                "TAILSCALE_OAUTH_CLIENT_SECRET": _require(source, config.secret_key("TAILSCALE_OAUTH_CLIENT_SECRET")),
+            },
+        )
     dokploy_ssh_public_key = _capture_required(io, [sys.executable, "-m", "sealedstack.dokploykey"], env)
     admin_ssh_keys_json = json.dumps(config.admin_ssh_keys())
 
@@ -144,28 +167,29 @@ def up(
     os.close(fd)
     vars_file = Path(vars_path)
     try:
-        write_vars(
-            vars_file,
-            {
-                "target_name": name,
-                "tailscale_auth_key": auth_key,
-                "admin_password": admin_password,
-                "admin_user": admin_user,
-                "admin_ssh_keys_json": admin_ssh_keys_json,
-                "ansible_password": root_password or env.get("ROOT_PASSWORD", ""),
-            },
-        )
-        bootstrap_args = ["-e", f"@{vars_file}"]
-        if not root_password and not env.get("ROOT_PASSWORD"):
-            bootstrap_args.append("--ask-pass")
+        if not already_bootstrapped:
+            write_vars(
+                vars_file,
+                {
+                    "target_name": name,
+                    "tailscale_auth_key": auth_key,
+                    "admin_password": admin_password,
+                    "admin_user": admin_user,
+                    "admin_ssh_keys_json": admin_ssh_keys_json,
+                    "ansible_password": root_password or env.get("ROOT_PASSWORD", ""),
+                },
+            )
+            bootstrap_args = ["-e", f"@{vars_file}"]
+            if not root_password and not env.get("ROOT_PASSWORD"):
+                bootstrap_args.append("--ask-pass")
 
-        print(f"==> bootstrap {name}", file=out)
-        rc = io.run(
-            ["ansible-playbook", "-i", f"{ip},", "-u", "root", str(code_root / "ansible" / "playbooks" / "bootstrap.yml"), *bootstrap_args],
-            env,
-        )
-        if rc != 0:
-            raise config_mod.ConfigError(f"bootstrap failed for {name} (exit {rc})")
+            print(f"==> bootstrap {name}", file=out)
+            rc = io.run(
+                ["ansible-playbook", "-i", f"{ip},", "-u", "root", str(code_root / "ansible" / "playbooks" / "bootstrap.yml"), *bootstrap_args],
+                env,
+            )
+            if rc != 0:
+                raise config_mod.ConfigError(f"bootstrap failed for {name} (exit {rc})")
 
         write_vars(
             vars_file,
@@ -190,10 +214,18 @@ def up(
             env,
         )
         if rc != 0:
-            raise config_mod.ConfigError(f"site.yml failed for {name} (exit {rc})")
+            hint = (
+                f"; if '{name}' was never bootstrapped, add {ip_key} and {pw_key} to the secret source"
+                if already_bootstrapped
+                else ""
+            )
+            raise config_mod.ConfigError(f"site.yml failed for {name} (exit {rc}){hint}")
     finally:
         vars_file.unlink(missing_ok=True)
 
+    if already_bootstrapped:
+        print(_checklist(name), file=out)
+        return f"sealedstack: server '{name}' is up"
     firewall_mode = registry_value(code_root, "compute", provider, "firewall", "manual")
     if not creates_server(code_root, provider) and firewall_mode in ("native", "api"):
         print(f"==> applying provider firewall for {name} ({firewall_mode})", file=out)

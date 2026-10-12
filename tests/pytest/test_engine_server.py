@@ -116,3 +116,46 @@ def test_up_missing_admin_password_errors(tmp_path):
     config = make_config(tmp_path)
     with pytest.raises(config_mod.ConfigError):
         server.up(config, {}, "web-1", source=FakeSource({"SERVER_IP_WEB_1": "x", "ROOT_PASSWORD_WEB_1": "y"}), io=FakeIO())
+
+
+def test_up_without_bootstrap_secrets_only_reasserts_the_baseline(tmp_path, capsys):
+    """D-049: the secrets are deleted after the first bootstrap, so `up` must be re-runnable."""
+    config = make_config(tmp_path, provider="netcup")
+    io = FakeIO(captures={"sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy"})
+    source = FakeSource({"admin_sudo_password": "sudopw"})  # no SERVER_IP_/ROOT_PASSWORD_
+
+    msg = server.up(config, {}, "web-1", source=source, io=io)
+
+    joined = [" ".join(r) for r in io.runs]
+    assert not any("bootstrap.yml" in x for x in joined)  # no public-SSH bootstrap
+    assert any("site.yml" in x and "--limit web-1" in x for x in joined)
+    assert not any("sealedstack.tailscalekey" in " ".join(c) for c in io.captures)  # no auth key minted
+    assert not io.prompts  # nothing changed at the provider firewall
+    assert "already bootstrapped" in capsys.readouterr().out and "web-1" in msg
+
+
+def test_up_with_only_one_bootstrap_secret_is_an_error(tmp_path):
+    config = make_config(tmp_path, provider="netcup")
+    source = FakeSource({"admin_sudo_password": "sudopw", "SERVER_IP_WEB_1": "203.0.113.10"})
+    with pytest.raises(config_mod.ConfigError, match="ROOT_PASSWORD_WEB_1"):
+        server.up(config, {}, "web-1", source=source, io=FakeIO())
+
+
+def test_up_site_failure_without_secrets_names_the_missing_keys(tmp_path):
+    class FailingIO(FakeIO):
+        def run(self, argv, env):
+            super().run(argv, env)
+            return 4
+
+    config = make_config(tmp_path, provider="netcup")
+    io = FailingIO(captures={"sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy"})
+    with pytest.raises(config_mod.ConfigError, match="SERVER_IP_WEB_1 and ROOT_PASSWORD_WEB_1"):
+        server.up(config, {}, "web-1", source=FakeSource({"admin_sudo_password": "x"}), io=io)
+
+
+def test_default_prompt_does_not_crash_without_a_terminal(monkeypatch, capsys):
+    import io as stdio
+
+    monkeypatch.setattr(server.sys, "stdin", stdio.StringIO(""))  # not a tty, EOF on read
+    assert server._default_io().prompt("Press Enter when done… ") == ""
+    assert "non-interactive" in capsys.readouterr().out
