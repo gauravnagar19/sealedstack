@@ -4,6 +4,16 @@ name: release
 # `ghcr.io/<owner>/sealedstack` from their infra repo, so this workflow is the
 # only thing that ships the CLI to them.
 #
+# D-053: nothing here may make anything public. Images are pushed only to the
+# repository owner's own GHCR namespace (ghcr.io/${{ github.repository_owner }}/...),
+# which inherits the repository's visibility (private today), and no step ever
+# sets package or repository visibility. Making an image public is an owner
+# action in the GitHub UI after the owner has confirmed (see decisions.md D-053).
+# tests/pytest/test_public_guard.py fails if a workflow, script or engine module
+# adds a visibility change, GitHub Pages deploy, Homebrew tap or public-registry
+# publish without BOTH `!github.event.repository.private` and
+# `vars.PUBLIC_RELEASE_CONFIRMED == 'true'`.
+#
 # On a manual dispatch (the only trigger — D-052/B2) it:
 #   0. checks the dispatcher is in the repo variable `RELEASE_APPROVERS`,
 #   1. builds the toolbox and captures its manifest digest,
@@ -21,7 +31,7 @@ on:
         description: "Version to publish, without the leading v (default: contents of VERSION)"
         required: false
       dry_run:
-        description: "Build and sign without pushing (no public registry write)"
+        description: "Build and sign without pushing (no registry write)"
         type: boolean
         default: false
 
@@ -59,8 +69,8 @@ jobs:
     needs: [authorize, toolbox]
     if: ${{ always() && needs.authorize.outputs.ok == 'true' && !inputs.dry_run }}
     runs-on: ubuntu-latest
-    # The owner approves every push to the public registry (where GitHub supports
-    # environment reviewers; on Free private repos the D-052 check is the gate).
+    # The owner approves every push to GHCR (where GitHub supports environment
+    # reviewers; on Free private repos the D-052 check is the gate).
     environment: release
     permissions:
       contents: read

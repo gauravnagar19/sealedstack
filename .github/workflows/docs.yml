@@ -1,6 +1,9 @@
 name: docs
 
-# Build the documentation site (mkdocs-material) and deploy to GitHub Pages.
+# Build the documentation site (mkdocs-material). Deploying to GitHub Pages is
+# gated twice (D-053): the repository must be public AND the owner must have set
+# the repository variable PUBLIC_RELEASE_CONFIRMED to 'true'. Until both hold,
+# this workflow only builds. tests/pytest/test_public_guard.py enforces it.
 on:
   push:
     branches: [main]
@@ -32,9 +35,9 @@ jobs:
 
   deploy:
     needs: build
-    # GitHub Pages isn't available for private repos on the Free plan; build only
-    # until the repository is public.
-    if: ${{ !github.event.repository.private }}
+    # D-053: nothing is published until the owner confirms. Both conditions are
+    # required: a public repository and the owner-set PUBLIC_RELEASE_CONFIRMED.
+    if: ${{ !github.event.repository.private && vars.PUBLIC_RELEASE_CONFIRMED == 'true' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

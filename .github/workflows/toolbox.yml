@@ -1,7 +1,9 @@
 name: toolbox
 
 # Publish the toolbox image so users don't need to build it. Pin by digest in
-# production. Pushed on main; on a version tag the release workflow builds it
+# production. D-053: pushed only to the owner's own GHCR namespace, which
+# inherits the repository's (private) visibility; this workflow never changes
+# package visibility. Pushed on main; on a version tag the release workflow builds it
 # (via `workflow_call`) so the tag does not trigger two concurrent pushes.
 on:
   push:
