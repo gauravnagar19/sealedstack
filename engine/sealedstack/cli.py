@@ -132,6 +132,58 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# Commands whose own flags (``--name``, ``--repo``, ...) belong to the command, not
+# to this parser. Value: how many positionals the parser itself consumes first.
+PASSTHROUGH = {
+    "setup": 0,
+    "add-app": 0,
+    "app add": 0,
+    "debug render": 0,
+    "debug publish": 0,
+    "debug providers": 0,
+    "restore": 1,
+    "drill": 1,
+    "db restore": 1,
+    "db drill": 1,
+}
+_GLOBAL_WITH_VALUE = {"--config", "--force-unlock"}
+_GLOBAL_FLAGS = {"--json", "--break-glass"}
+
+
+def split_passthrough(argv: Sequence[str]) -> tuple[list[str], list[str]]:
+    """Split ``argv`` into what this parser reads and the command's own flags.
+
+    ``sealedstack app add --name x --repo y`` must reach ``appadd`` untouched, in
+    order. Global flags given before the command are still honoured.
+    """
+    tokens = list(argv)
+    i, head = 0, []
+    while i < len(tokens):
+        token = tokens[i]
+        if token in _GLOBAL_WITH_VALUE and i + 1 < len(tokens):
+            head += tokens[i : i + 2]
+            i += 2
+        elif token in _GLOBAL_FLAGS or token.startswith("--config=") or token.startswith("--force-unlock="):
+            head.append(token)
+            i += 1
+        else:
+            break
+    if i >= len(tokens):
+        return tokens, []
+    noun = tokens[i]
+    verb = tokens[i + 1] if i + 1 < len(tokens) and noun in ("app", "db", "debug", "server") else ""
+    command = f"{noun} {verb}".strip() if verb else noun
+    if command not in PASSTHROUGH:
+        return tokens, []
+    consumed = i + (2 if verb else 1)
+    positionals = PASSTHROUGH[command]
+    taken = 0
+    while taken < positionals and consumed < len(tokens) and not tokens[consumed].startswith("-"):
+        consumed += 1
+        taken += 1
+    return tokens[:consumed], tokens[consumed:]
+
+
 def canonical(args: argparse.Namespace) -> str:
     noun = getattr(args, "noun", None)
     if not noun:
@@ -325,7 +377,10 @@ def run(
     tcp_probe: Optional[Callable[[str, int, float], bool]] = None,
 ) -> int:
     parser = build_parser()
-    args = parser.parse_args(list(argv))
+    head, tail = split_passthrough(argv)
+    args = parser.parse_args(head)
+    if tail:
+        args.extras = list(getattr(args, "extras", []) or []) + tail
     env = dict(os.environ) if env is None else dict(env)
     code_root = Path(code_root) if code_root else cfg.find_code_root(env)
 

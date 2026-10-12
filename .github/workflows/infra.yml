@@ -110,13 +110,14 @@ jobs:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           docker run --rm -i \
             -v "$PWD:/infra" -w /infra \
             -e SEALEDSTACK_CONFIG=/infra/config \
             -e SEALEDSTACK_WORKDIR=/infra/.sealedstack \
-            -e BWS_ACCESS_TOKEN -e GH_TOKEN -e GITHUB_ACTOR \
+            -e BWS_ACCESS_TOKEN -e GH_TOKEN -e GITHUB_ACTOR -e GITHUB_REPOSITORY -e GITHUB_ACTIONS \
             "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
             ${{ inputs.command }} ${{ inputs.args }}
 

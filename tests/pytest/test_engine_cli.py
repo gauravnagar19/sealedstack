@@ -251,3 +251,42 @@ def test_break_glass_refuses_when_state_lock_held(tmp_path, capsys):
     assert rc == 2
     assert calls == []  # nothing ran
     assert "state lock" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------- #
+# pass-through flags (UX 12.1: `add-app --name ... --repo ...`)
+# --------------------------------------------------------------------------- #
+def test_split_passthrough_keeps_the_commands_own_flags_in_order():
+    head, tail = cli.split_passthrough(["app", "add", "--name", "x", "--repo", "a/b", "--host", "x.example.com"])
+    assert head == ["app", "add"] and tail == ["--name", "x", "--repo", "a/b", "--host", "x.example.com"]
+    head, tail = cli.split_passthrough(["--json", "add-app", "--name", "x"])
+    assert head == ["--json", "add-app"] and tail == ["--name", "x"]
+    head, tail = cli.split_passthrough(["restore", "shop", "--backup", "k", "--force"])
+    assert head == ["restore", "shop"] and tail == ["--backup", "k", "--force"]
+    head, tail = cli.split_passthrough(["db", "drill", "shop", "orders"])
+    assert head == ["db", "drill", "shop"] and tail == ["orders"]
+    # commands that do not take their own flags are left to argparse
+    assert cli.split_passthrough(["check", "--json"]) == (["check", "--json"], [])
+    assert cli.split_passthrough(["server", "add", "web-1"]) == (["server", "add", "web-1"], [])
+
+
+def test_add_app_flags_reach_the_command(tmp_path):
+    config_dir = make_config_dir(tmp_path)
+    calls = []
+
+    def runner(argv, cwd):
+        calls.append(list(argv))
+        return 0
+
+    rc = cli.run(
+        ["--config", str(config_dir), "add-app", "--name", "example-app", "--repo", "you/example-app", "--host", "app.example.com", "--access", "owner-only"],
+        code_root=REPO,
+        env={},
+        git=clean_git(),
+        runner=runner,
+    )
+    assert rc == 0
+    assert calls == [[
+        sys.executable, "-m", "sealedstack.appadd",
+        "--name", "example-app", "--repo", "you/example-app", "--host", "app.example.com", "--access", "owner-only",
+    ]]

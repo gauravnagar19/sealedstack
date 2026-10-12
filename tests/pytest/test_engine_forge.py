@@ -152,3 +152,11 @@ def test_infra_workflow_shape():
     # comment commands are gated by collaborator permission
     decide = data["jobs"]["authorize"]["steps"][0]
     assert "collaborators" in decide["run"] and "write" in decide["run"]
+
+
+def test_infra_workflow_tells_the_container_it_runs_in_ci():
+    """Write commands are refused on a 'local' runner (D-045); the container must
+    see the CI marker and the repository (for add-app's pull requests)."""
+    text = (REPO / ".github" / "workflows" / "infra.yml").read_text(encoding="utf-8")
+    run_line = [l for l in text.splitlines() if "-e BWS_ACCESS_TOKEN" in l]
+    assert run_line and all("-e GITHUB_ACTIONS" in l and "-e GITHUB_REPOSITORY" in l for l in run_line)
