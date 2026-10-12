@@ -118,7 +118,7 @@ def main() -> int:
         if mesh.get("policy", "managed") == "managed" and not (CONFIG / "tailscale-policy.hujson").exists():
             config_problems.append(
                 "mesh.policy is 'managed' but config/tailscale-policy.hujson is missing "
-                "(run `sealedstack init` to import it, or set mesh.policy: unmanaged)"
+                "(run `sealedstack setup` to import it, or set mesh.policy: unmanaged)"
             )
     if slots.get("registry"):
         ok, value = secret_lookup("REGISTRY_PULL_TOKEN")

@@ -208,3 +208,18 @@ def test_readme_lists_golden_path_before_experimental():
     for ids in GOLDEN.values():
         for impl in ids:
             assert impl in readme[golden:experimental], impl
+
+
+# --------------------------------------------------------------------------- #
+# user-facing messages in the code use the sealedstack vocabulary, not `just`
+# --------------------------------------------------------------------------- #
+def test_runtime_messages_do_not_tell_users_to_run_just_or_init():
+    offenders = []
+    for tree in ("engine", "scripts"):
+        for path in sorted((REPO / tree).rglob("*")):
+            if not path.is_file() or path.suffix not in {".py", ".sh"} or "__pycache__" in path.parts:
+                continue
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if re.search(r"`just |'just |\"just |  just (apply|app-restore|state-init|doctor|validate)|sealedstack init|bin/sealedstack validate", line):
+                    offenders.append(f"{path.relative_to(REPO)}:{number}: {line.strip()}")
+    assert offenders == []

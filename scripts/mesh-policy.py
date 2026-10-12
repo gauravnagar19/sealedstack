@@ -2,7 +2,7 @@
 """Merge sealedstack's block into your Tailscale policy (spec section 7, D-026).
 
 "Your file, our block": ``config/tailscale-policy.hujson`` is the user's own
-tailnet policy, imported verbatim by ``sealedstack init``. This script parses it
+tailnet policy, imported verbatim by ``sealedstack setup``. This script parses it
 as HuJSON (a JSON5-compatible dialect, so ``//`` comments and trailing commas
 work), appends only sealedstack's tags, rules and tests, and writes the effective
 policy JSON to ``.build/tailscale-policy.json``. Every other section passes
@@ -345,7 +345,7 @@ def main() -> int:
         print(
             f"mesh-policy: {source} is missing.\n"
             "             mesh.policy is 'managed' (default), so sealedstack must merge\n"
-            "             its block into your tailnet policy. Run `sealedstack init` to\n"
+            "             its block into your tailnet policy. Run `sealedstack setup` to\n"
             "             import it, create the file, or set `mesh.policy: unmanaged`.",
             file=sys.stderr,
         )

@@ -402,11 +402,11 @@ def _move_footer(app: str, to_server: str, from_server: str, key: str, dump_file
     lines = [
         "sealedstack: NOTHING was changed. Finish the move by hand:",
         f"  1. Edit config/apps.yaml and reorder '{app}' so '{to_server}' is servers[0].",
-        "  2. just apply  (the platform creates the database on the new primary)",
+        "  2. sealedstack apply  (the platform creates the database on the new primary)",
         "  3. Restore into the new database:",
     ]
     if key:
-        lines.append(f"         just app-restore {app} {key}")
+        lines.append(f"         sealedstack restore {app} {key}")
     else:
         lines.append(f"         # restore the local dump by hand: gunzip -c {dump_file} | ssh {to_server} \\")
         lines.append(f"         #   docker run --rm -i --network dokploy-network --env-file <env> {image} pg_restore -d <database>")

@@ -3,7 +3,7 @@
 
 Checks each config file against ``schemas/``, runs the cross-file rules, then
 renders the app manifests and checks them against the manifest schema. Exits
-non-zero on the first failing category so CI and ``just validate`` can gate on
+non-zero on the first failing category so CI and ``sealedstack check`` can gate on
 it.
 """
 from __future__ import annotations
@@ -131,7 +131,7 @@ def check_cross_file(stack: dict, servers: dict, apps: dict) -> list[str]:
         policy_file = CONFIG / "tailscale-policy.hujson"
         if mesh.get("policy", "managed") != "unmanaged" and not policy_file.exists():
             problems.append(
-                f"mesh: {policy_file} is missing; run `sealedstack init` to import "
+                f"mesh: {policy_file} is missing; run `sealedstack setup` to import "
                 "your tailnet policy, create the file, or set mesh.policy: unmanaged"
             )
 

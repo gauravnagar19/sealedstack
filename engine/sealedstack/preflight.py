@@ -216,7 +216,7 @@ def check_config(ctx: CheckContext) -> list[Result]:
             "config.registry",
             "config",
             registry_problems,
-            fix="select a supported implementation in stack.yaml/servers.yaml (see `just providers`)",
+            fix="select a supported implementation in stack.yaml/servers.yaml (see `sealedstack debug providers`)",
             docs=DOCS_CONFIG,
         )
     )
@@ -685,7 +685,7 @@ def check_tailscale(ctx: CheckContext) -> list[Result]:
                 "tailscale",
                 "fail",
                 detail=f"{policy_file} is missing",
-                fix="run `sealedstack init` to import your policy, or set mesh.policy: unmanaged",
+                fix="run `sealedstack setup` to import your policy, or set mesh.policy: unmanaged",
                 docs=DOCS_TS,
             )
         )
