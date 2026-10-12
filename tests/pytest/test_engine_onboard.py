@@ -280,3 +280,49 @@ def test_existing_override_is_left_alone_and_flagged():
     plan = generate(files)
     assert "docker-compose.override.yml" not in plan.files
     assert any("already exists" in n for n in plan.notes)
+
+
+# --------------------------------------------------------------------------- #
+# `sealedstack debug onboard` on a local checkout
+# --------------------------------------------------------------------------- #
+def test_main_dry_run_changes_nothing_and_prints_the_pr_body(tmp_path, capsys):
+    import shutil
+
+    work = tmp_path / "app"
+    shutil.copytree(FIXTURE, work)
+    before = read_tree(work)
+    rc = onboard.main(["--path", str(work), "--name", "example-app", "--repo", "example-owner/example-app", "--version", "0.5.0"])
+    out = capsys.readouterr().out
+    assert rc == 0 and read_tree(work) == before
+    assert "would write sealedstack.yaml" in out and "would delete scripts/deploy.sh" in out
+    assert "This PR prepares example-app for sealedstack." in out
+
+
+def test_main_write_applies_the_change_set_exactly_as_generated(tmp_path):
+    import shutil
+
+    work = tmp_path / "app"
+    shutil.copytree(FIXTURE, work)
+    rc = onboard.main(
+        ["--path", str(work), "--name", "example-app", "--repo", "example-owner/example-app", "--version", "0.5.0", "--write", "--pr-body", str(tmp_path / "body.md")]
+    )
+    assert rc == 0
+    plan = generate()
+    for path, text in plan.files.items():
+        assert (work / path).read_text(encoding="utf-8") == text
+    for path in plan.deletes:
+        assert not (work / path).exists()
+    assert (tmp_path / "body.md").read_text(encoding="utf-8") == plan.body
+    # re-running on the onboarded checkout is refused rather than doing it twice
+    assert onboard.main(["--path", str(work), "--name", "example-app", "--repo", "example-owner/example-app"]) == 2
+
+
+def test_cli_exposes_debug_onboard_with_its_flags():
+    from sealedstack import cli
+
+    argv = ["debug", "onboard", "--path", ".", "--name", "x", "--repo", "a/b", "--health", "/api/health"]
+    head, tail = cli.split_passthrough(argv)
+    args = cli.build_parser().parse_args(head)
+    args.extras = tail
+    action = cli.plan_action(args, code_root=REPO)
+    assert action.argv == [[sys.executable, "-m", "sealedstack.onboard", "--path", ".", "--name", "x", "--repo", "a/b", "--health", "/api/health"]]

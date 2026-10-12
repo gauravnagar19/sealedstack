@@ -794,3 +794,92 @@ def render_pr_body(
         "**Merge this PR first.** The infra-repo PR that places this app waits for it.",
     ]
     return "\n".join(lines) + "\n"
+
+
+# --------------------------------------------------------------------------- #
+# local use: `sealedstack debug onboard` (dry run by default)
+# --------------------------------------------------------------------------- #
+def collect_local_files(root) -> dict[str, str]:
+    """The files of a local app checkout that onboarding looks at."""
+    from pathlib import Path
+
+    root = Path(root)
+    wanted = [MANIFEST_PATH, OVERRIDE_PATH, *COMPOSE_CANDIDATES]
+    workflows = root / ".github" / "workflows"
+    if workflows.is_dir():
+        wanted += [str(p.relative_to(root)) for p in sorted(workflows.iterdir()) if p.is_file()]
+    files: dict[str, str] = {}
+    for rel in dict.fromkeys(wanted):
+        path = root / rel
+        if path.is_file():
+            files[rel] = path.read_text(encoding="utf-8")
+    for text in list(files.values()):
+        for script in re.findall(r"(?:\./)?(scripts/[\w./-]+\.sh)", text):
+            path = root / script
+            if script not in files and path.is_file():
+                files[script] = path.read_text(encoding="utf-8")
+    return files
+
+
+def main(argv=None, *, out=None) -> int:
+    import argparse
+    import sys
+    from pathlib import Path
+
+    from . import __version__
+
+    out = out if out is not None else sys.stdout
+    parser = argparse.ArgumentParser(
+        prog="sealedstack debug onboard",
+        description="Generate the onboarding change set for a local app checkout (dry run unless --write).",
+    )
+    parser.add_argument("--path", default=".", help="the app checkout (default: current directory)")
+    parser.add_argument("--name", required=True, help="the app name")
+    parser.add_argument("--repo", required=True, help="the app repository, owner/name")
+    parser.add_argument("--registry-prefix", default="", help="e.g. ghcr.io/owner (default: ghcr.io/<repo owner>)")
+    parser.add_argument("--tool-owner", default="", help="owner of the sealedstack repo (default: the repo owner)")
+    parser.add_argument("--version", default=__version__, help="sealedstack version to pin in the release workflow")
+    parser.add_argument("--web-service", default="")
+    parser.add_argument("--web-port", type=int, default=0)
+    parser.add_argument("--health", default="")
+    parser.add_argument("--write", action="store_true", help="apply the change set to --path")
+    parser.add_argument("--pr-body", default="", metavar="FILE", help="also write the pull request body to FILE")
+    args = parser.parse_args(argv)
+
+    root = Path(args.path)
+    owner = args.repo.split("/", 1)[0]
+    try:
+        plan = generate(
+            collect_local_files(root),
+            name=args.name,
+            repo=args.repo,
+            registry_prefix=args.registry_prefix or f"ghcr.io/{owner.lower()}",
+            tool_owner=args.tool_owner or owner,
+            version=args.version,
+            web_service=args.web_service,
+            web_port=args.web_port,
+            health=args.health,
+        )
+    except OnboardError as exc:
+        print(f"onboard: {exc}", file=sys.stderr)
+        return 2
+
+    for rel, text in plan.files.items():
+        print(f"{'write ' if args.write else 'would write '}{rel}", file=out)
+        if args.write:
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+    for rel in plan.deletes:
+        print(f"{'delete ' if args.write else 'would delete '}{rel}", file=out)
+        if args.write:
+            (root / rel).unlink(missing_ok=True)
+    if args.pr_body:
+        Path(args.pr_body).write_text(plan.body, encoding="utf-8")
+    else:
+        print("\n" + plan.body, file=out)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
