@@ -52,7 +52,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
             bash -lc "scripts/publish-check.sh"
-      - name: tests (bats + pytest, incl. the engine)
+      - name: tests (pytest, incl. the engine)
         run: |
           docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
             bash -lc "tests/run.sh"

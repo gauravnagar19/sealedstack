@@ -43,7 +43,6 @@ ENV PATH="/opt/venv/bin:${PATH}"
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        bats \
         ca-certificates \
         curl \
         git \
