@@ -220,3 +220,7 @@ Format: **D-NNN — title** · date · status.
 2. it is approved — the run was dispatched by a listed approver, **or** a listed approver commented `/sealedstack approve` on that PR **after** the latest plan comment.
 GitHub environments with required reviewers are still used where the plan supports them (defence in depth, never the only gate). sealedstack's own `v*` release is likewise a **manual workflow dispatch** whose dispatcher must be in the repo variable `RELEASE_APPROVERS` (the `release` environment is a second gate where available).
 **Why:** The tool must give private-repo users the same "a human approves writes" guarantee the design promises, on the plan most users are on; and its own images must not publish without an approver.
+
+### D-053 — Nothing is made public until the owner confirms; going public is a late roadmap item · 2026-10-11 · accepted
+**Decision:** The repository, container images, Homebrew tap, docs site and any other artifact stay **private** until the owner explicitly confirms otherwise. No workflow, script or agent may change visibility or publish anything publicly. Going public is a roadmap item **after** the live validation (M4) and the owner's own app onboarding. It's gated by the owner's confirmation and a passing `publish-check --strict --metadata` on a repository that was never force-pushed.
+**Why:** Publishing can't be undone, so it has to be a deliberate owner decision taken once the project is validated.
