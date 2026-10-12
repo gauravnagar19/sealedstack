@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass, field
-from typing import Mapping, Optional
+from typing import Mapping, Optional, Sequence
 
 from .http import HttpClient, UrllibClient
 
@@ -43,7 +43,22 @@ class Forge:
     def read_file(self, repo: str, path: str, ref: str = "main") -> str:  # pragma: no cover
         raise NotImplementedError
 
-    def open_pr(self, repo: str, *, branch: str, title: str, body: str, files: Mapping[str, str], base: str = "main") -> int:  # pragma: no cover
+    def list_files(self, repo: str, path: str, ref: str = "main") -> list:  # pragma: no cover
+        """File paths directly under ``path`` (empty when the directory is absent)."""
+        raise NotImplementedError
+
+    def open_pr(
+        self,
+        repo: str,
+        *,
+        branch: str,
+        title: str,
+        body: str,
+        files: Mapping[str, str],
+        base: str = "main",
+        deletes: Sequence[str] = (),
+    ) -> int:  # pragma: no cover
+        """Open a PR that writes ``files`` (path -> text) and deletes ``deletes``."""
         raise NotImplementedError
 
     def upsert_comment(self, repo: str, number: int, body: str, *, marker: str = "") -> int:  # pragma: no cover
@@ -131,14 +146,52 @@ class GitHubForge(Forge):
     def read_file(self, repo: str, path: str, ref: str = "main") -> str:
         return str(self._request("GET", f"/repos/{repo}/contents/{path}?ref={ref}", text=True))
 
-    def open_pr(self, repo: str, *, branch: str, title: str, body: str, files: Mapping[str, str], base: str = "main") -> int:
+    def list_files(self, repo: str, path: str, ref: str = "main") -> list:
+        try:
+            data = self._request("GET", f"/repos/{repo}/contents/{path}?ref={ref}")
+        except ForgeError:
+            return []
+        if not isinstance(data, list):
+            return []
+        return [str(item.get("path")) for item in data if item.get("type") == "file"]
+
+    def _file_sha(self, repo: str, path: str, ref: str) -> Optional[str]:
+        """The blob sha of an existing file on ``ref`` (None when it does not exist)."""
+        try:
+            data = self._request("GET", f"/repos/{repo}/contents/{path}?ref={ref}")
+        except ForgeError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        return str(data.get("sha") or "") or None
+
+    def open_pr(
+        self,
+        repo: str,
+        *,
+        branch: str,
+        title: str,
+        body: str,
+        files: Mapping[str, str],
+        base: str = "main",
+        deletes: Sequence[str] = (),
+    ) -> int:
         base_sha = self._request("GET", f"/repos/{repo}/git/ref/heads/{base}")["object"]["sha"]
         self._request("POST", f"/repos/{repo}/git/refs", json_body={"ref": f"refs/heads/{branch}", "sha": base_sha})
         for path, content in files.items():
+            payload = {"message": f"sealedstack: {title}", "content": _b64(content), "branch": branch}
+            existing = self._file_sha(repo, path, branch)
+            if existing:
+                payload["sha"] = existing  # GitHub requires the blob sha to update a file
+            self._request("PUT", f"/repos/{repo}/contents/{path}", json_body=payload)
+        for path in deletes:
+            existing = self._file_sha(repo, path, branch)
+            if not existing:
+                continue  # already gone
             self._request(
-                "PUT",
+                "DELETE",
                 f"/repos/{repo}/contents/{path}",
-                json_body={"message": f"sealedstack: {title}", "content": _b64(content), "branch": branch},
+                json_body={"message": f"sealedstack: {title}", "sha": existing, "branch": branch},
             )
         pr = self._request("POST", f"/repos/{repo}/pulls", json_body={"title": title, "body": body, "head": branch, "base": base})
         return int(pr["number"])
@@ -292,11 +345,42 @@ class InMemoryForge(Forge):
     def read_file(self, repo: str, path: str, ref: str = "main") -> str:
         return self.files.get((repo, ref, path), "")
 
-    def open_pr(self, repo: str, *, branch: str, title: str, body: str, files: Mapping[str, str], base: str = "main") -> int:
+    def list_files(self, repo: str, path: str, ref: str = "main") -> list:
+        prefix = path.rstrip("/") + "/"
+        return sorted(
+            p
+            for (r, rf, p) in self.files
+            if r == repo and rf == ref and p.startswith(prefix) and "/" not in p[len(prefix) :]
+        )
+
+    def open_pr(
+        self,
+        repo: str,
+        *,
+        branch: str,
+        title: str,
+        body: str,
+        files: Mapping[str, str],
+        base: str = "main",
+        deletes: Sequence[str] = (),
+    ) -> int:
         number = self._id()
         for path, content in files.items():
             self.files[(repo, branch, path)] = content
-        self.prs.append({"number": number, "repo": repo, "branch": branch, "title": title, "body": body, "files": dict(files)})
+        for path in deletes:
+            self.files.pop((repo, branch, path), None)
+        self.prs.append(
+            {
+                "number": number,
+                "repo": repo,
+                "branch": branch,
+                "title": title,
+                "body": body,
+                "files": dict(files),
+                "deletes": list(deletes),
+                "base": base,
+            }
+        )
         return number
 
     def upsert_comment(self, repo: str, number: int, body: str, *, marker: str = "") -> int:

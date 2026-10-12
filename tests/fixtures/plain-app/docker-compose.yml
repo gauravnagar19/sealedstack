@@ -1,0 +1,38 @@
+# Example app, a plain repo before onboarding.
+services:
+  ui:
+    build: ./ui
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/api/health"]
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://app:app@postgres:5432/example
+      LOG_LEVEL: info
+      EXAMPLE_API_KEY: ${EXAMPLE_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # the database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: example
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

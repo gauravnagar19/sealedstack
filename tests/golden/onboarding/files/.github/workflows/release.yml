@@ -1,0 +1,26 @@
+# App release CI: a thin caller of sealedstack's reusable workflow (spec 4.3).
+# Replace example-owner with the account that owns the sealedstack repo, and keep the
+# version pinned to the sealedstack release you run (sealedstack.version).
+name: release
+
+on:
+  push:
+    branches: [main] # build: mint the next version, build and push images
+  workflow_dispatch: # release: deploy an existing version
+    inputs:
+      tag:
+        description: "version to release, e.g. v0.0.12"
+        required: true
+
+jobs:
+  sealedstack:
+    uses: example-owner/sealedstack/.github/workflows/app.yml@v0.5.0
+    with:
+      event: ${{ github.event_name }}
+      tag: ${{ inputs.tag }}
+    secrets: inherit
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      actions: write

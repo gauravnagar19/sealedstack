@@ -1,0 +1,12 @@
+name: deploy
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        required: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/deploy.sh "${{ inputs.tag }}"
