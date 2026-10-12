@@ -160,3 +160,13 @@ def test_infra_workflow_tells_the_container_it_runs_in_ci():
     text = (REPO / ".github" / "workflows" / "infra.yml").read_text(encoding="utf-8")
     run_line = [l for l in text.splitlines() if "-e BWS_ACCESS_TOKEN" in l]
     assert run_line and all("-e GITHUB_ACTIONS" in l and "-e GITHUB_REPOSITORY" in l for l in run_line)
+
+
+def test_infra_workflow_logs_in_to_ghcr_before_pulling_the_private_image():
+    data = yaml.safe_load((REPO / ".github" / "workflows" / "infra.yml").read_text())
+    assert data["permissions"]["packages"] == "read"
+    steps = data["jobs"]["run"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    login = next(i for i, n in enumerate(names) if n.startswith("Log in to GHCR"))
+    first_pull = next(i for i, s in enumerate(steps) if "docker run" in s.get("run", ""))
+    assert login < first_pull and steps[login]["continue-on-error"] is True

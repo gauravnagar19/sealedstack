@@ -26,6 +26,7 @@ permissions:
   pull-requests: write
   issues: write
   id-token: write
+  packages: read
 
 jobs:
   authorize:
@@ -73,6 +74,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Log in to GHCR (the engine image is private, D-053)
+        # The image lives in the owner's own GHCR namespace and stays private, so
+        # the pull needs a login. The calling workflow must grant `packages: read`
+        # and the package must allow this repository (Manage Actions access).
+        continue-on-error: true
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Version-pin parity (sealedstack.version == workflow ref)
         run: |
