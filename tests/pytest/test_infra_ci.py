@@ -102,6 +102,34 @@ def test_dispatch_runs_the_chosen_command_including_plan_and_apply(tmp_path):
     assert not infraci.resolve(ev("workflow_dispatch"), f, c).proceed
 
 
+def test_dispatch_drift_resolves_to_the_drift_command_and_needs_no_approval(tmp_path):
+    f, c = make_forge(), make_config(tmp_path)
+    # a writer (not an approver) can dispatch it: drift is a read command
+    event = ev("workflow_dispatch", actor="writer", command="drift")
+    res = infraci.resolve(event, f, c)
+    assert (res.command, res.write, res.follow) == ("drift", False, [])
+    assert res.needs_mesh  # it plans against the real accounts, so the runner joins the tailnet
+    assert not approval.requires_approval("drift")
+    calls = []
+    assert infraci.execute(res, event, f, c, runner_for(calls=calls)) == 0
+    assert calls == [["drift"]]  # the engine's drift command, run directly (no approval comment, no refusal)
+    assert f.comments == {}
+
+
+def test_drift_is_a_writers_only_comment_command(tmp_path):
+    f, c = make_forge(), make_config(tmp_path)
+    ok = infraci.resolve(comment_event("/sealedstack drift", actor="writer"), f, c)
+    assert (ok.command, ok.write) == ("drift", False)
+    refused = infraci.resolve(comment_event("/sealedstack drift", actor="reader"), f, c)
+    assert not refused.proceed and "Only users with write access" in f.comments[(SLUG, 7)][0].body
+
+
+def test_the_dispatch_choice_lists_in_docs_and_init_offer_drift():
+    for rel in ("docs/getting-started.md", "docs/user-experience.md", "scripts/init.py"):
+        text = (REPO / rel).read_text(encoding="utf-8")
+        assert "options: [setup, check, plan, apply, up, add-server, add-app, status, restore, drill, drift]" in text, rel
+
+
 def test_the_outputs_tell_the_workflow_what_to_do(tmp_path):
     out = infraci.resolve(ev("push"), make_forge(), make_config(tmp_path)).outputs()
     assert out["proceed"] == "true" and out["write"] == "true" and out["mesh"] == "true" and out["command"] == "apply"

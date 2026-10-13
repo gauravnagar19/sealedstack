@@ -133,8 +133,8 @@ given, the command comes from the event:
 | Pull request opened or updated | `plan`, posted (and updated in place) as a PR comment; on the Setup PR, `check` updates the checklist |
 | Push to `main` (a merge) | `apply`. If no approver has agreed yet it posts "waiting for `/sealedstack approve`" on the PR and exits successfully; a direct push is refused (D-052) |
 | Schedule (hourly) | `status` (updates the Status issue), then drift detection (a problem becomes a Status-issue comment) |
-| Comment `/sealedstack <cmd>` | Writers can run `check`, `plan`, `status`, `drill`; approvers can run `up`, `apply` and `approve`. After a merge, `approve` triggers the `apply` |
-| Run workflow | The chosen command, including `plan` and `apply` |
+| Comment `/sealedstack <cmd>` | Writers can run `check`, `plan`, `status`, `drill`, `drift`; approvers can run `up`, `apply` and `approve`. After a merge, `approve` triggers the `apply` |
+| Run workflow | The chosen command, including `plan`, `apply` and `drift` (a read-only check, no approval) |
 
 Write commands run only from a merged pull request on `main` and after an
 approver has agreed (D-052). Every job that reaches a server or Dokploy first

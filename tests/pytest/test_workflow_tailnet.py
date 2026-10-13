@@ -218,3 +218,9 @@ def test_cli_routes_debug_ci_export_with_its_flags(tmp_path):
     assert rc == 0
     assert "sealedstack.ciexport" in calls[0]
     assert "--name" in calls[0] and "--output" in calls[0]
+
+
+def test_the_scheduled_drift_workflow_stays_off_unless_enabled():
+    """D-059: drift.yml only runs when SEALEDSTACK_DRIFT_ENABLED is 'true'."""
+    doc = load("drift.yml")
+    assert doc["jobs"]["plan"]["if"] == "${{ vars.SEALEDSTACK_DRIFT_ENABLED == 'true' }}"
