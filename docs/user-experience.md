@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Final (v1 UX): signed off by the owner on 2026-10-11.** This document is authoritative for everything a user sees and does. [spec.md](spec.md) §6 defers to it. Changes need a new decision in [decisions.md](decisions.md). |
 | Date | 2026-10-11 |
-| Decisions | D-034 to D-047 ([decisions.md](decisions.md)) |
+| Decisions | D-034 to D-047 ([decisions.md](decisions.md)). Amended on 2026-10-12 by D-056: the caller workflow in §4 step 2 also grants `packages: read`. |
 
 Mockups use GitHub wording; GitLab equivalents are in §11. `<v>` means the pinned sealedstack version (e.g. `0.6.0`), and `<owner>` the sealedstack publisher.
 
@@ -80,7 +80,7 @@ jobs:
       command: ${{ inputs.command }}
       args: ${{ inputs.args }}
     secrets: inherit
-    permissions: { contents: write, pull-requests: write, issues: write, id-token: write }
+    permissions: { contents: write, pull-requests: write, issues: write, id-token: write, packages: read }
 ```
 
 The version appears twice: `sealedstack.version` (used by Codespaces, the launcher and GitLab) and the workflow's `@v0.6.0`, because GitHub requires a fixed ref there. **`check` fails if they differ**, and the upgrade bot always bumps both in one PR (§9).

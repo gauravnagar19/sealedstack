@@ -224,3 +224,15 @@ GitHub environments with required reviewers are still used where the plan suppor
 ### D-053 — Nothing is made public until the owner confirms; going public is a late roadmap item · 2026-10-11 · accepted
 **Decision:** The repository, container images, Homebrew tap, docs site and any other artifact stay **private** until the owner explicitly confirms otherwise. No workflow, script or agent may change visibility or publish anything publicly. Going public is a roadmap item **after** the live validation (M4) and the owner's own app onboarding. It's gated by the owner's confirmation and a passing `publish-check --strict --metadata` on a repository that was never force-pushed.
 **Why:** Publishing can't be undone, so it has to be a deliberate owner decision taken once the project is validated.
+
+### D-054 — R2 S3 credentials are derived from the Cloudflare API token · 2026-10-12 · accepted (implements D-044)
+**Decision:** The R2 access key ID is the Cloudflare token's ID (from `/user/tokens/verify`); the secret access key is the SHA-256 hex of the token value. The token must include *Workers R2 Storage: Edit*. `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` are no longer required; they remain an optional override in the secret source.
+**Why:** One fewer credential for the user to create and get wrong (D-044).
+
+### D-055 — The admin user has passwordless sudo · 2026-10-12 · accepted
+**Decision:** The admin user is granted passwordless sudo through a validated `/etc/sudoers.d/` drop-in. The `admin_sudo_password` secret is removed.
+**Why:** Login is SSH-key-only, reachable only over Tailscale, and root and password login are disabled, so a sudo password adds a secret without adding protection.
+
+### D-056 — Callers of the reusable workflows grant `packages: read` · 2026-10-12 · accepted (amends D-048 by one line)
+**Decision:** The infra repo's caller workflow grants `packages: read`, so the private engine image can be pulled. The snippets in the user-experience document, the docs and the generated files are updated.
+**Why:** The engine image is private (D-053); without the permission the job cannot pull it.

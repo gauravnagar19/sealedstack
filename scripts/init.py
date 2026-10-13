@@ -177,7 +177,7 @@ jobs:
       command: ${{ inputs.command }}
       args: ${{ inputs.args }}
     secrets: inherit
-    permissions: { contents: write, pull-requests: write, issues: write, id-token: write }
+    permissions: { contents: write, pull-requests: write, issues: write, id-token: write, packages: read }
 """
     return template.replace("__OWNER__", owner).replace("__VERSION__", version)
 

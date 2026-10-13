@@ -83,7 +83,7 @@ jobs:
       command: ${{ inputs.command }}
       args: ${{ inputs.args }}
     secrets: inherit
-    permissions: { contents: write, pull-requests: write, issues: write, id-token: write }
+    permissions: { contents: write, pull-requests: write, issues: write, id-token: write, packages: read }
 ```
 
 The version appears twice: in `sealedstack.version` and in the workflow ref
