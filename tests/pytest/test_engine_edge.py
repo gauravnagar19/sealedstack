@@ -46,6 +46,9 @@ REQUIRED = {
     "CLOUDFLARE_API_TOKEN": "cf",
     "TAILSCALE_OAUTH_CLIENT_ID": "id",
     "TAILSCALE_OAUTH_CLIENT_SECRET": "sec",
+    # explicit R2 override: no token-verify request in unit tests (D-054)
+    "R2_ACCESS_KEY_ID": "rid",
+    "R2_SECRET_ACCESS_KEY": "rsecret",
 }
 
 

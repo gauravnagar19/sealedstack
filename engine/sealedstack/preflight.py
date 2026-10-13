@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
 from . import config as cfg
+from . import r2 as r2_mod
 from .http import HttpClient, UrllibClient
 from .secrets import SecretSource, build_source
 
@@ -421,6 +422,15 @@ def check_versions(ctx: CheckContext) -> list[Result]:
 # --------------------------------------------------------------------------- #
 # cloudflare
 # --------------------------------------------------------------------------- #
+def secret_value(ctx: "CheckContext", logical: str) -> str:
+    """A secret's value through the configured source (D-050 key mapping), falling
+    back to the process environment under the logical name."""
+    result = ctx.secrets.get(ctx.config.secret_key(logical))
+    if result.found:
+        return result.value
+    return ctx.env.get(logical, "")
+
+
 def _json_or_none(response: Any) -> dict:
     try:
         data = response.json()
@@ -430,7 +440,7 @@ def _json_or_none(response: Any) -> dict:
 
 
 def check_cloudflare(ctx: CheckContext) -> list[Result]:
-    token = ctx.env.get("CLOUDFLARE_API_TOKEN", "")
+    token = secret_value(ctx, "CLOUDFLARE_API_TOKEN")
     if not token:
         return [
             Result(
@@ -588,17 +598,54 @@ def check_cloudflare(ctx: CheckContext) -> list[Result]:
                 Result("cloudflare.zero_trust", "cloudflare", "fail", detail=str(exc), docs=DOCS_CF)
             )
 
-    if token_id:
-        results.append(
-            Result(
-                "cloudflare.r2_derived",
-                "cloudflare",
-                "ok",
-                detail="derived R2 keys from the Cloudflare token (key id = token id)",
-                docs=DOCS_CF,
-            )
-        )
+    results.append(_check_r2_credentials(ctx, results, token_id))
     return results
+
+
+def _check_r2_credentials(ctx: CheckContext, results: list[Result], token_id: str) -> Result:
+    """Report whether R2 credentials really exist (D-054): an explicit override, or
+    a derivation that actually succeeds. Never prints any key material."""
+    rid = "cloudflare.r2_derived"
+    r2_perm = next((res for res in results if res.id == "cloudflare.perm.r2_edit"), None)
+    fix = (
+        f"add \"{r2_mod.R2_PERMISSION}\" to the Cloudflare token "
+        f"({ctx.config.secret_key(r2_mod.TOKEN_KEY)}) at {r2_mod.TOKEN_URL}"
+    )
+
+    access = ctx.secrets.get(ctx.config.secret_key(r2_mod.OVERRIDE_ACCESS))
+    secret = ctx.secrets.get(ctx.config.secret_key(r2_mod.OVERRIDE_SECRET))
+    if access.found and secret.found:
+        return Result(rid, "cloudflare", "ok", detail="using the explicit R2 key override from the secret source", docs=DOCS_CF)
+    if access.found != secret.found:
+        return Result(
+            rid, "cloudflare", "fail",
+            detail="only one of the optional R2 override keys is set",
+            fix=f"set both {ctx.config.secret_key(r2_mod.OVERRIDE_ACCESS)} and "
+                f"{ctx.config.secret_key(r2_mod.OVERRIDE_SECRET)}, or delete the one that is set",
+            docs=DOCS_CF,
+        )
+
+    if not token_id:
+        return Result(rid, "cloudflare", "skip", detail="R2 keys are derived from a verified Cloudflare token", docs=DOCS_CF)
+    if r2_perm is None or r2_perm.status == "skip":
+        return Result(
+            rid, "cloudflare", "skip",
+            detail="cannot confirm the R2 permission (cloudflare.account_id is not set)",
+            fix="set cloudflare.account_id in config/stack.yaml", docs=DOCS_CF,
+        )
+    if r2_perm.status == "fail":
+        return Result(
+            rid, "cloudflare", "fail",
+            detail="R2 keys cannot be derived: the Cloudflare token lacks Workers R2 Storage: Edit",
+            fix=fix, docs=DOCS_CF,
+        )
+    if r2_perm.status != "ok":
+        return Result(rid, "cloudflare", "warn", detail="could not confirm the R2 permission; derivation not verified", fix=fix, docs=DOCS_CF)
+    try:
+        r2_mod.resolve(ctx.secrets, ctx.config, ctx.env, http=ctx.http)
+    except r2_mod.R2Error as exc:
+        return Result(rid, "cloudflare", "fail", detail=f"R2 key derivation failed: {str(exc).splitlines()[0]}", fix=fix, docs=DOCS_CF)
+    return Result(rid, "cloudflare", "ok", detail="derived from the Cloudflare token (token verified, R2 permission present)", docs=DOCS_CF)
 
 
 # --------------------------------------------------------------------------- #
@@ -721,8 +768,8 @@ def check_tailscale(ctx: CheckContext) -> list[Result]:
             else:
                 results.append(Result("tailscale.allow_all", "tailscale", "ok", detail="no allow-all rule"))
 
-    client_id = ctx.env.get("TAILSCALE_OAUTH_CLIENT_ID", "")
-    client_secret = ctx.env.get("TAILSCALE_OAUTH_CLIENT_SECRET", "")
+    client_id = secret_value(ctx, "TAILSCALE_OAUTH_CLIENT_ID")
+    client_secret = secret_value(ctx, "TAILSCALE_OAUTH_CLIENT_SECRET")
     if not (client_id and client_secret):
         results.append(
             Result(

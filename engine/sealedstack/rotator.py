@@ -28,7 +28,8 @@ Still manual (provider-side):
     then update the `infra` secrets. `sealedstack doctor` re-checks them.
   - DOKPLOY_API_KEY, admin_sudo_password    : regenerate in Dokploy / on the host,
     then update Secrets Manager (DOKPLOY_API_KEY) and `admin_sudo_password`.
-  - R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY : rotate in the Cloudflare R2 dashboard.
+  - R2 keys : derived from CLOUDFLARE_API_TOKEN, so rotating that token rotates them (the
+    state bucket and backup credentials follow on the next apply).
 """
 
 

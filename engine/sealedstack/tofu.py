@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Optional, Sequence
 
 from . import config as config_mod
+from . import r2 as r2_mod
 from . import secrets as secrets_mod
 
 # A tofu runner takes (argv, env) and returns a return code.
@@ -46,15 +47,21 @@ def backend_config(
     env: Mapping[str, str],
     source: secrets_mod.SecretSource,
     stack_dir: Path,
+    *,
+    http=None,
 ) -> tuple[Path, str]:
-    """Write the 0600 backend config; return ``(path, state_passphrase)``."""
+    """Write the 0600 backend config; return ``(path, state_passphrase)``.
+
+    The R2 credentials are derived from the Cloudflare token (D-054) unless an
+    explicit override pair exists in the secret source.
+    """
     import tempfile
 
     account_id = str((config.stack.get("cloudflare") or {}).get("account_id") or "")
     state_bucket = str((config.stack.get("state") or {}).get("bucket") or "sealedstack-state")
 
-    r2_access = require(source, config, "R2_ACCESS_KEY_ID")
-    r2_secret = require(source, config, "R2_SECRET_ACCESS_KEY")
+    creds = r2_mod.resolve(source, config, env, http=http)
+    r2_access, r2_secret = creds.access_key_id, creds.secret_access_key
     passphrase = require(source, config, "state_passphrase")
     if len(passphrase) < 16:
         raise config_mod.ConfigError(
@@ -97,6 +104,7 @@ def ready(
     stack_dir: Path,
     *,
     runner: Optional[TofuRunner] = None,
+    http=None,
 ) -> str:
     """``tofu init`` a stack against the encrypted R2 backend.
 
@@ -109,7 +117,7 @@ def ready(
     if legacy.exists():
         legacy.unlink()
 
-    tmp, passphrase = backend_config(config, env, source, stack_dir)
+    tmp, passphrase = backend_config(config, env, source, stack_dir, http=http)
     child_env = dict(env)
     child_env["TF_VAR_state_passphrase"] = passphrase
     try:

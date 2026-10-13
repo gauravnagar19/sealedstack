@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import config as config_mod
+from . import r2 as r2_mod
 from . import secrets as secrets_mod
 from . import tofu as tofu_mod
 
@@ -36,6 +37,8 @@ def tf_vars(
     config: config_mod.Config,
     env: Mapping[str, str],
     source: secrets_mod.SecretSource,
+    *,
+    http=None,
 ) -> dict[str, str]:
     stack = config.stack
     account_id = str((stack.get("cloudflare") or {}).get("account_id") or "")
@@ -56,8 +59,9 @@ def tf_vars(
         source, config, "CLOUDFLARE_API_TOKEN"
     )
     variables["TF_VAR_cloudflare_account_id"] = env.get("CLOUDFLARE_ACCOUNT_ID") or account_id
-    r2_access = tofu_mod.optional(source, config, "R2_ACCESS_KEY_ID")
-    r2_secret = tofu_mod.optional(source, config, "R2_SECRET_ACCESS_KEY")
+    r2_pair = r2_mod.resolve(source, config, env, http=http, required=False)
+    r2_access = r2_pair.access_key_id if r2_pair else ""
+    r2_secret = r2_pair.secret_access_key if r2_pair else ""
     variables["TF_VAR_object_storage_access_key_id"] = (
         env.get("OBJECT_STORAGE_ACCESS_KEY_ID") or env.get("BACKUP_ACCESS_KEY_ID") or r2_access
     )
@@ -86,6 +90,7 @@ def run(
     *,
     source: Optional[secrets_mod.SecretSource] = None,
     runner=None,
+    http=None,
 ) -> int:
     env = dict(env or os.environ)
     action = action or "plan"
@@ -94,9 +99,9 @@ def run(
     source = source or secrets_mod.build_source(config.stack, config.config_dir, env)
 
     platform_dir = Path(config.code_root) / "tofu" / "stacks" / "platform"
-    child_env = {**env, **tf_vars(config, env, source)}
+    child_env = {**env, **tf_vars(config, env, source, http=http)}
 
-    passphrase = tofu_mod.ready(config, env, source, platform_dir)
+    passphrase = tofu_mod.ready(config, env, source, platform_dir, http=http)
     child_env["TF_VAR_state_passphrase"] = passphrase
 
     run_tofu = runner or (lambda argv: subprocess.run(argv, env=child_env).returncode)

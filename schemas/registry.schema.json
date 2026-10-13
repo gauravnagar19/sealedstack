@@ -81,6 +81,13 @@
               "type": "string"
             }
           },
+          "optional_secrets": {
+            "type": "array",
+            "description": "Secrets that override a derived value; never required.",
+            "items": {
+              "type": "string"
+            }
+          },
           "config": {
             "type": "array",
             "items": {

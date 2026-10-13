@@ -201,7 +201,7 @@ def _script(code_root: Path, name: str) -> str:
     return str(code_root / "scripts" / name)
 
 
-def _state_lock(config, env):
+def _state_lock(config, env, http=None):
     """Build the remote R2 state lock, or None when R2 credentials are absent."""
     if config is None:
         return None
@@ -212,11 +212,19 @@ def _state_lock(config, env):
 
         account = str((config.stack.get("cloudflare") or {}).get("account_id") or "")
         source = secrets_mod.build_source(config.stack, config.config_dir, env)
-        access = source.get(config.secret_key("R2_ACCESS_KEY_ID"))
-        secret = source.get(config.secret_key("R2_SECRET_ACCESS_KEY"))
-        if not (account and access.found and secret.found):
+        from . import r2 as r2_mod
+
+        if not account:
             return None
-        client = s3_mod.S3Client(f"https://{account}.r2.cloudflarestorage.com", access.value, secret.value)
+        try:
+            creds = r2_mod.resolve(source, config, env, http=http, required=False)
+        except r2_mod.R2Error as exc:
+            # No shared lock is possible; say why (never any key material).
+            print(f"{PROG}: remote state lock unavailable: {str(exc).splitlines()[0]}", file=sys.stderr)
+            return None
+        if creds is None:
+            return None
+        client = s3_mod.S3Client(f"https://{account}.r2.cloudflarestorage.com", creds.access_key_id, creds.secret_access_key)
         return lock_mod.StateLock(lock_mod.S3LockBackend(client), owner=config.name or "sealedstack")
     except Exception:  # noqa: BLE001 - fall back to the local lock
         return None
@@ -406,7 +414,7 @@ def run(
 
     force_unlock = getattr(args, "force_unlock", None)
     if force_unlock:
-        lock_obj = _state_lock(config, env)
+        lock_obj = _state_lock(config, env, http)
         if lock_obj is None:
             print(f"{PROG}: no R2 state lock configured (need R2 credentials)", file=sys.stderr)
             return 2
@@ -434,7 +442,7 @@ def run(
                 audit_fn=audit_fn,
                 forge=forge_obj,
                 repo=repo,
-                lock=_state_lock(config, env),
+                lock=_state_lock(config, env, http),
             )
         except cfg.BreakGlassError as exc:
             print(str(exc), file=sys.stderr)

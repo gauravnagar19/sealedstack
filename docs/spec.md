@@ -446,7 +446,7 @@ Users install nothing locally: a browser, a Git hosting account and the credenti
 |---|---|---|
 | A domain on Cloudflare nameservers | ✅ | Tunnel hostnames and Access require a Cloudflare zone |
 | Cloudflare account (Free plan) with Zero Trust enabled | ✅ | Zero Trust and R2 may ask for a payment method even on free plans |
-| Cloudflare API token (`CLOUDFLARE_API_TOKEN`) | ✅ | Account: Cloudflare Tunnel Edit, Access Apps and Policies Edit, Workers R2 Storage Edit. Zone: DNS Edit, Zone WAF Edit, Bot Management Edit, Single Redirect Edit. Target design: R2 S3 keys are derived from it (D-044); today they are still the separate `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` secrets |
+| Cloudflare API token (`CLOUDFLARE_API_TOKEN`) | ✅ | Account: Cloudflare Tunnel Edit, Access Apps and Policies Edit, Workers R2 Storage Edit. Zone: DNS Edit, Zone WAF Edit, Bot Management Edit, Single Redirect Edit. The R2 S3 keys are derived from it (D-044, D-054): key id = the token's id, secret = SHA-256 of the token value; `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` are an optional override |
 | Tailscale account with MagicDNS on, and an OAuth client | ✅ | Scopes `policy_file`, `auth_keys`, `devices:core`. Server auth keys are minted from it; no long-lived API key |
 | `STATE_PASSPHRASE` | ✅ | At least 16 characters; encrypts the OpenTofu state (key name configurable, default `state_passphrase`) |
 | Bitwarden account plus a free organisation with Secrets Manager | ✅ | One **read-only** machine-account token, held in CI as `BWS_ACCESS_TOKEN` |

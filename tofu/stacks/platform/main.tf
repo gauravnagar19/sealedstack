@@ -203,7 +203,7 @@ resource "terraform_data" "require_object_storage" {
         local.object_storage_access_key_id != "" &&
         local.object_storage_secret_access_key != ""
       )
-      error_message = "An app declares needs.object_storage but the R2 account id or S3 credentials are empty. Set cloudflare.account_id in config/stack.yaml and R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY in Secrets Manager (or TF_VAR_object_storage_*)."
+      error_message = "An app declares needs.object_storage but the R2 account id or S3 credentials are empty. Set cloudflare.account_id in config/stack.yaml and make sure CLOUDFLARE_API_TOKEN has Workers R2 Storage: Edit (the S3 keys are derived from it), or override with R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY (or TF_VAR_object_storage_*)."
     }
   }
 }

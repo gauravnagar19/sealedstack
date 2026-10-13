@@ -219,7 +219,9 @@ def test_check_cloudflare_permissions_via_mock(tmp_path):
     assert results["cloudflare.perm.dns_edit"].status == "ok"
     assert results["cloudflare.perm.r2_edit"].status == "fail"
     assert results["cloudflare.zero_trust"].status == "ok"
-    assert results["cloudflare.r2_derived"].status == "ok"
+    # D-054: without the R2 permission the keys can NOT be derived; check says so.
+    assert results["cloudflare.r2_derived"].status == "fail"
+    assert "Workers R2 Storage: Edit" in results["cloudflare.r2_derived"].fix
 
 
 # --------------------------------------------------------------------------- #

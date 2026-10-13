@@ -79,7 +79,7 @@ D-044).
 
 | Key | When | Notes |
 |---|---|---|
-| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | state bucket and backups | Create an R2 API token with Object Read and Write (Cloudflare dashboard, R2, Manage R2 API Tokens). A later release derives these from the Cloudflare token. |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | optional override | Not needed. The R2 S3 keys are derived from the Cloudflare token (D-054): key id = the token's id, secret = the SHA-256 hex of the token value. The token must include *Workers R2 Storage: Edit*. Set both keys only to use a separate R2 token. |
 | `admin_sudo_password` | server bootstrap and sync | A password for the Linux admin user on the server. |
 | `DOKPLOY_API_KEY` | platform stage | Created in the Dokploy panel after the first bootstrap (see the [limitation in getting started](getting-started.md#5-merge-pr-1-then-run-up)). |
 | `DOKPLOY_SSH_PRIVATE_KEY`, `DOKPLOY_SSH_PUBLIC_KEY` | worker servers | Generated on the first run and stored in the secret source. |

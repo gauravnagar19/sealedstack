@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import config as config_mod
+from . import r2 as r2_mod
 from . import secrets as secrets_mod
 from . import tofu as tofu_mod
 
@@ -36,6 +37,8 @@ def tf_vars(
     config: config_mod.Config,
     env: Mapping[str, str],
     source: secrets_mod.SecretSource,
+    *,
+    http=None,
 ) -> dict[str, str]:
     """Build the ``TF_VAR_*`` map the edge stack reads."""
     stack = config.stack
@@ -59,11 +62,14 @@ def tf_vars(
         or f"https://{account_id}.r2.cloudflarestorage.com"
     )
     variables["TF_VAR_backup_region"] = env.get("BACKUP_REGION") or str(backup.get("region") or "auto")
-    variables["TF_VAR_backup_access_key_id"] = env.get("BACKUP_ACCESS_KEY_ID") or tofu_mod.optional(
-        source, config, "R2_ACCESS_KEY_ID"
+    r2_pair = None
+    if not (env.get("BACKUP_ACCESS_KEY_ID") and env.get("BACKUP_SECRET_ACCESS_KEY")):
+        r2_pair = r2_mod.resolve(source, config, env, http=http, required=False)
+    variables["TF_VAR_backup_access_key_id"] = env.get("BACKUP_ACCESS_KEY_ID") or (
+        r2_pair.access_key_id if r2_pair else ""
     )
-    variables["TF_VAR_backup_secret_access_key"] = env.get("BACKUP_SECRET_ACCESS_KEY") or tofu_mod.optional(
-        source, config, "R2_SECRET_ACCESS_KEY"
+    variables["TF_VAR_backup_secret_access_key"] = env.get("BACKUP_SECRET_ACCESS_KEY") or (
+        r2_pair.secret_access_key if r2_pair else ""
     )
 
     variables["TF_VAR_ssm_prefix"] = env.get("SSM_PREFIX", "/sealedstack/infra")
@@ -86,6 +92,7 @@ def run(
     source: Optional[secrets_mod.SecretSource] = None,
     runner=None,
     output_runner=None,
+    http=None,
 ) -> int:
     """Init the backend, then run ``tofu plan|apply`` and write the outputs."""
     env = dict(env or os.environ)
@@ -95,9 +102,9 @@ def run(
     source = source or secrets_mod.build_source(config.stack, config.config_dir, env)
 
     edge_dir = Path(config.code_root) / "tofu" / "stacks" / "edge"
-    child_env = {**env, **tf_vars(config, env, source)}
+    child_env = {**env, **tf_vars(config, env, source, http=http)}
 
-    passphrase = tofu_mod.ready(config, env, source, edge_dir)
+    passphrase = tofu_mod.ready(config, env, source, edge_dir, http=http)
     child_env["TF_VAR_state_passphrase"] = passphrase
 
     run_tofu = runner or (lambda argv: subprocess.run(argv, env=child_env).returncode)

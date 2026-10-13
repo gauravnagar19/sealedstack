@@ -21,6 +21,7 @@ from typing import Mapping, Optional
 from . import config as config_mod
 from . import dokploy as dokploy_mod
 from . import platformstate as platformstate_mod
+from . import r2 as r2_mod
 from . import secrets as secrets_mod
 
 
@@ -101,10 +102,14 @@ class Db:
         endpoint = f"https://{account}.r2.cloudflarestorage.com"
         self.bucket = self._bucket()
         if transport is None:
+            try:
+                creds = r2_mod.resolve(self.source, self.config, self.env)
+            except r2_mod.R2Error as exc:
+                raise DbError(str(exc)) from exc
             transport = Transport(
                 endpoint=endpoint,
-                access_key=self._secret("R2_ACCESS_KEY_ID"),
-                secret_key=self._secret("R2_SECRET_ACCESS_KEY"),
+                access_key=creds.access_key_id,
+                secret_key=creds.secret_access_key,
             )
         self.t = transport
         self._urls: Optional[dict] = None

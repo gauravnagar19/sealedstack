@@ -294,7 +294,7 @@ def _checklist(name: str) -> str:
         f"\nsealedstack: first-run checklist for '{name}'\n"
         f"  1. Open the Dokploy panel over the mesh (http://{name}:3000) and create the first admin account.\n"
         "  2. In Dokploy: Settings > Profile > API/CLI Keys, generate a key and store it as DOKPLOY_API_KEY in the 'infra' secrets project.\n"
-        "  3. Create the R2 keys and store R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY and state_passphrase in the 'infra' project, then run 'sealedstack up' (it creates the state bucket).\n"
+        "  3. Store state_passphrase in the 'infra' project (the R2 keys are derived from CLOUDFLARE_API_TOKEN), then run 'sealedstack up' (it creates the state bucket).\n"
         "  4. Confirm the provider firewall rule table and close the temporary inbound TCP 22 window (docs/netcup-firewall.md).\n"
         "  5. Run 'sealedstack check' to gate every step above.\n"
     )

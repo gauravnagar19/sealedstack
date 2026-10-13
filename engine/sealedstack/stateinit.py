@@ -12,12 +12,36 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import config as config_mod
+from . import r2 as r2_mod
 from . import secrets as secrets_mod
 from . import tofu as tofu_mod
 
 
 def _require(source: secrets_mod.SecretSource, config: config_mod.Config, name: str) -> str:
     return tofu_mod.require(source, config, name)
+
+
+def child_env(
+    config: config_mod.Config,
+    env: Mapping[str, str],
+    source: secrets_mod.SecretSource,
+    *,
+    http=None,
+) -> dict[str, str]:
+    """The environment for the state stack's ``tofu`` (R2 keys derived, D-054)."""
+    child_env = dict(env)
+    child_env["TF_VAR_account_id"] = str((config.stack.get("cloudflare") or {}).get("account_id") or "")
+    child_env["TF_VAR_bucket"] = str((config.stack.get("state") or {}).get("bucket") or "")
+    creds = r2_mod.resolve(source, config, env, http=http)
+    child_env["TF_VAR_r2_access_key_id"] = creds.access_key_id
+    child_env["TF_VAR_r2_secret_access_key"] = creds.secret_access_key
+    passphrase = _require(source, config, "state_passphrase")
+    if len(passphrase) < 16:
+        raise config_mod.ConfigError(
+            f"state_passphrase must be at least 16 characters (pbkdf2); got {len(passphrase)}"
+        )
+    child_env["TF_VAR_state_passphrase"] = passphrase
+    return child_env
 
 
 def run(
@@ -27,23 +51,14 @@ def run(
     *,
     source: Optional[secrets_mod.SecretSource] = None,
     runner=None,
+    http=None,
 ) -> int:
     env = dict(env or os.environ)
     source = source or secrets_mod.build_source(config.stack, config.config_dir, env)
     state_dir = Path(config.code_root) / "tofu" / "stacks" / "state"
-    child_env = dict(env)
-    child_env["TF_VAR_account_id"] = str((config.stack.get("cloudflare") or {}).get("account_id") or "")
-    child_env["TF_VAR_bucket"] = str((config.stack.get("state") or {}).get("bucket") or "")
-    child_env["TF_VAR_r2_access_key_id"] = _require(source, config, "R2_ACCESS_KEY_ID")
-    child_env["TF_VAR_r2_secret_access_key"] = _require(source, config, "R2_SECRET_ACCESS_KEY")
-    passphrase = _require(source, config, "state_passphrase")
-    if len(passphrase) < 16:
-        raise config_mod.ConfigError(
-            f"state_passphrase must be at least 16 characters (pbkdf2); got {len(passphrase)}"
-        )
-    child_env["TF_VAR_state_passphrase"] = passphrase
+    child_env_map = child_env(config, env, source, http=http)
 
-    run_tofu = runner or (lambda argv: subprocess.run(argv, env=child_env).returncode)
+    run_tofu = runner or (lambda argv: subprocess.run(argv, env=child_env_map).returncode)
     rc = run_tofu(["tofu", "-chdir", str(state_dir), "init"])
     if rc != 0:
         return rc

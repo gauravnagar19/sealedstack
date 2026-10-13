@@ -5,7 +5,8 @@ implementations:
     name: Cloudflare R2
     status: experimental
     summary: Free up to 10 GB; the MVP default.
-    secrets: [R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY]
+    # D-054: the S3 keys are derived from CLOUDFLARE_API_TOKEN; an explicit pair is an override.
+    optional_secrets: [R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY]
     config: [account_id, bucket]
     impl: { tofu_module: backup_r2 }
     docs: https://developers.cloudflare.com/r2/
