@@ -30,9 +30,20 @@ STATUS_ORDER = ("fail", "warn", "ok", "skip")
 DOCS_CF = "docs/prerequisites.md#cloudflare"
 DOCS_TS = "docs/prerequisites.md#tailscale"
 DOCS_FORGE = "docs/infra-repo.md"
+DOCS_RELEASE_IDENTITY = "docs/ci-cd.md"
 DOCS_CONFIG = "docs/getting-started.md"
 DOCS_SECRETS = "docs/prerequisites.md"
 DOCS_BREAK_GLASS = "docs/user-experience.md"
+
+# D-057: app release jobs join the tailnet as tag:release with their own OIDC trust
+# credential. Its client id and audience live in stack.yaml (providers.mesh_tailscale)
+# and are published to every app repo under these two variable names.
+RELEASE_VARIABLES = ("SEALEDSTACK_TS_RELEASE_CLIENT_ID", "SEALEDSTACK_TS_RELEASE_AUDIENCE")
+RELEASE_CREDENTIAL_HOWTO = (
+    "the owner creates the `tag:release` OIDC trust credential (runbook T2; Tailscale console, Settings, Trust "
+    "credentials, OpenID Connect, issuer GitHub, scope auth_keys write, tag tag:release; see docs/ci-cd.md) and sets "
+    "providers.mesh_tailscale.release_oauth_client_id and release_audience in config/stack.yaml"
+)
 
 CF_API = "https://api.cloudflare.com/client/v4"
 TS_API = "https://api.tailscale.com/api/v2"
@@ -729,6 +740,41 @@ def _load_mesh_policy_module(code_root: Optional[Path] = None) -> Any:
     return module
 
 
+def release_identity_settings(ctx: CheckContext) -> tuple[str, str]:
+    """The ``tag:release`` client id and audience, as ``publish-app-settings`` reads them."""
+    mesh = (ctx.config.stack.get("providers") or {}).get("mesh_tailscale") or {}
+    client_id = str(mesh.get("release_oauth_client_id") or ctx.env.get("TS_RELEASE_OAUTH_CLIENT_ID") or "")
+    audience = str(mesh.get("release_audience") or ctx.env.get("TS_RELEASE_OAUTH_AUDIENCE") or "")
+    return client_id, audience
+
+
+def _check_release_identity(ctx: CheckContext) -> Result:
+    """The infra repo knows the ``tag:release`` OIDC trust credential (D-057).
+
+    It is a manual step in the Tailscale console, needed as soon as an app with its
+    own repository exists (image-only apps have no release workflow).
+    """
+    client_id, audience = release_identity_settings(ctx)
+    repo_apps = _app_repos(ctx.config.apps)
+    if client_id and audience:
+        return Result("tailscale.release_identity", "tailscale", "ok", detail="tag:release OIDC trust credential configured (client id and audience set)")
+    missing = [name for name, value in (("release_oauth_client_id", client_id), ("release_audience", audience)) if not value]
+    if not repo_apps:
+        return Result(
+            "tailscale.release_identity", "tailscale", "skip",
+            detail="no app has its own repository yet, so no release job needs the tag:release credential",
+            fix=f"before the first app release: {RELEASE_CREDENTIAL_HOWTO}",
+            docs=DOCS_RELEASE_IDENTITY,
+        )
+    return Result(
+        "tailscale.release_identity", "tailscale", "fail",
+        detail=f"providers.mesh_tailscale.{' and '.join(missing)} not set, but {len(repo_apps)} app(s) have a release workflow "
+               f"({', '.join(name for name, _repo in repo_apps)})",
+        fix=RELEASE_CREDENTIAL_HOWTO,
+        docs=DOCS_RELEASE_IDENTITY,
+    )
+
+
 def check_tailscale(ctx: CheckContext) -> list[Result]:
     slots = ctx.config.stack.get("slots") or {}
     if slots.get("mesh") != "tailscale":
@@ -809,6 +855,8 @@ def check_tailscale(ctx: CheckContext) -> list[Result]:
                     )
             else:
                 results.append(Result("tailscale.allow_all", "tailscale", "ok", detail="no allow-all rule"))
+
+    results.append(_check_release_identity(ctx))
 
     client_id = secret_value(ctx, "TAILSCALE_OAUTH_CLIENT_ID")
     client_secret = secret_value(ctx, "TAILSCALE_OAUTH_CLIENT_SECRET")
@@ -973,7 +1021,46 @@ def _check_github(ctx: CheckContext) -> list[Result]:
 
     for repo, repo_kind in _forge_repos(ctx):
         results.append(_check_github_repo(ctx, headers, repo, repo_kind))
+    if (ctx.config.stack.get("slots") or {}).get("mesh") == "tailscale":
+        seen: set[str] = set()
+        for name, repo in _app_repos(ctx.config.apps):
+            if repo not in seen:
+                seen.add(repo)
+                results.append(_check_release_variables(ctx, headers, name, repo))
     return results
+
+
+def _check_release_variables(ctx: CheckContext, headers: Mapping[str, str], app: str, repo: str) -> Result:
+    """The app repo has the ``tag:release`` variables its release job needs (D-057)."""
+    rid = f"forge.release_vars.{repo}"
+    missing: list[str] = []
+    unreadable = ""
+    for name in RELEASE_VARIABLES:
+        try:
+            response = ctx.http.request("GET", f"{GITHUB_API}/repos/{repo}/actions/variables/{name}", headers=headers)
+        except Exception as exc:  # noqa: BLE001
+            return Result(rid, "forge", "fail", detail=f"{repo}: {exc}", fix="check network access", docs=DOCS_FORGE)
+        if response.status == 200 and str(_json_or_none(response).get("value") or ""):
+            continue
+        if response.status in (200, 404):
+            missing.append(name)
+        else:
+            unreadable = f"HTTP {response.status}"
+    if missing:
+        return Result(
+            rid, "forge", "fail",
+            detail=f"{repo} ({app}) has no {' / '.join(missing)}: its release job cannot join the tailnet as tag:release",
+            fix=f"run apply to publish them from config/stack.yaml; if they are not set there yet, {RELEASE_CREDENTIAL_HOWTO}",
+            docs=DOCS_RELEASE_IDENTITY,
+        )
+    if unreadable:
+        return Result(
+            rid, "forge", "warn",
+            detail=f"could not read the release variables of {repo} ({unreadable})",
+            fix="grant the token Variables: read on that repository",
+            docs=DOCS_FORGE,
+        )
+    return Result(rid, "forge", "ok", detail=f"{repo}: release variables published ({', '.join(RELEASE_VARIABLES)})")
 
 
 def _check_github_repo(ctx: CheckContext, headers: Mapping[str, str], repo: str, repo_kind: str) -> Result:

@@ -280,10 +280,25 @@ FORGE_APPS = {
 FINE_GRAINED = "github_pat_example"
 
 
-def github_stub(*, denied=(), env_status=200, repo_status=200, role=None) -> StubClient:
-    """A GitHub API stub: every read answers 200 except the permissions in ``denied``."""
+RELEASE_VARS = {"SEALEDSTACK_TS_RELEASE_CLIENT_ID": "release-client", "SEALEDSTACK_TS_RELEASE_AUDIENCE": "release-audience"}
+
+
+def github_stub(*, denied=(), env_status=200, repo_status=200, role=None, release_vars=None, release_status=None) -> StubClient:
+    """A GitHub API stub: every read answers 200 except the permissions in ``denied``.
+
+    ``release_vars`` is the app repo's published ``tag:release`` variables (default: both set);
+    ``release_status`` forces one status (e.g. 403) for reading them.
+    """
     http = StubClient()
     http.add("api.github.com/user", Route(json_body={"login": "sealedstack-bot"}))
+    published = RELEASE_VARS if release_vars is None else release_vars
+    for name in RELEASE_VARS:
+        if release_status:
+            http.add(f"/actions/variables/{name}", Route(status=release_status, json_body={}))
+        elif name in published:
+            http.add(f"/actions/variables/{name}", Route(json_body={"name": name, "value": published[name]}))
+        else:
+            http.add(f"/actions/variables/{name}", Route(status=404, json_body={}))
     probes = {
         "Contents": "/contents/",
         "Pull requests": "/pulls?state=open",
@@ -419,3 +434,91 @@ def test_run_checks_never_raises_on_bad_area(tmp_path, monkeypatch):
     results = preflight.run_checks(make_ctx(tmp_path, config))
     assert results[0].status == "fail"
     assert "kaboom" in results[0].detail
+
+
+# --------------------------------------------------------------------------- #
+# the tag:release identity (D-057)
+# --------------------------------------------------------------------------- #
+RELEASE_STACK = {**STACK, "providers": {"mesh_tailscale": {"release_oauth_client_id": "rel-client", "release_audience": "rel-audience"}}}
+
+
+def test_infra_release_identity_is_required_when_an_app_has_a_repo(tmp_path):
+    row = by_id(preflight.check_tailscale(make_ctx(tmp_path, make_config(tmp_path, apps=FORGE_APPS), env={})))["tailscale.release_identity"]
+    assert row.status == "fail"
+    assert "release_oauth_client_id and release_audience" in row.detail and "app1" in row.detail
+    assert "runbook T2" in row.fix and "tag:release" in row.fix and "providers.mesh_tailscale" in row.fix
+
+
+def test_infra_release_identity_names_only_the_missing_key(tmp_path):
+    stack = {**STACK, "providers": {"mesh_tailscale": {"release_oauth_client_id": "rel-client"}}}
+    row = by_id(preflight.check_tailscale(make_ctx(tmp_path, make_config(tmp_path, stack=stack, apps=FORGE_APPS), env={})))["tailscale.release_identity"]
+    assert row.status == "fail" and "release_audience" in row.detail and "release_oauth_client_id not set" not in row.detail
+
+
+def test_infra_release_identity_ok_when_both_are_set_in_config_or_env(tmp_path):
+    config = make_config(tmp_path / "a", stack=RELEASE_STACK, apps=FORGE_APPS)
+    assert by_id(preflight.check_tailscale(make_ctx(tmp_path / "a", config, env={})))["tailscale.release_identity"].status == "ok"
+    env = {"TS_RELEASE_OAUTH_CLIENT_ID": "c", "TS_RELEASE_OAUTH_AUDIENCE": "a"}  # what publish-app-settings also reads
+    config = make_config(tmp_path / "b", apps=FORGE_APPS)
+    assert by_id(preflight.check_tailscale(make_ctx(tmp_path / "b", config, env=env)))["tailscale.release_identity"].status == "ok"
+
+
+def test_infra_release_identity_is_not_demanded_before_any_app_has_a_repo(tmp_path):
+    row = by_id(preflight.check_tailscale(make_ctx(tmp_path, make_config(tmp_path), env={})))["tailscale.release_identity"]
+    assert row.status == "skip" and "before the first app release" in row.fix  # image-only apps have no release workflow
+
+
+def test_no_release_identity_row_when_the_mesh_is_not_tailscale(tmp_path):
+    stack = {**STACK, "slots": {**STACK["slots"], "mesh": "headscale"}}
+    results = by_id(preflight.check_tailscale(make_ctx(tmp_path, make_config(tmp_path, stack=stack, apps=FORGE_APPS), env={})))
+    assert "tailscale.release_identity" not in results
+
+
+def test_app_repo_release_variables_published_is_ok(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    http = github_stub()
+    results = by_id(preflight.check_forge(make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=http)))
+    row = results["forge.release_vars.owner/app"]
+    assert row.status == "ok" and "SEALEDSTACK_TS_RELEASE_CLIENT_ID" in row.detail
+    assert {r["method"] for r in http.requests} == {"GET"}
+
+
+def test_app_repo_missing_release_variables_fail_with_the_remedy(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    http = github_stub(release_vars={})
+    row = by_id(preflight.check_forge(make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=http)))["forge.release_vars.owner/app"]
+    assert row.status == "fail"
+    assert "owner/app" in row.detail and "SEALEDSTACK_TS_RELEASE_CLIENT_ID" in row.detail and "SEALEDSTACK_TS_RELEASE_AUDIENCE" in row.detail
+    assert "run apply" in row.fix and "tag:release" in row.fix and "runbook T2" in row.fix
+
+
+def test_app_repo_with_one_release_variable_missing_names_that_one(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    http = github_stub(release_vars={"SEALEDSTACK_TS_RELEASE_CLIENT_ID": "x"})
+    row = by_id(preflight.check_forge(make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=http)))["forge.release_vars.owner/app"]
+    assert row.status == "fail" and "SEALEDSTACK_TS_RELEASE_AUDIENCE" in row.detail and "RELEASE_CLIENT_ID" not in row.detail
+
+
+def test_app_repo_with_an_empty_release_variable_counts_as_missing(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    http = github_stub(release_vars={"SEALEDSTACK_TS_RELEASE_CLIENT_ID": "", "SEALEDSTACK_TS_RELEASE_AUDIENCE": "a"})
+    row = by_id(preflight.check_forge(make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=http)))["forge.release_vars.owner/app"]
+    assert row.status == "fail" and "SEALEDSTACK_TS_RELEASE_CLIENT_ID" in row.detail
+
+
+def test_unreadable_release_variables_warn_instead_of_failing(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    http = github_stub(release_status=403)
+    row = by_id(preflight.check_forge(make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=http)))["forge.release_vars.owner/app"]
+    assert row.status == "warn" and "Variables: read" in row.fix
+
+
+def test_release_variables_are_checked_once_per_repo_and_only_for_tailscale(tmp_path):
+    apps = {"apps": {**FORGE_APPS["apps"], "app2": {**FORGE_APPS["apps"]["app1"], "hostnames": ["two.example.com"]}}}
+    http = github_stub()
+    results = preflight.check_forge(make_ctx(tmp_path / "a", make_config(tmp_path / "a", apps=apps), env={"GH_TOKEN": FINE_GRAINED}, http=http))
+    assert [r.id for r in results if r.id.startswith("forge.release_vars.")] == ["forge.release_vars.owner/app"]
+    stack = {**STACK, "slots": {**STACK["slots"], "mesh": "headscale"}}
+    other = by_id(preflight.check_forge(make_ctx(tmp_path / "b", make_config(tmp_path / "b", stack=stack, apps=FORGE_APPS), env={"GH_TOKEN": FINE_GRAINED}, http=github_stub())))
+    assert not any(k.startswith("forge.release_vars.") for k in other)
+    assert not any(k.startswith("forge.release_vars.") for k in by_id(preflight.check_forge(make_ctx(tmp_path / "c", make_config(tmp_path / "c", apps=FORGE_APPS), env={}))))

@@ -99,6 +99,12 @@ client id and audience in the infra repo's `config/stack.yaml` as
 sealedstack publishes them to every app repo as `SEALEDSTACK_TS_RELEASE_CLIENT_ID`
 and `SEALEDSTACK_TS_RELEASE_AUDIENCE`.
 
+`sealedstack check` verifies both ends. In the infra repo, `release_oauth_client_id`
+and `release_audience` must be set as soon as any app has its own repository
+(row `tailscale.release_identity`). In each app repo, the two variables above must
+be published (row `forge.release_vars.<repo>`); if they are missing, run `apply`,
+or, if the credential does not exist yet, create it first as described here.
+
 > `tailscale/github-action@v3` is used in the examples (matching
 > `examples/app-template/.github/workflows/release.yml`). v4 exists; the inputs
 > below are unchanged.

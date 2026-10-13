@@ -482,6 +482,27 @@ def checklist_items(
             "`autogroup:member → autogroup:member:*`. Your devices keep reaching each other; servers are "
             "reachable only through sealedstack's rules." + (f" [Preview of the change]({preview})" if preview else ""))
 
+    # 7b. the Tailscale OIDC trust credential for app releases (D-057): a manual step
+    release = by_id.get("tailscale.release_identity")
+    if release is not None:
+        owner_name = repo.split("/", 1)[0] if "/" in repo else "<owner>"
+        steps = (
+            "Manual step in the Tailscale admin console, Settings → Trust credentials → Credential → **OpenID Connect**: "
+            "Issuer **GitHub**; Subject `repo:" + owner_name + "/<app>:environment:production` "
+            "(a `*` wildcard works, e.g. `repo:" + owner_name + "/*:environment:production`); Scope **auth_keys: write**; "
+            "Tag **`tag:release`** (not `tag:ci`: that tag can SSH, `tag:release` reaches only the Dokploy API). "
+            "Create it as a second credential, separate from the infra repo's own. Then put its Client ID and Audience in "
+            "`config/stack.yaml` as `providers.mesh_tailscale.release_oauth_client_id` and `release_audience` (in this PR). "
+            + link("Details", "ci-cd.md#2-tailscale-for-ci-a-trust-credential-and-tagrelease")
+        )
+        release_label = "Tailscale OIDC trust credential for app releases (`tag:release`)"
+        if release.status == "ok":
+            add("ok", release_label, "client id and audience are set in `stack.yaml`")
+        elif release.status == "skip":
+            add("skip", release_label, "not needed until an app has its own repository; do it before that app's first release", steps)
+        else:
+            add("fail", release_label, release.detail, steps)
+
     # 8. the state passphrase
     sp = by_id.get("secrets.state_passphrase")
     sp_label = f"{sk('state_passphrase')} (≥ 16 chars)"
@@ -528,7 +549,7 @@ def checklist_items(
         "versions.pin", "cloudflare.zone", "cloudflare.token", "cloudflare.r2_derived", "cloudflare.zero_trust",
         "secrets.source", "secrets.cloudflare_api_token", "secrets.tailscale_oauth_client_id",
         "secrets.tailscale_oauth_client_secret", "secrets.state_passphrase", "tailscale.oauth", "tailscale.policy",
-        "tailscale.allow_all", "forge.bot",
+        "tailscale.allow_all", "forge.bot", "tailscale.release_identity",
     }
     if not present:  # the suffix is found together with the OAuth client
         covered.add("tailscale.tailnet")

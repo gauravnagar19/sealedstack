@@ -371,3 +371,65 @@ def test_the_docs_links_in_the_checklist_resolve_to_real_headings():
     for anchor in ("cloudflare-api-token-permissions", "tailscale-oauth-client", "what-you-create-and-where-it-goes"):
         assert anchor in heads, anchor
     assert (REPO / "docs" / "netcup-firewall.md").exists()
+
+
+# ---------------------------------------------------------------- the tag:release credential row (D-057)
+def _row(comment, label_fragment):
+    return next(line for line in comment.splitlines() if label_fragment in line)
+
+
+def test_setup_checklist_has_the_manual_tag_release_credential_row_with_the_console_fields(tmp_path):
+    f = new_forge()
+    rc, _ = run_setup(tmp_path, f)
+    assert rc == 0
+    comment = f.comments[(SLUG, f.prs[0]["number"])][0].body
+    row = _row(comment, "Tailscale OIDC trust credential for app releases (`tag:release`)")
+    assert row.startswith("| — |")  # optional until an app has its own repository: not counted as a blocker
+    for field in (
+        "Settings → Trust credentials → Credential → **OpenID Connect**",
+        "Issuer **GitHub**",
+        "Subject `repo:you/<app>:environment:production`",
+        "Scope **auth_keys: write**",
+        "Tag **`tag:release`**",
+        "`providers.mesh_tailscale.release_oauth_client_id`",
+        "`release_audience`",
+        "second credential",
+    ):
+        assert field in row, field
+    ready, total = map(int, re.search(r"Progress: (\d+) of (\d+) ready", comment).groups())
+    assert total == len([ln for ln in comment.splitlines() if ln.startswith("| ") and "Prerequisite" not in ln and not ln.startswith("| —")])
+
+
+def _checklist(tmp_path, results, *, apps=None, stack_extra=None):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    stack = {"name": "my-infra", "domain": "example.com", "slots": {"mesh": "tailscale", "secrets": "env"}, **(stack_extra or {})}
+    (config_dir / "stack.yaml").write_text(yaml.safe_dump(stack))
+    (config_dir / "servers.yaml").write_text("servers: {}\n")
+    (config_dir / "apps.yaml").write_text(yaml.safe_dump(apps or {"apps": {}}))
+    config = cfg.load_config(config_dir, REPO, {})
+    items = setupjob.checklist_items(results, config, repo=SLUG, owner="you", version="0.6.0")
+    return [i for i in items if "tag:release" in i.label]
+
+
+def test_tag_release_row_turns_green_when_the_credential_is_in_stack_yaml(tmp_path):
+    result = preflight.Result("tailscale.release_identity", "tailscale", "ok", detail="configured")
+    (item,) = _checklist(tmp_path, [result])
+    assert item.status == "ok" and "set in `stack.yaml`" in item.detail
+
+
+def test_tag_release_row_is_red_with_the_steps_when_an_app_needs_it(tmp_path):
+    result = preflight.Result("tailscale.release_identity", "tailscale", "fail", detail="release_audience not set, but 1 app(s) have a release workflow (shop)")
+    (item,) = _checklist(tmp_path, [result])
+    assert item.status == "fail" and "shop" in item.detail
+    assert "Issuer **GitHub**" in item.fix and "Tag **`tag:release`**" in item.fix and "docs/ci-cd.md#2-tailscale-for-ci" in item.fix
+
+
+def test_tag_release_row_is_not_duplicated_by_the_generic_failure_rows(tmp_path):
+    result = preflight.Result("tailscale.release_identity", "tailscale", "fail", detail="missing")
+    config_items = _checklist(tmp_path, [result])
+    assert len(config_items) == 1
+
+
+def test_no_tag_release_row_when_the_mesh_is_not_checked(tmp_path):
+    assert _checklist(tmp_path, []) == []
