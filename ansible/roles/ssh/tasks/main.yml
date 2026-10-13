@@ -14,6 +14,18 @@
     enabled: true
     state: started
 
+# D-055: passwordless sudo for the admin user (SSH is key-only and reachable
+# only over the mesh). Written through visudo validation, mode 0440.
+- name: Grant the admin user passwordless sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/90-sealedstack-admin
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+    content: |
+      {{ admin_user | default('admin') }} ALL=(ALL) NOPASSWD:ALL
+
 - name: Install the operator SSH public keys
   ansible.posix.authorized_key:
     user: "{{ admin_user | default('admin') }}"

@@ -8,7 +8,6 @@
 # Required extra-vars:
 #   target_name          MagicDNS / servers.yaml key (e.g. server-1)
 #   tailscale_auth_key   single-use, pre-authorised tag:server key
-#   admin_password       sudo/login password for the admin user
 #   admin_ssh_keys_json  operator public keys as a JSON array (from
 #                        config/admin.ssh_keys, D-040; required, since password
 #                        auth is disabled below)
@@ -25,10 +24,6 @@
     admin_user: "{{ lookup('env', 'ADMIN_USER') | default('admin', true) }}"
     # Operator public keys come from config (D-040), never the environment.
     admin_ssh_keys: "{{ (admin_ssh_keys_json | default('[]')) | from_json }}"
-    # Per-server salt derived deterministically from the hostname, so the hash is
-    # stable and idempotent but not shared across installs (N10). Combined with
-    # update_password: on_create, the hash is only written at creation.
-    admin_password_salt: "{{ 65534 | random(seed=target_name) | string }}"
     # Where the one-shot Tailscale auth key is staged (0600) so it never appears
     # in an argv (H10).
     tailscale_authkey_file: /root/.sealedstack-tailscale-authkey
@@ -50,16 +45,29 @@
           authentication (it would lock you out of the server). Add your public
           key to config/stack.yaml.
 
+    # D-055: the admin user has no password at all ("*" = no password login
+    # possible, key login unaffected) and passwordless sudo through a validated
+    # drop-in. SSH is key-only, so a sudo password would add a secret without
+    # adding protection.
     - name: Create the admin user
       ansible.builtin.user:
         name: "{{ admin_user }}"
-        password: "{{ admin_password | password_hash('sha512', admin_password_salt) }}"
+        password: "*"
         update_password: on_create
         groups: sudo
         shell: /bin/bash
         create_home: true
         state: present
-      no_log: true
+
+    - name: Grant the admin user passwordless sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/90-sealedstack-admin
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+        content: |
+          {{ admin_user }} ALL=(ALL) NOPASSWD:ALL
 
     - name: Install the operator SSH public keys
       ansible.posix.authorized_key:

@@ -113,12 +113,6 @@ def up(
     admin_user = str(config.stack.get("admin_user") or "")
     ip_key, pw_key = config.bootstrap_secrets(name)
 
-    admin_password = env.get("ADMIN_SUDO_PASSWORD") or _optional(source, "admin_sudo_password")
-    if not admin_password:
-        raise config_mod.ConfigError(
-            "missing required secret 'admin_sudo_password' in project 'infra' (or ADMIN_SUDO_PASSWORD)"
-        )
-
     root_password = ""
     ip = ""
     already_bootstrapped = False
@@ -173,7 +167,6 @@ def up(
                 {
                     "target_name": name,
                     "tailscale_auth_key": auth_key,
-                    "admin_password": admin_password,
                     "admin_user": admin_user,
                     "admin_ssh_keys_json": admin_ssh_keys_json,
                     "ansible_password": root_password or env.get("ROOT_PASSWORD", ""),
@@ -194,7 +187,6 @@ def up(
         write_vars(
             vars_file,
             {
-                "ansible_become_password": admin_password,
                 "dokploy_ssh_public_key": dokploy_ssh_public_key,
                 "admin_ssh_keys_json": admin_ssh_keys_json,
             },
@@ -256,18 +248,15 @@ def sync(
     env = dict(env or os.environ)
     io = io or _default_io()
     source = source or secrets_mod.build_source(config.stack, config.config_dir, env)
-    admin_password = env.get("ADMIN_SUDO_PASSWORD") or _optional(source, "admin_sudo_password")
-    if not admin_password:
-        raise config_mod.ConfigError(
-            "missing required secret 'admin_sudo_password' in project 'infra' (or ADMIN_SUDO_PASSWORD)"
-        )
     import tempfile
 
+    # D-055: the admin user has passwordless sudo, so no secret is needed here;
+    # only the (public) operator keys, so the ssh role re-asserts them.
     fd, vars_path = tempfile.mkstemp()
     os.close(fd)
     vars_file = Path(vars_path)
     try:
-        write_vars(vars_file, {"ansible_become_password": admin_password})
+        write_vars(vars_file, {"admin_ssh_keys_json": json.dumps(config.admin_ssh_keys())})
         argv = ["ansible-playbook", "-i", str(Path(config.code_root) / "ansible" / "inventory.py")]
         if name:
             argv += ["--limit", name]
@@ -275,11 +264,6 @@ def sync(
         return io.run(argv, env)
     finally:
         vars_file.unlink(missing_ok=True)
-
-
-def _optional(source: secrets_mod.SecretSource, name: str) -> str:
-    result = source.get(name)
-    return result.value if result.found else ""
 
 
 def _capture_required(io: ServerIO, argv: list, env: Mapping[str, str]) -> str:

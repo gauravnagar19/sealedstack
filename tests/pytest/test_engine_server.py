@@ -31,6 +31,7 @@ class FakeIO(server.ServerIO):
         self.runs: list[list] = []
         self.captures: list[list] = []
         self.prompts: list[str] = []
+        self.vars_files: list[dict] = []
         self._captures = captures or {}
 
     def _match(self, argv):
@@ -41,6 +42,10 @@ class FakeIO(server.ServerIO):
 
     def run(self, argv, env):
         self.runs.append(list(argv))
+        # Record the -e @vars files while they still exist (they are 0600 temp files).
+        for i, arg in enumerate(argv):
+            if arg == "-e" and i + 1 < len(argv) and argv[i + 1].startswith("@"):
+                self.vars_files.append(json.loads(Path(argv[i + 1][1:]).read_text()))
         return 0
 
     def capture(self, argv, env):
@@ -96,7 +101,6 @@ def test_up_existing_machine_bootstraps_then_sites(tmp_path, capsys):
         {
             "SERVER_IP_WEB_1": "203.0.113.10",
             "ROOT_PASSWORD_WEB_1": "rootpw",
-            "admin_sudo_password": "sudopw",
             "TAILSCALE_OAUTH_CLIENT_ID": "id",
             "TAILSCALE_OAUTH_CLIENT_SECRET": "sec",
         }
@@ -112,17 +116,31 @@ def test_up_existing_machine_bootstraps_then_sites(tmp_path, capsys):
     assert "web-1" in msg
 
 
-def test_up_missing_admin_password_errors(tmp_path):
+def test_up_needs_no_sudo_password_and_passes_none_to_ansible(tmp_path):
+    """D-055: no admin_sudo_password secret; no sudo/become password reaches Ansible."""
     config = make_config(tmp_path)
-    with pytest.raises(config_mod.ConfigError):
-        server.up(config, {}, "web-1", source=FakeSource({"SERVER_IP_WEB_1": "x", "ROOT_PASSWORD_WEB_1": "y"}), io=FakeIO())
+    io = FakeIO(captures={"sealedstack.tailscalekey": "tskey", "sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy"})
+    source = FakeSource({"SERVER_IP_WEB_1": "203.0.113.10", "ROOT_PASSWORD_WEB_1": "rootpw",
+                         "TAILSCALE_OAUTH_CLIENT_ID": "id", "TAILSCALE_OAUTH_CLIENT_SECRET": "sec"})
+    server.up(config, {}, "web-1", source=source, io=io)
+    assert len(io.vars_files) == 2  # bootstrap + site
+    for vars_file in io.vars_files:
+        assert "admin_password" not in vars_file and "ansible_become_password" not in vars_file
+    assert io.vars_files[0]["ansible_password"] == "rootpw"  # the one-time root login only
+
+
+def test_sync_passes_only_public_keys(tmp_path):
+    config = make_config(tmp_path)
+    io = FakeIO()
+    assert server.sync(config, {}, "web-1", source=FakeSource({}), io=io) == 0
+    assert io.vars_files == [{"admin_ssh_keys_json": json.dumps(["ssh-ed25519 AAAA you@example.com"])}]
 
 
 def test_up_without_bootstrap_secrets_only_reasserts_the_baseline(tmp_path, capsys):
     """D-049: the secrets are deleted after the first bootstrap, so `up` must be re-runnable."""
     config = make_config(tmp_path, provider="netcup")
     io = FakeIO(captures={"sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy"})
-    source = FakeSource({"admin_sudo_password": "sudopw"})  # no SERVER_IP_/ROOT_PASSWORD_
+    source = FakeSource({})  # no SERVER_IP_/ROOT_PASSWORD_
 
     msg = server.up(config, {}, "web-1", source=source, io=io)
 
@@ -136,7 +154,7 @@ def test_up_without_bootstrap_secrets_only_reasserts_the_baseline(tmp_path, caps
 
 def test_up_with_only_one_bootstrap_secret_is_an_error(tmp_path):
     config = make_config(tmp_path, provider="netcup")
-    source = FakeSource({"admin_sudo_password": "sudopw", "SERVER_IP_WEB_1": "203.0.113.10"})
+    source = FakeSource({"SERVER_IP_WEB_1": "203.0.113.10"})
     with pytest.raises(config_mod.ConfigError, match="ROOT_PASSWORD_WEB_1"):
         server.up(config, {}, "web-1", source=source, io=FakeIO())
 
@@ -150,7 +168,7 @@ def test_up_site_failure_without_secrets_names_the_missing_keys(tmp_path):
     config = make_config(tmp_path, provider="netcup")
     io = FailingIO(captures={"sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy"})
     with pytest.raises(config_mod.ConfigError, match="SERVER_IP_WEB_1 and ROOT_PASSWORD_WEB_1"):
-        server.up(config, {}, "web-1", source=FakeSource({"admin_sudo_password": "x"}), io=io)
+        server.up(config, {}, "web-1", source=FakeSource({}), io=io)
 
 
 def test_default_prompt_does_not_crash_without_a_terminal(monkeypatch, capsys):

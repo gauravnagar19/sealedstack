@@ -263,7 +263,7 @@ user_auth:
 
 | Project | Holds |
 |---|---|
-| `infra` | Cloudflare API token, Tailscale API credentials, state encryption passphrase, R2 state credentials, `admin` sudo password, Dokploy API key, Dokploy→worker SSH key |
+| `infra` | Cloudflare API token, Tailscale API credentials, state encryption passphrase, R2 state credentials, Dokploy API key, Dokploy→worker SSH key |
 | `prod` | `<app>.<NAME>` for production apps, e.g. `shop.CLERK_SECRET_KEY` |
 | `staging` | The same naming, for staging (v0.2+) |
 
@@ -289,7 +289,7 @@ The only secret the operator handles directly is `BWS_ACCESS_TOKEN`. It is expor
 
 Runs once, as `root@<public IP>`, using a password or a provider-installed SSH key:
 
-1. Create the `admin` user with a password from secrets, add it to `sudo`, and install the public key.
+1. Create the `admin` user with no password, give it passwordless sudo through a validated `/etc/sudoers.d/` drop-in (D-055), and install the public key.
 2. `sshd`: `PermitRootLogin no`, `PasswordAuthentication no`, `KbdInteractiveAuthentication no`.
 3. Install Tailscale and join with a **single-use, pre-authorised, `tag:server` auth key** (minted by the edge stack; expires after 1 hour), using `--hostname=<name>`.
 4. Wait until `<name>` resolves over MagicDNS, then hand off to `site.yml`.

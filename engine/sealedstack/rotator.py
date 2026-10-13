@@ -26,8 +26,7 @@ USAGE = """usage: rotate <tunnel|db|tailscale-key|all> [app]
 Still manual (provider-side):
   - CLOUDFLARE_API_TOKEN, TAILSCALE_OAUTH_CLIENT_SECRET : revoke + recreate in the dashboards,
     then update the `infra` secrets. `sealedstack doctor` re-checks them.
-  - DOKPLOY_API_KEY, admin_sudo_password    : regenerate in Dokploy / on the host,
-    then update Secrets Manager (DOKPLOY_API_KEY) and `admin_sudo_password`.
+  - DOKPLOY_API_KEY                         : regenerate in Dokploy, then update Secrets Manager.
   - R2 keys : derived from CLOUDFLARE_API_TOKEN, so rotating that token rotates them (the
     state bucket and backup credentials follow on the next apply).
 """
