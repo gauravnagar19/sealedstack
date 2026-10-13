@@ -125,10 +125,21 @@ Nothing upgrades on its own
 ## CI
 
 `.github/workflows/sealedstack.yml` calls the reusable workflow
-`<owner>/sealedstack/.github/workflows/infra.yml@v<version>`. Pull requests run
-`check` and `plan`; write commands (`apply`, `up`, ...) run only from a merged pull
-request on `main` and after an approver has agreed (D-052). Comment
-commands (`/sealedstack …`) are accepted from writers only.
+`<owner>/sealedstack/.github/workflows/infra.yml@v<version>`. When no command is
+given, the command comes from the event:
+
+| Event | What runs |
+|---|---|
+| Pull request opened or updated | `plan`, posted (and updated in place) as a PR comment; on the Setup PR, `check` updates the checklist |
+| Push to `main` (a merge) | `apply`. If no approver has agreed yet it posts "waiting for `/sealedstack approve`" on the PR and exits successfully; a direct push is refused (D-052) |
+| Schedule (hourly) | `status` (updates the Status issue), then drift detection (a problem becomes a Status-issue comment) |
+| Comment `/sealedstack <cmd>` | Writers can run `check`, `plan`, `status`, `drill`; approvers can run `up`, `apply` and `approve`. After a merge, `approve` triggers the `apply` |
+| Run workflow | The chosen command, including `plan` and `apply` |
+
+Write commands run only from a merged pull request on `main` and after an
+approver has agreed (D-052). Every job that reaches a server or Dokploy first
+joins the tailnet as `tag:ci` (workload identity first, the OAuth client as a
+logged fallback; D-041).
 
 `check` fails when `sealedstack.version` and the workflow `@ref` differ; the
 upgrade bot bumps both in one PR.

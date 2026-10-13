@@ -55,6 +55,28 @@ def render(
     return "\n".join(lines)
 
 
+_ICON = {"ok": "🟢", "warn": "🟡", "fail": "🔴", "skip": "⏳"}
+
+
+def render_from_health(config, version: str, health: list) -> str:
+    """The Status issue body from preflight results (servers, apps, drift/advisories)."""
+    by_id = {r.id: r for r in health}
+    servers = []
+    for name in sorted((config.servers.get("servers") or {})):
+        res = by_id.get(f"servers.{name}")
+        servers.append({"name": name, "mesh": f"{_ICON.get(res.status, '⏳')} {res.detail}" if res else "⏳ unknown"})
+    apps = []
+    for name, spec in sorted((config.apps.get("apps") or {}).items()):
+        hosts = ", ".join((spec or {}).get("hostnames") or [])
+        apps.append({"name": name, "url": hosts})
+    failing = [r for r in health if r.status == "fail"]
+    body = render(name=config.name or "infra", version=version, servers=servers, apps=apps)
+    if failing:
+        body = body.replace("# 🟢 ", "# 🔴 ", 1)
+        body += "\n**Problems**\n" + "\n".join(f"- 🔴 `{r.id}`: {r.detail}" for r in failing) + "\n"
+    return body
+
+
 def issue_number(f: forge_mod.Forge, repo: str) -> Optional[int]:
     return f.get_issue(repo, MARKER)
 

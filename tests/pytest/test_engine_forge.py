@@ -149,16 +149,18 @@ def test_infra_workflow_shape():
     # writes wait for approval in the production environment
     approve = data["jobs"]["approve"]
     assert approve["environment"] == "production"
-    # comment commands are gated by collaborator permission
-    decide = data["jobs"]["authorize"]["steps"][0]
-    assert "collaborators" in decide["run"] and "write" in decide["run"]
+    # the command is derived from the event; comment commands are authorised by the
+    # engine (writers for reads, approvers for writes) in `ci resolve`
+    resolve = data["jobs"]["resolve"]["steps"]
+    assert any("ci resolve" in str(step.get("run", "")) for step in resolve)
+    assert approve["needs"] == "resolve"
 
 
 def test_infra_workflow_tells_the_container_it_runs_in_ci():
     """Write commands are refused on a 'local' runner (D-045); the container must
     see the CI marker and the repository (for add-app's pull requests)."""
     data = yaml.safe_load((REPO / ".github" / "workflows" / "infra.yml").read_text(encoding="utf-8"))
-    command = next(s for s in data["jobs"]["run"]["steps"] if str(s.get("name", "")).startswith("sealedstack ${{ inputs.command"))
+    command = next(s for s in data["jobs"]["run"]["steps"] if str(s.get("name", "")).startswith("sealedstack ${{ needs.resolve.outputs.command"))
     assert "-e GITHUB_ACTIONS" in command["run"] and "-e GITHUB_REPOSITORY" in command["run"]
 
 

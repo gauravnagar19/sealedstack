@@ -51,9 +51,13 @@ def test_infra_run_job_joins_the_tailnet_before_any_engine_command():
     run = steps(doc, "run")
     ts_idx = [i for i, s in enumerate(run) if is_ts(s)]
     assert ts_idx, "infra.yml has no tailscale/github-action step"
-    last_engine = max(i for i, s in enumerate(run) if "docker run" in str(s.get("run", "")) and "approve-check" not in s["run"])
-    command_step = index_of(run, lambda s: str(s.get("name", "")).startswith("sealedstack ${{ inputs.command"))
-    assert max(ts_idx) < command_step <= last_engine
+    command_step = index_of(run, lambda s: str(s.get("name", "")).startswith("sealedstack ${{ needs.resolve.outputs.command"))
+    assert max(ts_idx) < command_step
+    # nothing before the join may run the engine against a server (the fallback
+    # reader only reads the secret source)
+    for i, step in enumerate(run[:max(ts_idx)]):
+        text = str(step.get("run", ""))
+        assert "ci exec" not in text and "ci resolve" not in text
     # the fallback reader also runs before its join
     reader = index_of(run, lambda s: s.get("id") == "ts_secret")
     assert reader < max(ts_idx)
@@ -77,14 +81,20 @@ def test_infra_join_is_tag_ci_with_oidc_first_and_a_logged_fallback():
 def test_infra_writes_and_status_need_id_token_and_host_networking():
     doc = load("infra.yml")
     assert permissions(doc, "run").get("id-token") == "write"
-    command_step = next(s for s in steps(doc, "run") if str(s.get("name", "")).startswith("sealedstack ${{ inputs.command"))
+    command_step = next(s for s in steps(doc, "run") if str(s.get("name", "")).startswith("sealedstack ${{ needs.resolve.outputs.command"))
     assert "--network host" in command_step["run"]
 
 
-def test_setup_and_add_app_do_not_join():
+def test_only_commands_that_reach_servers_join():
     doc = load("infra.yml")
     trust = next(s for s in steps(doc, "run") if s.get("id") == "ts")
-    assert "setup" in trust["if"] and "add-app" in trust["if"]
+    assert trust["if"] == "needs.resolve.outputs.mesh == 'true'"
+    from sealedstack import infraci
+
+    assert not infraci.Resolution(command="setup").needs_mesh
+    assert not infraci.Resolution(command="add-app").needs_mesh
+    for command in ("plan", "apply", "up", "status", "check", "restore", "drill", "drift"):
+        assert infraci.Resolution(command=command).needs_mesh
 
 
 # --------------------------------------------------------------------------- app.yml and drift.yml

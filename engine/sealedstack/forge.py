@@ -65,7 +65,9 @@ class Forge:
         raise NotImplementedError
 
     def issue_comments(self, repo: str, number: int) -> list:  # pragma: no cover
-        """Comments on an issue/PR, oldest first: ``[{author, body}, ...]``."""
+        """Comments on an issue/PR, oldest first:
+        ``[{author, body, created, updated}, ...]`` (``created``/``updated`` sort
+        chronologically: ISO-8601 strings on GitHub, integers in memory)."""
         raise NotImplementedError
 
     def pull_requests_for_commit(self, repo: str, sha: str) -> list:  # pragma: no cover
@@ -100,6 +102,11 @@ class Forge:
 
     def branch_head(self, repo: str, branch: str) -> str:  # pragma: no cover
         """The commit SHA at the tip of ``branch`` (empty if unknown)."""
+        raise NotImplementedError
+
+    def get_pull_request(self, repo: str, number: int) -> dict:  # pragma: no cover
+        """``{number, state, merged, merge_commit_sha, head_ref, head_repo, base_ref, title}``
+        (empty dict when the PR does not exist)."""
         raise NotImplementedError
 
 
@@ -201,14 +208,25 @@ class GitHubForge(Forge):
             comments = self._request("GET", f"/repos/{repo}/issues/{number}/comments") or []
             for comment in comments:
                 if marker in (comment.get("body") or ""):
-                    self._request("PATCH", f"/repos/{repo}/issues/comments/{comment['id']}", json_body={"body": body})
+                    # An unchanged body is left alone so its edit time (and with it
+                    # the approvals that came after it, D-052) is not disturbed.
+                    if (comment.get("body") or "") != body:
+                        self._request("PATCH", f"/repos/{repo}/issues/comments/{comment['id']}", json_body={"body": body})
                     return int(comment["id"])
         created = self._request("POST", f"/repos/{repo}/issues/{number}/comments", json_body={"body": body})
         return int(created["id"])
 
     def issue_comments(self, repo: str, number: int) -> list:
         comments = self._request("GET", f"/repos/{repo}/issues/{number}/comments?per_page=100") or []
-        return [{"author": (c.get("user") or {}).get("login", ""), "body": c.get("body") or ""} for c in comments]
+        return [
+            {
+                "author": (c.get("user") or {}).get("login", ""),
+                "body": c.get("body") or "",
+                "created": c.get("created_at") or "",
+                "updated": c.get("updated_at") or c.get("created_at") or "",
+            }
+            for c in comments
+        ]
 
     def pull_requests_for_commit(self, repo: str, sha: str) -> list:
         prs = self._request("GET", f"/repos/{repo}/commits/{sha}/pulls") or []
@@ -220,6 +238,23 @@ class GitHubForge(Forge):
     def branch_head(self, repo: str, branch: str) -> str:
         data = self._request("GET", f"/repos/{repo}/branches/{branch}") or {}
         return str(((data.get("commit") or {}).get("sha")) or "")
+
+    def get_pull_request(self, repo: str, number: int) -> dict:
+        try:
+            pr = self._request("GET", f"/repos/{repo}/pulls/{number}") or {}
+        except ForgeError:
+            return {}
+        head = pr.get("head") or {}
+        return {
+            "number": int(pr.get("number") or number),
+            "state": str(pr.get("state") or ""),
+            "merged": bool(pr.get("merged")),
+            "merge_commit_sha": str(pr.get("merge_commit_sha") or ""),
+            "head_ref": str(head.get("ref") or ""),
+            "head_repo": str((head.get("repo") or {}).get("full_name") or ""),
+            "base_ref": str((pr.get("base") or {}).get("ref") or ""),
+            "title": str(pr.get("title") or ""),
+        }
 
     def set_variable(self, repo: str, name: str, value: str) -> None:
         try:
@@ -308,6 +343,8 @@ class _Comment:
     id: int
     body: str
     author: str = ""
+    created: int = 0
+    updated: int = 0
 
 
 @dataclass
@@ -324,20 +361,33 @@ class InMemoryForge(Forge):
     environments: set = field(default_factory=set)
     commit_prs: dict = field(default_factory=dict)
     branch_heads: dict = field(default_factory=dict)
+    pull_requests: dict = field(default_factory=dict)
     _next: int = 1000
+    _clock: int = 0
 
     def _id(self) -> int:
         self._next += 1
         return self._next
 
+    def _tick(self) -> int:
+        self._clock += 1
+        return self._clock
+
     def add_comment(self, repo: str, number: int, author: str, body: str) -> int:
         """Record a comment with a known author (for approval tests)."""
-        comment = _Comment(self._id(), body, author)
+        now = self._tick()
+        comment = _Comment(self._id(), body, author, now, now)
         self.comments.setdefault((repo, number), []).append(comment)
         return comment.id
 
     def issue_comments(self, repo: str, number: int) -> list:
-        return [{"author": c.author, "body": c.body} for c in self.comments.get((repo, number), [])]
+        return [
+            {"author": c.author, "body": c.body, "created": c.created, "updated": c.updated}
+            for c in self.comments.get((repo, number), [])
+        ]
+
+    def get_pull_request(self, repo: str, number: int) -> dict:
+        return dict(self.pull_requests.get((repo, number), {}))
 
     def pull_requests_for_commit(self, repo: str, sha: str) -> list:
         return list(self.commit_prs.get((repo, sha), []))
@@ -388,9 +438,12 @@ class InMemoryForge(Forge):
         if marker:
             for comment in bucket:
                 if marker in comment.body:
-                    comment.body = body
+                    if comment.body != body:
+                        comment.body = body
+                        comment.updated = self._tick()
                     return comment.id
-        comment = _Comment(self._id(), body)
+        now = self._tick()
+        comment = _Comment(self._id(), body, "", now, now)
         bucket.append(comment)
         return comment.id
 

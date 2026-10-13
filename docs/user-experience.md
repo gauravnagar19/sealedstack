@@ -62,7 +62,7 @@ on:
     inputs:
       command:
         type: choice
-        options: [setup, check, up, add-server, add-app, status, restore, drill]
+        options: [setup, check, plan, apply, up, add-server, add-app, status, restore, drill]
       args:
         description: "e.g. --name server-1 (IP and root password come from the secret source)"
         required: false
@@ -354,6 +354,7 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 | `add-server` | Run workflow | `production` | Yes + PR |
 | `add-app` | Run workflow | — | Opens PRs only |
 | `status` | Hourly + after every apply | — | Updates the Status issue |
+| `drift` | Hourly, right after `status` | — | No: a problem becomes a Status-issue comment |
 | `restore` | Run workflow | `production` + typed name | Yes |
 | `drill` | Weekly + Run workflow | — | Throwaway DB only |
 

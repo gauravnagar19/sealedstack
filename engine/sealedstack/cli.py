@@ -73,6 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  plan                  show the plan (creates, changes, destroys)\n"
             "  apply                 apply the merged config (CI/approved; local needs --break-glass)\n"
             "  status                show health, versions, apps and drift\n"
+            "  drift                 read-only plan: report changes made outside git\n"
+            "  ci resolve|exec       what the infra repo's CI does for an event (infra.yml)\n"
             "  server add <name>     bootstrap/register a server\n"
             "  server sync [name]    re-assert the host baseline\n"
             "  app add               onboard an app\n"
@@ -94,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("plan", "show the plan"),
         ("apply", "apply the merged config"),
         ("status", "show health, versions, apps and drift"),
+        ("drift", "read-only plan: report changes made outside git"),
     ):
         _leaf(sub, name, help).add_argument("extras", nargs="*")
 
@@ -107,6 +110,11 @@ def build_parser() -> argparse.ArgumentParser:
     app = _leaf(sub, "app", "apps")
     app_sub = app.add_subparsers(dest="verb", title="app commands")
     _leaf(app_sub, "add", "onboard an app").add_argument("extras", nargs="*")
+
+    ci = _leaf(sub, "ci", "what the infra repo's CI does for an event (used by infra.yml)")
+    ci_sub = ci.add_subparsers(dest="verb", title="ci commands")
+    for verb, help in (("resolve", "turn the event into one command"), ("exec", "run it and report")):
+        _leaf(ci_sub, verb, help).add_argument("extras", nargs="*")
 
     debug = _leaf(sub, "debug", "internals for troubleshooting")
     debug_sub = debug.add_subparsers(dest="verb", title="debug commands")
@@ -143,6 +151,8 @@ PASSTHROUGH = {
     "debug providers": 0,
     "debug onboard": 0,
     "debug ci-export": 0,
+    "ci resolve": 0,
+    "ci exec": 0,
     "restore": 1,
     "drill": 1,
     "db restore": 1,
@@ -173,7 +183,7 @@ def split_passthrough(argv: Sequence[str]) -> tuple[list[str], list[str]]:
     if i >= len(tokens):
         return tokens, []
     noun = tokens[i]
-    verb = tokens[i + 1] if i + 1 < len(tokens) and noun in ("app", "db", "debug", "server") else ""
+    verb = tokens[i + 1] if i + 1 < len(tokens) and noun in ("app", "db", "debug", "server", "ci") else ""
     command = f"{noun} {verb}".strip() if verb else noun
     if command not in PASSTHROUGH:
         return tokens, []
@@ -193,7 +203,7 @@ def canonical(args: argparse.Namespace) -> str:
     if noun in ALIASES:
         return ALIASES[noun]
     verb = getattr(args, "verb", None)
-    if noun in ("server", "app", "db", "debug") and verb:
+    if noun in ("server", "app", "db", "debug", "ci") and verb:
         return f"{noun} {verb}"
     return noun
 
@@ -254,6 +264,20 @@ def _orchestrate_handler(command: str) -> Callable:
     return handler
 
 
+def _drift_handler(config, env, code_root, json_output, runner):
+    from . import drift as drift_mod
+    from . import forge as forge_mod
+
+    forge_obj, repo = None, env.get("GITHUB_REPOSITORY", "")
+    if env.get("GH_TOKEN") or env.get("GITHUB_TOKEN"):
+        try:
+            forge_obj = forge_mod.GitHubForge.from_env(env)
+            repo = repo or forge_mod.repo_from_git(code_root)
+        except Exception:  # noqa: BLE001 - report to stderr only
+            forge_obj = None
+    return drift_mod.run(code_root=code_root, env=env, forge=forge_obj, repo=repo)
+
+
 def _status_handler(config, env, code_root, json_output, runner):
     return status_mod.run(code_root=code_root, env=env, json_output=json_output)
 
@@ -311,6 +335,8 @@ def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
         return Action(command, handler=_orchestrate_handler("up"))
     if command == "status":
         return Action(command, handler=_status_handler)
+    if command == "drift":
+        return Action(command, handler=_drift_handler)
     if command == "approve-check":
         return Action(command, handler=_approve_handler(getattr(args, "command", "")))
     if command == "server add":
@@ -335,6 +361,8 @@ def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
         return Action(command, argv=[[python, _script(code_root, "registry.py"), "list", *extras]])
     if command == "debug onboard":
         return Action(command, argv=[[python, "-m", "sealedstack.onboard", *extras]])
+    if command in ("ci resolve", "ci exec"):
+        return Action(command, argv=[[python, "-m", "sealedstack.infraci", command.split()[1], *extras]])
     if command == "debug ci-export":
         return Action(command, argv=[[python, "-m", "sealedstack.ciexport", *extras]])
     return Action(command)

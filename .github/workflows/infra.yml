@@ -3,14 +3,24 @@ name: sealedstack
 # Reusable workflow (spec §5, M7). The infra repo calls this pinned at a ref:
 #   uses: <owner>/sealedstack/.github/workflows/infra.yml@v<version>
 #
-# Every command runs the pinned engine image. Writes wait for approval in the
-# `production` environment; comment commands are restricted to writers.
+# The command comes from the event when none is given (UX §8, §12.1):
+#   pull_request      -> plan (check on the Setup PR), reported as a PR comment
+#   push to main      -> apply (waits for `/sealedstack approve` when not approved)
+#   schedule          -> status, then drift detection
+#   issue_comment     -> the `/sealedstack <cmd>` in the comment
+#   workflow_dispatch -> the chosen command
+#
+# Three jobs: `resolve` decides what (if anything) to run and who may run it;
+# `approve` is the optional `production` environment gate for writes; `run`
+# joins the tailnet and runs the pinned engine image. Write commands also pass the
+# engine's own approval gate (D-052), which works on private GitHub Free repos.
 on:
   workflow_call:
     inputs:
       command:
-        required: true
+        required: false
         type: string
+        default: ""
       args:
         required: false
         type: string
@@ -29,56 +39,100 @@ permissions:
   packages: read
 
 jobs:
-  authorize:
-    # Comment commands run only for users with write access; every other event
-    # (workflow_dispatch, pull_request, push, schedule) passes through.
+  resolve:
     runs-on: ubuntu-latest
     outputs:
-      run: ${{ steps.decide.outputs.run }}
+      proceed: ${{ steps.resolve.outputs.proceed || 'false' }}
+      command: ${{ steps.resolve.outputs.command }}
+      args: ${{ steps.resolve.outputs.args }}
+      write: ${{ steps.resolve.outputs.write || 'false' }}
+      mesh: ${{ steps.resolve.outputs.mesh || 'false' }}
+      pr: ${{ steps.resolve.outputs.pr }}
+      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
+      follow: ${{ steps.resolve.outputs.follow }}
     steps:
-      - id: decide
+      - id: pre
+        # Cheap pre-check, no image pull: ignore comments that are not commands
+        # (this includes the bot's own comments).
         env:
           EVENT: ${{ github.event_name }}
-          ACTOR: ${{ github.actor }}
-          REPO: ${{ github.repository }}
-          TOKEN: ${{ secrets.GH_TOKEN }}
+          BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" != "issue_comment" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = "issue_comment" ] && ! printf '%s\n' "$BODY" | grep -qE '^[[:space:]]*/sealedstack([[:space:]]|$)'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Not a /sealedstack command; nothing to do."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.pre.outputs.skip != 'true'
+
+      - name: Log in to GHCR (the engine image is private, D-053)
+        if: steps.pre.outputs.skip != 'true'
+        # The calling workflow must grant `packages: read` (D-056) and the package
+        # must allow this repository (Manage Actions access).
+        continue-on-error: true
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Decide what to run
+        id: resolve
+        if: steps.pre.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          SEALEDSTACK_COMMAND: ${{ inputs.command }}
+          SEALEDSTACK_ARGS: ${{ inputs.args }}
+          SEALEDSTACK_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ ! -f sealedstack.version ]; then
+            echo "::notice::No sealedstack.version yet; add it (and the workflow) before running commands."
             exit 0
           fi
-          perm="$(gh api "repos/$REPO/collaborators/$ACTOR/permission" -q .permission 2>/dev/null || echo none)"
-          case "$perm" in
-            admin|write|maintain) echo "run=true"  >> "$GITHUB_OUTPUT" ;;
-            *)                    echo "run=false" >> "$GITHUB_OUTPUT" ;;
-          esac
+          docker run --rm --network host \
+            -v "$PWD:/infra" -w /infra \
+            -v "$GITHUB_EVENT_PATH:/event.json:ro" -v "$GITHUB_OUTPUT:/ghout" \
+            -e SEALEDSTACK_CONFIG=/infra/config -e GITHUB_EVENT_PATH=/event.json \
+            -e GH_TOKEN -e SEALEDSTACK_COMMAND -e SEALEDSTACK_ARGS -e SEALEDSTACK_DEFAULT_BRANCH \
+            -e GITHUB_ACTOR -e GITHUB_REPOSITORY -e GITHUB_EVENT_NAME -e GITHUB_REF -e GITHUB_SHA \
+            "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
+            ci resolve --output /ghout
 
   approve:
-    # Only writes wait for a reviewer. Read-only commands skip straight to `run`.
-    needs: authorize
-    if: >-
-      needs.authorize.outputs.run == 'true' &&
-      contains(fromJSON('["apply","up","add-server","restore"]'), inputs.command)
+    # Only writes wait for the `production` environment (a second gate where the
+    # plan supports required reviewers). Read-only commands skip straight to `run`.
+    needs: resolve
+    if: needs.resolve.outputs.proceed == 'true' && needs.resolve.outputs.write == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - run: echo "Approved ${{ inputs.command }}"
+      - run: echo "Approved ${{ needs.resolve.outputs.command }}"
 
   run:
-    needs: [authorize, approve]
+    needs: [resolve, approve]
     if: >-
       always() &&
-      needs.authorize.outputs.run == 'true' &&
+      needs.resolve.outputs.proceed == 'true' &&
       (needs.approve.result == 'success' || needs.approve.result == 'skipped')
     runs-on: ubuntu-latest
+    # One writer at a time; reads are never queued behind a write.
+    concurrency:
+      group: sealedstack-${{ github.repository }}-${{ needs.resolve.outputs.write == 'true' && 'write' || github.run_id }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.checkout_ref }}
 
       - name: Log in to GHCR (the engine image is private, D-053)
-        # The image lives in the owner's own GHCR namespace and stays private, so
-        # the pull needs a login. The calling workflow must grant `packages: read`
-        # and the package must allow this repository (Manage Actions access).
         continue-on-error: true
         env:
           REGISTRY_TOKEN: ${{ github.token }}
@@ -100,7 +154,7 @@ jobs:
       # container runs with host networking to resolve it.
       - name: Tailscale trust (OIDC workload identity, else the OAuth client)
         id: ts
-        if: ${{ !contains(fromJSON('["setup","add-app"]'), inputs.command) }}
+        if: needs.resolve.outputs.mesh == 'true'
         env:
           VAR_CLIENT_ID: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
           VAR_AUDIENCE: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}
@@ -166,43 +220,39 @@ jobs:
           oauth-secret: ${{ steps.ts_secret.outputs.client_secret }}
           tags: tag:ci
 
-      - name: Approval gate (D-052)
-        if: >-
-          contains(fromJSON('["apply","up","add-server","restore","server sync"]'), inputs.command)
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_REF: ${{ github.ref }}
-          SEALEDSTACK_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          SEALEDSTACK_PR: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          docker run --rm \
-            -v "$PWD:/infra" -w /infra \
-            -e SEALEDSTACK_CONFIG=/infra/config \
-            -e GH_TOKEN -e GITHUB_REPOSITORY -e GITHUB_SHA -e GITHUB_ACTOR -e GITHUB_REF \
-            -e SEALEDSTACK_DEFAULT_BRANCH -e SEALEDSTACK_PR \
-            "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
-            approve-check "${{ inputs.command }}"
-
-      - name: sealedstack ${{ inputs.command }}
+      - name: sealedstack ${{ needs.resolve.outputs.command }}
+        # `ci exec` runs the resolved command behind the D-052 approval gate for
+        # writes and reports the result (plan comment, checklist, Status issue).
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          SEALEDSTACK_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          SEALEDSTACK_PR: ${{ needs.resolve.outputs.pr }}
+          SEALEDSTACK_RESOLVED_COMMAND: ${{ needs.resolve.outputs.command }}
+          SEALEDSTACK_RESOLVED_ARGS: ${{ needs.resolve.outputs.args }}
+          SEALEDSTACK_RESOLVED_PR: ${{ needs.resolve.outputs.pr }}
+          SEALEDSTACK_RESOLVED_FOLLOW: ${{ needs.resolve.outputs.follow }}
         run: |
           set -euo pipefail
           docker run --rm -i --network host \
             -v "$PWD:/infra" -w /infra \
+            -v "$GITHUB_EVENT_PATH:/event.json:ro" \
             -e SEALEDSTACK_CONFIG=/infra/config \
             -e SEALEDSTACK_WORKDIR=/infra/.sealedstack \
+            -e GITHUB_EVENT_PATH=/event.json \
             -e BWS_ACCESS_TOKEN -e GH_TOKEN -e GITHUB_ACTOR -e GITHUB_REPOSITORY -e GITHUB_ACTIONS \
+            -e GITHUB_EVENT_NAME -e GITHUB_REF -e GITHUB_SHA \
+            -e SEALEDSTACK_DEFAULT_BRANCH -e SEALEDSTACK_PR \
+            -e SEALEDSTACK_RESOLVED_COMMAND -e SEALEDSTACK_RESOLVED_ARGS -e SEALEDSTACK_RESOLVED_PR \
+            -e SEALEDSTACK_RESOLVED_FOLLOW \
             "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
-            ${{ inputs.command }} ${{ inputs.args }}
+            ci exec
 
       - name: Job summary
         if: always()
-        run: echo "sealedstack ${{ inputs.command }} finished (${{ job.status }})" >> "$GITHUB_STEP_SUMMARY"
+        run: echo "sealedstack ${{ needs.resolve.outputs.command }} finished (${{ job.status }})" >> "$GITHUB_STEP_SUMMARY"
