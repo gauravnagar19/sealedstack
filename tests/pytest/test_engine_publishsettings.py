@@ -38,7 +38,14 @@ def make_config(tmp_path: Path) -> config_mod.Config:
                 "name": "example-infra",
                 "cloudflare": {"account_id": "acct"},
                 "slots": {"secrets": "env"},
-                "providers": {"mesh_tailscale": {"oauth_client_id": "tsid", "audience": "aud"}},
+                "providers": {
+                    "mesh_tailscale": {
+                        "oauth_client_id": "ci-id",
+                        "audience": "ci-aud",
+                        "release_oauth_client_id": "rel-id",
+                        "release_audience": "rel-aud",
+                    }
+                },
             }
         )
     )
@@ -66,7 +73,11 @@ def test_publishes_vars_and_secret_for_repo_apps_only(tmp_path):
     repo = "example/shop"
     assert f.get_variable(repo, "SEALEDSTACK_COMPOSE_IDS") == '{"web-1":"compose-1"}'
     assert f.get_variable(repo, "SEALEDSTACK_DOKPLOY_URL") == "http://web-1:3000"
-    assert f.get_variable(repo, "SEALEDSTACK_TS_OAUTH_CLIENT_ID") == "tsid"
+    # D-057: the release identity (tag:release) is published; the infra repo's tag:ci one is not
+    assert f.get_variable(repo, "SEALEDSTACK_TS_RELEASE_CLIENT_ID") == "rel-id"
+    assert f.get_variable(repo, "SEALEDSTACK_TS_RELEASE_AUDIENCE") == "rel-aud"
+    assert f.get_variable(repo, "SEALEDSTACK_TS_OAUTH_CLIENT_ID") in (None, "")
+    assert f.get_variable(repo, "SEALEDSTACK_TS_AUDIENCE") in (None, "")
     assert f.get_variable(repo, "SEALEDSTACK_REGISTRY") == "ghcr.io/example"
     assert f.secrets[(repo, "production", "SEALEDSTACK_DOKPLOY_API_KEY")] == "dk"
     assert (repo, "production") in f.environments

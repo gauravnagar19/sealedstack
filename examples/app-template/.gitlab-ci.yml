@@ -1,9 +1,9 @@
 # Release CI for an app repo (D-015): the app owns releases, sealedstack owns
 # placement. This is the GitLab equivalent of the GitHub release workflow: the
-# job joins the Tailscale tailnet as tag:ci and calls the Dokploy API.
+# job joins the Tailscale tailnet as tag:release and calls the Dokploy API.
 #
 # Set these CI/CD variables (Settings -> CI/CD -> Variables), masked:
-#   TS_AUTHKEY                                      tagged, ephemeral key for tag:ci
+#   TS_AUTHKEY                                      tagged, ephemeral key for tag:release
 #   DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID
 #
 # Prefer OIDC federation over TS_AUTHKEY where possible; see docs/ci-cd.md.
@@ -26,7 +26,7 @@ deploy:
       tailscale --socket="$TS_SOCKET" up
       --authkey="$TS_AUTHKEY"
       --hostname="ci-$CI_PROJECT_NAME-$CI_PIPELINE_IID"
-      --advertise-tags=tag:ci
+      --advertise-tags=tag:release
     - tailscale --socket="$TS_SOCKET" status
     - |
       curl -fsS -X POST \

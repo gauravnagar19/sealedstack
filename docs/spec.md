@@ -349,7 +349,7 @@ The rule table, the same on every provider:
 
 | Resource | Detail |
 |---|---|
-| Tailscale ACL | **OpenTofu owns the whole policy file** (D-014): `tag:server` and `tag:ci` owned by `autogroup:admin`; admin → `tag:server:*`; `tag:ci` → `tag:server:3000`; `tag:server` → `tag:server:5432` (app replicas reaching their database primary) |
+| Tailscale ACL | **OpenTofu owns the whole policy file** (D-014): `tag:server`, `tag:ci` and `tag:release` owned by `autogroup:admin`; admin → `tag:server:*`; `tag:ci` → `tag:server:22,3000` (D-041); `tag:release` → `tag:server:3000` (D-057); `tag:server` → `tag:server:5432` (app replicas reaching their database primary) |
 | Tailscale auth key | One per `server-up`: single-use, pre-authorised, `tag:server`, 1 hour expiry |
 | Tunnel | **One per app** (D-013), named `ss-<app>`. Ingress for every hostname → `http://dokploy-traefik:80`, with `originRequest.access` set to `{required: true, team_name, aud_tag}` when the app is gated. Its token is written to `infra.tunnel.<app>`. |
 | DNS | A proxied CNAME `<host>` → `<tunnel-id>.cfargotunnel.com` for each hostname. Apex hostnames rely on Cloudflare CNAME flattening. |
@@ -431,7 +431,7 @@ Every command is `sealedstack <noun> <verb>`. It is the same vocabulary as a wor
 | A gated hostname exposed by mistake | The catch-all Access app on `*.<domain>`, and the connector validates the Access token (`originRequest.access.required`) |
 | Unauthenticated app requests (public apps) | In-app auth (Clerk); Turnstile on sign-up (v0.2+) |
 | Stolen laptop | SSH key held in the Bitwarden agent (locked vault); `BWS_ACCESS_TOKEN` revocable; Tailscale device revocable |
-| CI compromise | `tag:ci` can reach only ports 22 (SSH, key required) and 3000 (the Dokploy API) (D-041); its machine account reads `prod` only |
+| CI compromise | `tag:ci` can reach only ports 22 (SSH, key required) and 3000 (the Dokploy API) (D-041); an app repo's release job (`tag:release`) can reach only port 3000 (D-057); its machine account reads `prod` only |
 | Leaked secrets in git | No secret values in config; `.build/` gitignored; gitleaks pre-commit hook |
 | Supply chain | All images and tools pinned to exact versions; Renovate PRs (roadmap) |
 | Losing the state file | Encrypted with OpenTofu state encryption (passphrase in Bitwarden) and stored in R2 |

@@ -57,8 +57,11 @@ def run(
 
     providers = config.stack.get("providers") or {}
     mesh = providers.get("mesh_tailscale") or {}
-    ts_client_id = str(mesh.get("oauth_client_id") or env.get("TS_OAUTH_CLIENT_ID") or "")
-    ts_audience = str(mesh.get("audience") or env.get("TS_OAUTH_AUDIENCE") or "")
+    # D-057: app release jobs join as tag:release with their own OIDC trust
+    # credential. The infra repo's tag:ci credential (oauth_client_id/audience) is
+    # never published to app repos.
+    ts_client_id = str(mesh.get("release_oauth_client_id") or env.get("TS_RELEASE_OAUTH_CLIENT_ID") or "")
+    ts_audience = str(mesh.get("release_audience") or env.get("TS_RELEASE_OAUTH_AUDIENCE") or "")
 
     registry = ""
     registry_file = Path(config.code_root) / ".build" / "registry.json"
@@ -74,8 +77,8 @@ def run(
         app_ids = json.dumps(compose_ids.get(app) or {}, separators=(",", ":"))
         _set_variable(forge, repo, "SEALEDSTACK_COMPOSE_IDS", app_ids, out)
         _set_variable(forge, repo, "SEALEDSTACK_DOKPLOY_URL", dokploy_url, out)
-        _set_variable(forge, repo, "SEALEDSTACK_TS_OAUTH_CLIENT_ID", ts_client_id, out)
-        _set_variable(forge, repo, "SEALEDSTACK_TS_AUDIENCE", ts_audience, out)
+        _set_variable(forge, repo, "SEALEDSTACK_TS_RELEASE_CLIENT_ID", ts_client_id, out)
+        _set_variable(forge, repo, "SEALEDSTACK_TS_RELEASE_AUDIENCE", ts_audience, out)
         _set_variable(forge, repo, "SEALEDSTACK_REGISTRY", registry, out)
 
         forge.ensure_environment(repo, "production")

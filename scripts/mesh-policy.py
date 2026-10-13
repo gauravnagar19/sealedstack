@@ -48,6 +48,8 @@ PASSTHROUGH = ("groups", "hosts", "ssh", "nodeAttrs", "autoApprovers", "postures
 SEALEDSTACK_TAG_OWNERS = {
     "tag:server": ["autogroup:admin"],
     "tag:ci": ["autogroup:admin"],
+    # D-057: app release jobs. Dokploy API only, never SSH.
+    "tag:release": ["autogroup:admin"],
 }
 
 # Destinations that match every device, including tagged servers. A rule that
@@ -68,6 +70,8 @@ def sealedstack_acls() -> list[dict]:
         {"action": "accept", "src": ["autogroup:admin"], "dst": ["tag:server:*"]},
         # D-041: CI bootstraps and syncs servers (SSH) and calls the Dokploy API.
         {"action": "accept", "src": ["tag:ci"], "dst": ["tag:server:22", "tag:server:3000"]},
+        # D-057: app repos deploy their own releases through the Dokploy API only.
+        {"action": "accept", "src": ["tag:release"], "dst": ["tag:server:3000"]},
         {"action": "accept", "src": ["tag:server"], "dst": ["tag:server:5432"]},
     ]
 
@@ -77,6 +81,7 @@ def sealedstack_grants() -> list[dict]:
     return [
         {"src": ["autogroup:admin"], "dst": ["tag:server"], "ip": ["*"]},
         {"src": ["tag:ci"], "dst": ["tag:server"], "ip": ["tcp:22", "tcp:3000"]},
+        {"src": ["tag:release"], "dst": ["tag:server"], "ip": ["tcp:3000"]},
         {"src": ["tag:server"], "dst": ["tag:server"], "ip": ["tcp:5432"]},
     ]
 
@@ -88,6 +93,9 @@ def sealedstack_tests() -> list[dict]:
         {"src": ["tag:ci"], "accept": ["tag:server:3000"]},
         # CI must not reach anything else on a server (e.g. the database port).
         {"src": ["tag:ci"], "deny": ["tag:server:5432"]},
+        # D-057: a release job reaches the Dokploy API and nothing else.
+        {"src": ["tag:release"], "accept": ["tag:server:3000"]},
+        {"src": ["tag:release"], "deny": ["tag:server:22", "tag:server:5432"]},
     ]
 
 

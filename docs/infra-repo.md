@@ -139,7 +139,8 @@ given, the command comes from the event:
 Write commands run only from a merged pull request on `main` and after an
 approver has agreed (D-052). Every job that reaches a server or Dokploy first
 joins the tailnet as `tag:ci` (workload identity first, the OAuth client as a
-logged fallback; D-041).
+logged fallback; D-041). App repos' release jobs use their own tag, `tag:release`,
+which reaches only the Dokploy API (D-057).
 
 `check` fails when `sealedstack.version` and the workflow `@ref` differ; the
 upgrade bot bumps both in one PR.

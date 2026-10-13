@@ -51,9 +51,10 @@ configures servers and their provider firewalls, and a one-shot **state** stack.
   Dokploy's Traefik, which routes by hostname to the app.
 - **Admin traffic** (SSH, the Dokploy panel) is reachable only over the mesh
   interface (`tailscale0` by default), never the public IP.
-- **CI** joins the mesh as `tag:ci`. The infra repo's jobs use SSH (22) and the
-  Dokploy API (3000) to bootstrap, sync and apply; an app repo's release job calls
-  the Dokploy API on port 3000 to deploy a version (D-015, D-041).
+- **CI** joins the mesh with one of two tags. The infra repo's jobs are `tag:ci`
+  and use SSH (22) and the Dokploy API (3000) to bootstrap, sync and apply
+  (D-041). An app repo's release job is `tag:release`, which reaches only the
+  Dokploy API on port 3000 to deploy a version, never SSH (D-015, D-057).
 - **Backups** flow from Dokploy-managed databases to an S3-compatible bucket on
   a schedule.
 
@@ -120,7 +121,7 @@ Layers of defence (spec §13):
 | A gated hostname exposed by mistake | catch-all Access app on `*.<domain>` + connector validates the Access token |
 | Unauthenticated public app | in-app auth (Clerk/OIDC) |
 | Stolen laptop | SSH key in the Bitwarden agent; `BWS_ACCESS_TOKEN` and the Tailscale device are revocable |
-| CI compromise | `tag:ci` reaches only ports 22 and 3000 (D-041; SSH still needs an authorised key); its machine account reads `prod` only |
+| CI compromise | `tag:ci` reaches only ports 22 and 3000 (D-041; SSH still needs an authorised key); an app repo's `tag:release` reaches only port 3000 (D-057); its machine account reads `prod` only |
 | Leaked secrets in git | no secrets in config; `.build/` gitignored; gitleaks in CI + pre-commit |
 | Supply chain | images and tools pinned; Renovate opens PRs |
 | Losing state | encrypted state in R2 |

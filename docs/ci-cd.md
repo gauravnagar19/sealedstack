@@ -26,9 +26,9 @@ git tag v1.2.3 && git push --tags
         │
         ▼
 app CI (GitHub Actions, GitLab, …)
-        │  joins the tailnet as tag:ci
+        │  joins the tailnet as tag:release
         ▼
-tailscale0 ──► <control-server>:3000   (Dokploy API; with 22 for SSH, the only ports tag:ci may reach)
+tailscale0 ──► <control-server>:3000   (the Dokploy API: the only port tag:release may reach)
         │
         ▼
 POST /api/compose.deploy { composeId }
@@ -45,7 +45,7 @@ server keeps zero inbound ports ([spec.md §13](spec.md#13-security-model)).
 ## 1. How the release flow works
 
 1. You push a tag (the examples use `v*`).
-2. The app repo's CI job joins the Tailscale tailnet as `tag:ci`. The node is
+2. The app repo's CI job joins the Tailscale tailnet as `tag:release` (D-057). The node is
    **ephemeral**, so Tailscale removes it when the job ends.
 3. The job `POST`s to the Dokploy API at
    `http://<control-server>:3000/api/compose.deploy` with the app's compose id.
@@ -57,24 +57,24 @@ The Dokploy compose service is created by the platform stack
 ([spec.md §9](spec.md#9-platform-opentofu-stacksplatform)) with `auto-deploy`
 off. The CI only triggers the deploy of the **existing** compose service.
 
-## 2. Tailscale for CI: an OAuth client and `tag:ci`
+## 2. Tailscale for CI: a trust credential and `tag:release`
 
 The job must reach the Dokploy panel, and only that. The edge stack already
-owns the whole ACL ([D-014](decisions.md),
-`tofu/stacks/edge/main.tf`, `locals.tailscale_policy`): `tag:ci` is owned by `autogroup:admin`, and
-the one grant CI gets is:
+owns the whole ACL ([D-014](decisions.md), `scripts/mesh-policy.py`): `tag:release`
+is owned by `autogroup:admin`, and the one grant an app release job gets is:
 
 ```json
-{ action: "accept", src: ["tag:ci"], dst: ["tag:server:22", "tag:server:3000"] },
+{ action: "accept", src: ["tag:release"], dst: ["tag:server:3000"] },
 ```
 
-So `tag:ci` can reach ports 22 and 3000 on a server and nothing else (D-041:
-port 22 is for the infra repo's own jobs, which bootstrap and sync servers over
-SSH with an authorised key; port 3000 is the Dokploy API). The policy tests also
-assert that `tag:ci` is denied everything else, for example the database port
-5432. Add no other grants for CI.
+So `tag:release` can reach port 3000 (the Dokploy API) on a server and nothing
+else (D-057): an app repo can deploy its own releases but can never SSH into a
+server. The infra repo's own jobs use a different tag, `tag:ci`, which also
+reaches port 22 to bootstrap and sync servers (D-041). The policy tests assert
+that `tag:release` is denied SSH and the database port 5432. Add no other grants
+for releases.
 
-### The OAuth client
+### The trust credential for releases
 
 Create a **trust credential** (OAuth client) rather than a long-lived auth key,
 so there is no key to leak or rotate. In the Tailscale admin console:
@@ -84,13 +84,20 @@ so there is no key to leak or rotate. In the Tailscale admin console:
 | Setting | Value | Why |
 |---|---|---|
 | Scopes | `auth_keys` (**write**) | The runner mints an ephemeral node key at job time. |
-| Tags | `tag:ci` | A trust credential is not tied to a user; it must tag the nodes it creates. |
+| Tags | `tag:release` | A trust credential is not tied to a user; it must tag the nodes it creates. |
 | Client ID / secret | `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | Stored only in the CI provider's encrypted secrets. |
 
 The tags you pass at job time must match the credential's tags, or be tags
-owned by them. This project uses a single tag, `tag:ci`, which the policy
-already declares in `tagOwners`. Only an Owner or Admin of the tailnet can
-create a credential with that tag.
+owned by them. Create this credential **separately** from the infra repo's
+`tag:ci` credential, because a credential for `tag:ci` would let an app repo SSH
+to servers. The policy already declares `tag:release` in `tagOwners`. Only an
+Owner or Admin of the tailnet can create a credential with that tag. For GitHub
+Actions use an OpenID Connect credential (issuer GitHub) whose subject matches
+your app repos, e.g. `repo:<owner>/<app>:environment:production`; put its
+client id and audience in the infra repo's `config/stack.yaml` as
+`providers.mesh_tailscale.release_oauth_client_id` and `release_audience`, and
+sealedstack publishes them to every app repo as `SEALEDSTACK_TS_RELEASE_CLIENT_ID`
+and `SEALEDSTACK_TS_RELEASE_AUDIENCE`.
 
 > `tailscale/github-action@v3` is used in the examples (matching
 > `examples/app-template/.github/workflows/release.yml`). v4 exists; the inputs
@@ -98,22 +105,23 @@ create a credential with that tag.
 
 ### ACL: what not to do
 
-Do not add `tag:ci` to the admin rule (`autogroup:admin` already covers admins),
-do not let `tag:ci` reach `:22` or `:*`, and do not use a reusable auth key
+Do not add `tag:release` to the admin rule (`autogroup:admin` already covers
+admins), do not let `tag:release` reach `:22` or `:*`, do not reuse the infra
+repo's `tag:ci` credential in an app repo, and do not use a reusable auth key
 committed anywhere. The single `:3000` grant is the whole surface.
 
 ## 3. Joining from GitHub Actions
 
 Use the official action. It reads the OAuth client, creates an ephemeral
-`tag:ci` node and logs out at the end of the job.
+`tag:release` node and logs out at the end of the job.
 
 ```yaml
-- name: Join the tailnet as tag:ci
+- name: Join the tailnet as tag:release
   uses: tailscale/github-action@v3
   with:
     oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
     oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-    tags: tag:ci
+    tags: tag:release
 
 - name: Trigger the Dokploy deployment
   run: |
@@ -150,7 +158,7 @@ deploy:
     - tailscaled --state=$TS_STATE_DIR/state --socket=$TS_SOCKET --tun=userspace-networking &
     - sleep 3
     - tailscale --socket=$TS_SOCKET up --authkey="$TS_AUTHKEY"
-        --hostname="ci-$CI_PROJECT_NAME-$CI_PIPELINE_IID" --advertise-tags=tag:ci
+        --hostname="ci-$CI_PROJECT_NAME-$CI_PIPELINE_IID" --advertise-tags=tag:release
     - tailscale --socket=$TS_SOCKET status
     - |
       curl -fsS -X POST \
@@ -169,7 +177,7 @@ CI/CD variables (**Settings → CI/CD → Variables**), marked *masked*.
 **OIDC instead of an auth key.** Tailscale workload identity federation lets the
 job exchange GitLab's OIDC token for a node key, so no Tailscale secret is
 stored in GitLab at all. Create an OIDC federated credential with the
-`auth_keys` write scope and `tag:ci`, then authenticate the runner with it. See
+`auth_keys` write scope and `tag:release`, then authenticate the runner with it. See
 <https://tailscale.com/kb/1581/workload-identity-federation>.
 
 ## 5. Joining from Gitea Actions
@@ -181,13 +189,13 @@ client and use an auth key:
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - name: Join the tailnet as tag:ci
+  - name: Join the tailnet as tag:release
     run: |
       curl -fsSL https://tailscale.com/install.sh | sh
       tailscaled --state=/tmp/ts/state --socket=/tmp/ts/sock --tun=userspace-networking &
       sleep 3
       tailscale --socket=/tmp/ts/sock up --authkey="${{ secrets.TS_AUTHKEY }}" \
-        --hostname="ci-${{ github.run_id }}" --advertise-tags=tag:ci
+        --hostname="ci-${{ github.run_id }}" --advertise-tags=tag:release
   - name: Deploy
     run: |
       curl -fsS -X POST \
@@ -214,7 +222,7 @@ sleep 3
 sudo tailscale --socket=/tmp/ts/sock up \
   --authkey="$TS_AUTHKEY" \
   --hostname="ci-$(date +%s)" \
-  --advertise-tags=tag:ci
+  --advertise-tags=tag:release
 sudo tailscale --socket=/tmp/ts/sock status
 
 curl -fsS -X POST \
@@ -224,7 +232,7 @@ curl -fsS -X POST \
   "$DOKPLOY_URL/api/compose.deploy"
 ```
 
-Mint `TS_AUTHKEY` as an **ephemeral, pre-authorized auth key tagged `tag:ci`**
+Mint `TS_AUTHKEY` as an **ephemeral, pre-authorized auth key tagged `tag:release`**
 (Tailscale admin console → Settings → Keys, or an OAuth client with the
 `auth_keys` scope). Ephemeral means the node disappears when the job exits.
 Never commit the key; pass it as a CI secret.
@@ -237,7 +245,7 @@ long-lived Tailscale secret.
 > **Automatic with sealedstack.** `apply` and `up` publish these settings to each
 > app repo for you, through the forge adapter: the variables
 > `SEALEDSTACK_COMPOSE_IDS`, `SEALEDSTACK_DOKPLOY_URL`,
-> `SEALEDSTACK_TS_OAUTH_CLIENT_ID`, `SEALEDSTACK_TS_AUDIENCE` and
+> `SEALEDSTACK_TS_RELEASE_CLIENT_ID`, `SEALEDSTACK_TS_RELEASE_AUDIENCE` and
 > `SEALEDSTACK_REGISTRY`, and the secret `SEALEDSTACK_DOKPLOY_API_KEY` in the
 > `production` environment (`sealedstack debug publish` re-runs it). The manual
 > steps below are for CI systems the adapter does not cover yet.

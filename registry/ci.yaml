@@ -4,7 +4,7 @@ implementations:
   - id: github-actions
     name: GitHub Actions
     status: experimental
-    summary: Tag a release; the job joins the tailnet as tag:ci and calls the Dokploy API. The default (D-015).
+    summary: Tag a release; the job joins the tailnet as tag:release (Dokploy API only, D-057) and calls the Dokploy API. The default (D-015).
     secrets: [TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_APP_ID]
     config: [workflow, tailnet]
     impl: {}

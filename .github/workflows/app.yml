@@ -14,7 +14,8 @@
 # On push: mint the next v0.0.X tag and build/push each `build:` service to
 #          $SEALEDSTACK_REGISTRY, then prune old images.
 # On workflow_dispatch: deploy an existing tag (no rebuild), joining the tailnet
-#          as tag:ci and updating only release-owned Dokploy fields (D-032).
+#          as tag:release (Dokploy API on TCP 3000 only, never SSH; D-057) and
+#          updating only release-owned Dokploy fields (D-032).
 name: app-release
 
 on:
@@ -324,22 +325,22 @@ jobs:
           done
           [ "${missing}" -eq 0 ] || exit 1
 
-      - name: Require the Tailscale trust settings
+      - name: Require the Tailscale release trust settings
         env:
-          CLIENT_ID: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
-          AUDIENCE: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}
+          CLIENT_ID: ${{ vars.SEALEDSTACK_TS_RELEASE_CLIENT_ID }}
+          AUDIENCE: ${{ vars.SEALEDSTACK_TS_RELEASE_AUDIENCE }}
         run: |
           if [ -z "$CLIENT_ID" ] || [ -z "$AUDIENCE" ]; then
-            echo "::error::Tailscale workload identity is not configured for this repository. Set providers.mesh_tailscale.oauth_client_id and audience in the infra repo's config/stack.yaml (sealedstack publishes them as SEALEDSTACK_TS_OAUTH_CLIENT_ID / SEALEDSTACK_TS_AUDIENCE after an apply), or set those two repository variables by hand."
+            echo "::error::The Tailscale release identity (tag:release, D-057) is not configured for this repository. Create a separate OIDC trust credential for tag:release in the Tailscale console, set providers.mesh_tailscale.release_oauth_client_id and release_audience in the infra repo's config/stack.yaml (sealedstack publishes them as SEALEDSTACK_TS_RELEASE_CLIENT_ID / SEALEDSTACK_TS_RELEASE_AUDIENCE after an apply), or set those two repository variables by hand."
             exit 1
           fi
 
-      - name: Join the tailnet as tag:ci
+      - name: Join the tailnet as tag:release
         uses: tailscale/github-action@v3
         with:
-          oauth-client-id: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
-          audience: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}
-          tags: tag:ci
+          oauth-client-id: ${{ vars.SEALEDSTACK_TS_RELEASE_CLIENT_ID }}
+          audience: ${{ vars.SEALEDSTACK_TS_RELEASE_AUDIENCE }}
+          tags: tag:release
 
       - name: Render the deploy compose at the tag
         if: needs.setup.outputs.mode != 'server'

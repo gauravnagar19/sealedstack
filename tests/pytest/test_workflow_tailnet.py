@@ -104,8 +104,28 @@ def test_app_release_joins_before_it_calls_dokploy():
     ts = index_of(release, is_ts)
     deploy = index_of(release, lambda s: "DOKPLOY_URL" in str(s.get("env", {})) and "api(" in str(s.get("run", "")))
     assert ts < deploy
-    assert release[ts]["with"]["tags"] == "tag:ci"
+    # D-057: app release jobs are tag:release (Dokploy API only), never tag:ci
+    assert release[ts]["with"]["tags"] == "tag:release"
+    assert release[ts]["with"]["oauth-client-id"] == "${{ vars.SEALEDSTACK_TS_RELEASE_CLIENT_ID }}"
+    assert release[ts]["with"]["audience"] == "${{ vars.SEALEDSTACK_TS_RELEASE_AUDIENCE }}"
     assert permissions(doc, "release").get("id-token") == "write"
+
+
+def test_app_release_workflow_never_uses_tag_ci():
+    text = (WORKFLOWS / "app.yml").read_text(encoding="utf-8")
+    assert "tag:ci" not in text
+    doc = load("app.yml")
+    tags = {s["with"]["tags"] for job in doc["jobs"].values() for s in job["steps"] if is_ts(s)}
+    assert tags == {"tag:release"}
+
+
+def test_infra_and_drift_workflows_use_tag_ci_only():
+    for name in ("infra.yml", "drift.yml"):
+        text = (WORKFLOWS / name).read_text(encoding="utf-8")
+        assert "tag:release" not in text, name
+        doc = load(name)
+        tags = {s["with"]["tags"] for job in doc["jobs"].values() for s in job["steps"] if is_ts(s)}
+        assert tags == {"tag:ci"}, name
 
 
 def test_drift_joins_before_planning():

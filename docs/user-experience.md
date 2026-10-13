@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Final (v1 UX): signed off by the owner on 2026-10-11.** This document is authoritative for everything a user sees and does. [spec.md](spec.md) §6 defers to it. Changes need a new decision in [decisions.md](decisions.md). |
 | Date | 2026-10-11 |
-| Decisions | D-034 to D-047 ([decisions.md](decisions.md)). Amended on 2026-10-12 by D-056: the caller workflow in §4 step 2 also grants `packages: read`. |
+| Decisions | D-034 to D-047 ([decisions.md](decisions.md)). Amended on 2026-10-12 by D-056: the caller workflow in §4 step 2 also grants `packages: read`. Amended on 2026-10-13 by D-057: app release jobs join the tailnet as `tag:release` (Dokploy API only), not `tag:ci`; by D-058: the bot identity for now is a fine-grained personal access token (§4 step 4 checklist); by D-059: `drift` is also a manual command, and the scheduled drift workflow is off unless `SEALEDSTACK_DRIFT_ENABLED=true`. |
 
 Mockups use GitHub wording; GitLab equivalents are in §11. `<v>` means the pinned sealedstack version (e.g. `0.6.0`), and `<owner>` the sealedstack publisher.
 
