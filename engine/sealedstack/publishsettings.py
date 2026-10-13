@@ -49,10 +49,11 @@ def run(
 
     compose_ids = (state or platformstate_mod.PlatformState(config, env, source)).output("compose_ids") or {}
     dokploy_url = f"http://{dokploy_mod.control_host(config)}:3000"
-    key = config.secret_key("DOKPLOY_API_KEY")
-    dokploy_key = source.get(key)
+    dokploy_key = secrets_mod.lookup(source, config, "DOKPLOY_API_KEY")
     if not dokploy_key.found:
-        raise config_mod.ConfigError(f"DOKPLOY_API_KEY not found in the '{source.kind}' source")
+        raise config_mod.ConfigError(
+            f"{secrets_mod.describe(config, 'DOKPLOY_API_KEY')} not found in the '{source.kind}' source"
+        )
 
     providers = config.stack.get("providers") or {}
     mesh = providers.get("mesh_tailscale") or {}

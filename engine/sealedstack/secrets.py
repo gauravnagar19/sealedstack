@@ -202,6 +202,7 @@ class CliSource(SecretSource):
         env: Optional[Mapping[str, str]] = None,
         *,
         runner: Optional[ProcessRunner] = None,
+        project: Optional[str] = None,
     ) -> None:
         self.backend = backend
         self.stack = stack
@@ -209,7 +210,7 @@ class CliSource(SecretSource):
         self.env = dict(env or {})
         self.runner = runner
         cfg = (stack.get("providers") or {}).get(f"secrets_{backend}") or {}
-        self.project = str(cfg.get("project") or "infra")
+        self.project = str(project or (stack.get("secrets") or {}).get("project") or cfg.get("project") or "infra")
 
     def _cfg(self, key: str) -> str:
         file = self.config_dir / "providers" / f"secrets_{self.backend}.yaml"
@@ -307,20 +308,60 @@ def build_source(
 ) -> SecretSource:
     """Pick the source named by ``slots.secrets`` (default ``env``).
 
-    ``project`` overrides the Bitwarden project name (infra secrets live in the
-    default ``infra`` project; app secrets in ``prod``).
+    The project is, in order: the ``project`` argument (app secrets pass
+    ``secrets.app_project``), ``stack.yaml: secrets.project`` (D-050, default
+    ``infra``), the legacy ``providers.secrets_bitwarden.project_name``.
     """
     env = dict(env or {})
     kind = (stack.get("slots") or {}).get("secrets") or "env"
     if kind == "bitwarden":
         cfg = (stack.get("providers") or {}).get("secrets_bitwarden") or {}
-        project = project or cfg.get("project_name", "infra")
-        return BitwardenSource(env, project=project, runner=bw_runner)
+        project = project or (stack.get("secrets") or {}).get("project") or cfg.get("project_name") or "infra"
+        return BitwardenSource(env, project=str(project), runner=bw_runner)
     if kind == "sops":
         cfg = (stack.get("providers") or {}).get("secrets_sops") or {}
         return SopsSource(config_dir, env, file=cfg.get("file", "secrets/infra.enc.yaml"), runner=sops_runner)
     if kind in CLI_BACKENDS:
-        return CliSource(kind, stack, config_dir, env, runner=cli_runner)
+        return CliSource(kind, stack, config_dir, env, runner=cli_runner, project=project)
     if kind == "ci":
         return CiSource(env)
     return EnvSource(env)
+
+
+_WARNED: set[str] = set()
+
+
+def lookup(source: SecretSource, config, logical: str) -> SecretResult:
+    """Read a logical secret through the config's key mapping (D-050).
+
+    The configured (or default) key wins. If it is absent and the mapping names no
+    other key, a deprecated older key (``state_passphrase``) is still honoured with
+    a one-time warning, so existing setups keep working while they rename it.
+    """
+    key = config.secret_key(logical)
+    result = source.get(key)
+    if result.found:
+        return result
+    legacy = config.legacy_secret_key(logical)
+    if legacy and legacy != key:
+        old = source.get(legacy)
+        if old.found:
+            if legacy not in _WARNED:
+                _WARNED.add(legacy)
+                import sys
+
+                print(
+                    f"sealedstack: warning: reading the deprecated secret key '{legacy}' for "
+                    f"`{logical}`; rename it to '{key}' (or set secrets.keys.{logical}: {legacy} in "
+                    "stack.yaml). The fallback will be removed in a later release.",
+                    file=sys.stderr,
+                )
+            return SecretResult(legacy, "found", old.value, detail=f"deprecated key '{legacy}'")
+    return result
+
+
+def describe(config, logical: str) -> str:
+    """``logical`` (source key ``KEY``) -- how every message names a secret (D-050)."""
+    key = config.secret_key(logical)
+    name = str(logical).lower()
+    return f"{name} (source key {key})"

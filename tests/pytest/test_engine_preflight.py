@@ -136,7 +136,7 @@ NEEDED = {
     "R2_SECRET_ACCESS_KEY": "x",
     "DOKPLOY_API_KEY": "x",
     "REGISTRY_PULL_TOKEN": "x",
-    "state_passphrase": "0123456789abcdef",
+    "STATE_PASSPHRASE": "0123456789abcdef",
 }
 
 
@@ -152,14 +152,14 @@ def test_check_secrets_missing_is_fail_with_fix(tmp_path):
     env = dict(NEEDED)
     del env["HCLOUD_TOKEN"]
     results = by_id(preflight.check_secrets(make_ctx(tmp_path, config, env=env)))
-    result = results["secrets.HCLOUD_TOKEN"]
+    result = results["secrets.hcloud_token"]
     assert result.status == "fail"
     assert "HCLOUD_TOKEN" in result.fix
 
 
 def test_check_secrets_short_passphrase_is_fail(tmp_path):
     config = make_config(tmp_path)
-    env = dict(NEEDED, state_passphrase="short")
+    env = dict(NEEDED, STATE_PASSPHRASE="short")
     results = by_id(preflight.check_secrets(make_ctx(tmp_path, config, env=env)))
     assert results["secrets.state_passphrase"].status == "fail"
     assert "16" in results["secrets.state_passphrase"].detail

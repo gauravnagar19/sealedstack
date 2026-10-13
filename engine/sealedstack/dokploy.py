@@ -78,8 +78,7 @@ def from_config(
 ) -> DokployClient:
     env = dict(env or {})
     source = source or secrets_mod.build_source(config.stack, config.config_dir, env)
-    key = config.secret_key("DOKPLOY_API_KEY")
-    result = source.get(key)
+    result = secrets_mod.lookup(source, config, "DOKPLOY_API_KEY")
     if not result.found:
-        raise DokployError(f"DOKPLOY_API_KEY not found in the '{source.kind}' source")
+        raise DokployError(f"{secrets_mod.describe(config, 'DOKPLOY_API_KEY')} not found in the '{source.kind}' source")
     return DokployClient(f"http://{control_host(config)}:3000", result.value, http=http)

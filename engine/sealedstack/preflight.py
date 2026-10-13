@@ -270,14 +270,27 @@ def check_config(ctx: CheckContext) -> list[Result]:
 # --------------------------------------------------------------------------- #
 # secrets
 # --------------------------------------------------------------------------- #
-def gather_needed_secrets(stack: dict, servers: dict, registry: dict) -> list[tuple[str, str]]:
-    """(secret name, why) for every selected, implemented provider (spec 7)."""
+def gather_needed_secrets(
+    stack: dict,
+    servers: dict,
+    registry: dict,
+    config_dir: Optional[Path] = None,
+) -> list[tuple[str, str]]:
+    """(secret name, why) for every selected, implemented provider (spec 7).
+
+    A registry entry with ``adapter_config`` needs its ``secrets`` only when that
+    config file exists (e.g. the Netcup firewall adapter): the manual-firewall
+    path needs no API credentials.
+    """
     needed: list[tuple[str, str]] = []
     implementations = registry
 
     def add(slot: str, impl: str) -> None:
         entry = (implementations.get(slot) or {}).get("implementations", {}).get(impl)
         if not entry or entry.get("status") == "planned":
+            return
+        adapter = entry.get("adapter_config")
+        if adapter and not (config_dir is not None and (Path(config_dir) / adapter).is_file()):
             return
         for secret in entry.get("secrets") or []:
             needed.append((secret, f"{slot}:{impl}"))
@@ -291,81 +304,60 @@ def gather_needed_secrets(stack: dict, servers: dict, registry: dict) -> list[tu
     return needed
 
 
+def _secret_result(ctx: "CheckContext", logical: str, why: str, *, min_length: int = 0) -> Result:
+    """One secret's check result, naming the logical and the source key (D-050)."""
+    from . import secrets as secrets_mod
+
+    logical = str(logical).lower()
+    label = secrets_mod.describe(ctx.config, logical)
+    key = ctx.config.secret_key(logical)
+    result_id = f"secrets.{logical}"
+    result = secrets_mod.lookup(ctx.secrets, ctx.config, logical)
+    project = ctx.config.source_project()
+    if result.errored:
+        return Result(
+            result_id, "secrets", "fail",
+            detail=f"{why}: {label}: {result.detail}",
+            fix=f"fix access to the {ctx.secrets.kind} secret source, or export {key}",
+            docs=DOCS_SECRETS,
+        )
+    if not result.found:
+        extra = f" (at least {min_length} characters)" if min_length else ""
+        return Result(
+            result_id, "secrets", "fail",
+            detail=f"{why}: {label} not found in the {ctx.secrets.kind} source (project '{project}')",
+            fix=f"add {key}{extra} to the {ctx.secrets.kind} secret source, project '{project}'",
+            docs=DOCS_SECRETS,
+        )
+    if min_length and len(result.value) < min_length:
+        return Result(
+            result_id, "secrets", "fail",
+            detail=f"{why}: {label} is {len(result.value)} chars; at least {min_length} are required",
+            fix=f"regenerate {key} with at least {min_length} characters",
+            docs=DOCS_SECRETS,
+        )
+    if result.name != key:  # served by a deprecated fallback key
+        return Result(
+            result_id, "secrets", "warn",
+            detail=f"{why}: {label} found under the deprecated key '{result.name}'",
+            fix=f"rename '{result.name}' to {key} in the secret source (or set secrets.keys.{logical}: {result.name})",
+            docs=DOCS_SECRETS,
+        )
+    return Result(result_id, "secrets", "ok", detail=f"{why}: {label} present")
+
+
 def check_secrets(ctx: CheckContext) -> list[Result]:
     results: list[Result] = []
     seen: set[str] = set()
-    for name, why in gather_needed_secrets(ctx.config.stack, ctx.config.servers, ctx.registry):
-        if name in seen:
+    for name, why in gather_needed_secrets(
+        ctx.config.stack, ctx.config.servers, ctx.registry, ctx.config.config_dir
+    ):
+        logical = name.lower()
+        if logical in seen:
             continue
-        seen.add(name)
-        # D-050: config maps the logical name to its key in the source.
-        source_key = ctx.config.secret_key(name)
-        label = name if source_key == name else f"{name} (source key {source_key})"
-        result = ctx.secrets.get(source_key)
-        result_id = f"secrets.{name}"
-        if result.errored:
-            results.append(
-                Result(
-                    result_id,
-                    "secrets",
-                    "fail",
-                    detail=f"{why} needs {label}: {result.detail}",
-                    fix=f"fix access to the {ctx.secrets.kind} secret source, or export {source_key}",
-                    docs=DOCS_SECRETS,
-                )
-            )
-        elif result.missing:
-            results.append(
-                Result(
-                    result_id,
-                    "secrets",
-                    "fail",
-                    detail=f"{why} needs {label}: {result.detail}",
-                    fix=f"add {source_key} to the {ctx.secrets.kind} secret source",
-                    docs=DOCS_SECRETS,
-                )
-            )
-        else:
-            results.append(Result(result_id, "secrets", "ok", detail=f"{why}: {label} present"))
-
-    pw_source_key = ctx.config.secret_key("state_passphrase")
-    pw_label = "state_passphrase" if pw_source_key == "state_passphrase" else f"state_passphrase (source key {pw_source_key})"
-    passphrase = ctx.secrets.get(pw_source_key)
-    if passphrase.errored:
-        results.append(
-            Result(
-                "secrets.state_passphrase",
-                "secrets",
-                "fail",
-                detail=passphrase.detail,
-                fix=f"fix access to the secret source, or export {pw_source_key}",
-                docs=DOCS_SECRETS,
-            )
-        )
-    elif passphrase.missing:
-        results.append(
-            Result(
-                "secrets.state_passphrase",
-                "secrets",
-                "fail",
-                detail=f"{pw_label} is required to encrypt OpenTofu state (>= 16 chars)",
-                fix=f"add {pw_source_key} (>= 16 chars) to the secret source",
-                docs=DOCS_SECRETS,
-            )
-        )
-    elif len(passphrase.value) < 16:
-        results.append(
-            Result(
-                "secrets.state_passphrase",
-                "secrets",
-                "fail",
-                detail=f"{pw_label} is {len(passphrase.value)} chars; at least 16 are required",
-                fix="regenerate the state passphrase with at least 16 characters",
-                docs=DOCS_SECRETS,
-            )
-        )
-    else:
-        results.append(Result("secrets.state_passphrase", "secrets", "ok", detail=f"{pw_label} is >= 16 chars"))
+        seen.add(logical)
+        results.append(_secret_result(ctx, logical, why))
+    results.append(_secret_result(ctx, "state_passphrase", "OpenTofu state encryption", min_length=16))
     return results
 
 

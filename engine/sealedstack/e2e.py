@@ -102,7 +102,7 @@ def run(env: Optional[dict] = None, out=None) -> int:
         print("==> apply", file=out)
         _run_script(code_root, "render.py", "--allow-unresolved")
         _run_script(code_root, "mesh-policy.py")
-        buildenv.build(config, env, source=secrets_mod.build_source(config.stack, config.config_dir, env, project="prod"))
+        buildenv.build(config, env, source=secrets_mod.build_source(config.stack, config.config_dir, env, project=config.app_project()))
         from . import userauth
 
         userauth.run(config, env, source=source, out=out)

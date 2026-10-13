@@ -75,6 +75,20 @@ PROVIDER_REQUIRED = {
 }
 
 
+# Providers with no OpenTofu provider apply their firewall through a REST adapter
+# that is enabled only while its spec file exists (otherwise the user applies the
+# rule table by hand and needs no API credentials).
+ADAPTER_CONFIG = {
+    "netcup": "providers/netcup.yaml",
+    "contabo": "providers/contabo.yaml",
+}
+
+
+def adapter_enabled(config: config_mod.Config, provider: str) -> bool:
+    rel = ADAPTER_CONFIG.get(provider)
+    return bool(rel) and (Path(config.config_dir) / rel).is_file()
+
+
 def server_provider(config: config_mod.Config, name: str) -> str:
     spec = (config.servers.get("servers") or {}).get(name) or {}
     return str(spec.get("provider") or "")
@@ -88,7 +102,7 @@ def tf_vars(config: config_mod.Config, env: Mapping[str, str], source: secrets_m
         variables[var] = value or DEFAULTS.get(var, "")
     provider = server_provider(config, name)
     required = PROVIDER_REQUIRED.get(provider)
-    if required:
+    if required and not (provider in ADAPTER_CONFIG and not adapter_enabled(config, provider)):
         tofu_mod.require(source, config, required)
     return variables
 

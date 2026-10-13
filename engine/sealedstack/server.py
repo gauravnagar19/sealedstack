@@ -21,6 +21,7 @@ from typing import Callable, Mapping, Optional
 
 from . import config as config_mod
 from . import secrets as secrets_mod
+from . import tofu as tofu_mod
 
 # run: inherit stdio, return rc. capture: capture stdout, return (rc, stdout).
 RunFn = Callable[[list, Mapping[str, str]], int]
@@ -150,8 +151,8 @@ def up(
             [sys.executable, "-m", "sealedstack.tailscalekey"],
             {
                 **env,
-                "TAILSCALE_OAUTH_CLIENT_ID": _require(source, config.secret_key("TAILSCALE_OAUTH_CLIENT_ID")),
-                "TAILSCALE_OAUTH_CLIENT_SECRET": _require(source, config.secret_key("TAILSCALE_OAUTH_CLIENT_SECRET")),
+                "TAILSCALE_OAUTH_CLIENT_ID": tofu_mod.require(source, config, "TAILSCALE_OAUTH_CLIENT_ID"),
+                "TAILSCALE_OAUTH_CLIENT_SECRET": tofu_mod.require(source, config, "TAILSCALE_OAUTH_CLIENT_SECRET"),
             },
         )
     dokploy_ssh_public_key = _capture_required(io, [sys.executable, "-m", "sealedstack.dokploykey"], env)
@@ -278,7 +279,7 @@ def _checklist(name: str) -> str:
         f"\nsealedstack: first-run checklist for '{name}'\n"
         f"  1. Open the Dokploy panel over the mesh (http://{name}:3000) and create the first admin account.\n"
         "  2. In Dokploy: Settings > Profile > API/CLI Keys, generate a key and store it as DOKPLOY_API_KEY in the 'infra' secrets project.\n"
-        "  3. Store state_passphrase in the 'infra' project (the R2 keys are derived from CLOUDFLARE_API_TOKEN), then run 'sealedstack up' (it creates the state bucket).\n"
+        "  3. Store STATE_PASSPHRASE in the 'infra' project (the R2 keys are derived from CLOUDFLARE_API_TOKEN), then run 'sealedstack up' (it creates the state bucket).\n"
         "  4. Confirm the provider firewall rule table and close the temporary inbound TCP 22 window (docs/netcup-firewall.md).\n"
         "  5. Run 'sealedstack check' to gate every step above.\n"
     )

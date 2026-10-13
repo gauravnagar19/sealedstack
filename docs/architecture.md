@@ -91,7 +91,7 @@ a module/role/adapter (see [AGENTS.md](../AGENTS.md)).
 
 - **State** — each stack has an S3 backend pointing at an R2 bucket created by
   the `state` stack, with OpenTofu native encryption using
-  `infra.state_passphrase` (D-007). `engine/sealedstack/tofu.py` wires it.
+  `STATE_PASSPHRASE` from the `infra` project (D-007). `engine/sealedstack/tofu.py` wires it.
 - **Secrets** — Bitwarden by default; the `secrets` slot can be `sops`,
   `aws_ssm`, `gcp`, `azure_kv`, `openbao` or `vault`. Reads go through
   `engine/sealedstack/secrets.py`; the edge stack writes tunnel tokens back.

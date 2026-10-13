@@ -38,13 +38,13 @@ def build(
     env: Optional[Mapping[str, str]] = None,
     *,
     source: Optional[secrets_mod.SecretSource] = None,
-    project: str = "prod",
+    project: Optional[str] = None,
 ) -> tuple[dict, int]:
     """Return ``(env_map, app_count)``. Raises :class:`BuildEnvError`."""
     env = dict(env or os.environ)
     build_dir = Path(config.code_root) / ".build"
     apps_dir = build_dir / "apps"
-    source = source or secrets_mod.build_source(config.stack, config.config_dir, env, project=project)
+    source = source or secrets_mod.build_source(config.stack, config.config_dir, env, project=project or config.app_project())
 
     out: dict = {}
     count = 0

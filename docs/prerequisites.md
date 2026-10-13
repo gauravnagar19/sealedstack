@@ -31,7 +31,7 @@ in the encrypted OpenTofu state.
 | Bitwarden machine-account token | GitHub repository secret `BWS_ACCESS_TOKEN` | The only secret in GitHub. Give the machine account **read-only** access to the secrets project (default `infra`). See [limitations](limitations.md#approvals-on-github-free-private-repositories-what-they-do-and-dont-protect). |
 | Cloudflare API token | Bitwarden: `CLOUDFLARE_API_TOKEN` | [Permissions below](#cloudflare-api-token-permissions). |
 | Tailscale OAuth client | Bitwarden: `TAILSCALE_OAUTH_CLIENT_ID`, `TAILSCALE_OAUTH_CLIENT_SECRET` | Scopes `policy_file`, `auth_keys`, `devices:core`. Server auth keys are minted from it, so no long-lived API key is needed. |
-| State passphrase | Bitwarden: `state_passphrase` | At least 16 random characters. Encrypts the OpenTofu state. |
+| State passphrase | Bitwarden: `STATE_PASSPHRASE` | At least 16 random characters. Encrypts the OpenTofu state. |
 | Existing server: public IP and root password | Bitwarden: `SERVER_IP_<NAME>`, `ROOT_PASSWORD_<NAME>` | `<NAME>` is the server name upper-cased with `-` as `_`, so `server-1` gives `SERVER_IP_SERVER_1`. Used once by the first bootstrap; delete them afterwards. |
 | Admin SSH public key(s) | `config/stack.yaml`: `admin.ssh_keys` | A public key, not a secret. Installed on every server at bootstrap. |
 | Bot identity | Bitwarden: `SEALEDSTACK_BOT_APP_ID`, `SEALEDSTACK_BOT_PRIVATE_KEY`, `SEALEDSTACK_BOT_INSTALLATION_ID` | A GitHub App (`sealedstack-bot`) created from the checklist's one-click manifest link. Its pull requests trigger the plan workflows, which the built-in `GITHUB_TOKEN` cannot. |
@@ -45,11 +45,18 @@ setting to Bitwarden entry is visible and reviewable ([D-050](decisions.md)):
 ```yaml
 # config/stack.yaml
 secrets:
-  project: infra            # the Bitwarden Secrets Manager project
+  project: infra            # the Bitwarden Secrets Manager project for infra secrets
+  app_project: prod         # the project that holds app secrets
   keys:                     # logical name -> key in the secret source
-    CLOUDFLARE_API_TOKEN: CLOUDFLARE_API_TOKEN
-    state_passphrase: STATE_PASSPHRASE   # example of a renamed key
+    cloudflare_api_token:          CLOUDFLARE_API_TOKEN
+    tailscale_oauth_client_id:     TAILSCALE_OAUTH_CLIENT_ID
+    tailscale_oauth_client_secret: TAILSCALE_OAUTH_CLIENT_SECRET
+    state_passphrase:              STATE_PASSPHRASE
+    bot_private_key:               SEALEDSTACK_BOT_PRIVATE_KEY
 ```
+
+Rename any value to match an entry you already have (for example
+`cloudflare_api_token: MY_CF_TOKEN`).
 
 ```yaml
 # config/servers.yaml (an existing machine)
@@ -64,11 +71,18 @@ servers:
       password_secret: ROOT_PASSWORD_SERVER_1
 ```
 
-An entry you leave out defaults to the logical name. Error messages and the
-checklist always show both names, for example
-`state_passphrase (source key STATE_PASSPHRASE)`. App secrets default to
-`<app>.<NAME>` in the app-secrets project (`prod`) and can be remapped per app in
-`config/apps.yaml` under `secrets:`.
+A logical secret you leave out defaults to its upper-cased name (`hcloud_token`
+is read from `HCLOUD_TOKEN`). Error messages and the checklist always show both
+names, for example `state_passphrase (source key STATE_PASSPHRASE)`.
+
+Older setups stored the passphrase under the key `state_passphrase`. That key is
+still read as a **deprecated fallback** (with a warning in `check`) until you
+rename it to `STATE_PASSPHRASE` or point `secrets.keys.state_passphrase` at it.
+
+App secrets default to `<app>.<NAME>` in the app-secrets project
+(`secrets.app_project`, default `prod`) and can be remapped per app in
+`config/apps.yaml` under `secrets:`. The infra project is `secrets.project`
+(default `infra`).
 
 ## Other secrets the current implementation reads
 
@@ -83,7 +97,7 @@ D-044).
 | `DOKPLOY_API_KEY` | platform stage | Created in the Dokploy panel after the first bootstrap (see the [limitation in getting started](getting-started.md#5-merge-pr-1-then-run-up)). |
 | `DOKPLOY_SSH_PRIVATE_KEY`, `DOKPLOY_SSH_PUBLIC_KEY` | worker servers | Generated on the first run and stored in the secret source. |
 | `HCLOUD_TOKEN` | compute `hetzner` | Read and write API token. Only when Hetzner creates the server. |
-| `NETCUP_API_USERNAME`, `NETCUP_API_PASSWORD` | compute `netcup` | Only needed for the firewall adapter; otherwise apply the [rule table](netcup-firewall.md) by hand. |
+| `NETCUP_API_USERNAME`, `NETCUP_API_PASSWORD` | compute `netcup` | Required **only** when the firewall adapter is enabled (`config/providers/netcup.yaml` exists). Without it, apply the [rule table](netcup-firewall.md) by hand and no API credentials are needed. |
 | `<app>.<NAME>` | apps with secrets | For example `shop.CLERK_SECRET_KEY`. |
 
 Any key may also be supplied as an environment variable of the same name instead

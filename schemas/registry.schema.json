@@ -81,6 +81,10 @@
               "type": "string"
             }
           },
+          "adapter_config": {
+            "type": "string",
+            "description": "Config file (relative to config/) that enables an optional adapter; the entry's secrets are required only while it exists."
+          },
           "optional_secrets": {
             "type": "array",
             "description": "Secrets that override a derived value; never required.",

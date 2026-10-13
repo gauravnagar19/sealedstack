@@ -23,6 +23,9 @@ import yaml
 
 import configdir
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "engine"))
+from sealedstack import scaffold  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # The published image owner is configurable (env/flag); the default is the
 # project owner, not the non-existent `sealedstack` org the old code pointed at.
@@ -325,72 +328,34 @@ def main() -> int:
     team_name = ask("Cloudflare Zero Trust team name", domain.split(".")[0])
     tailnet = ask("Tailscale MagicDNS suffix (tailnet, e.g. tail1234.ts.net)")
 
-    servers: dict = {}
+    server_rows: list = []
     print("Servers (blank name to finish). Providers: any-ssh netcup hetzner hostinger digitalocean vultr")
     while True:
-        name = ask("  server name", "server-1" if not servers else "")
+        name = ask("  server name", "server-1" if not server_rows else "")
         if not name:
             break
         provider = ask(f"  provider for {name}", "any-ssh")
-        role = ask(f"  role for {name} (control|worker)", "control" if not servers else "worker")
+        role = ask(f"  role for {name} (control|worker)", "control" if not server_rows else "worker")
         os_name = ask(f"  os for {name}", "ubuntu-24.04")
-        entry: dict = {"provider": provider, "role": role, "os": os_name}
-        if provider in ("any-ssh", "netcup", "contabo"):
-            # D-049/D-050: existing machines carry their public IP and root
-            # password as bootstrap secrets, named explicitly here.
-            env_name = name.upper().replace("-", "_")
-            entry["bootstrap"] = {
-                "method": "password",
-                "ip_secret": f"SERVER_IP_{env_name}",
-                "password_secret": f"ROOT_PASSWORD_{env_name}",
-            }
-        servers[name] = entry
+        server_rows.append((name, provider, role, os_name))
 
+    servers = scaffold.servers_config(server_rows)["servers"]
     if not any(s["role"] == "control" for s in servers.values()):
         print("at least one server must have role: control", file=sys.stderr)
         return 1
 
-    stack = {
-        "name": infra_name,
-        "domain": domain,
-        "owner_email": owner_email,
-        "admin_user": admin_user,
-        "admin": {"ssh_keys": [admin_ssh_key] if admin_ssh_key else []},
-        # D-052: who may approve write commands in CI. Defaults to the owner.
-        "approvers": [args.owner] if args.owner else [],
-        "slots": {
-            "compute": "any-ssh",
-            "mesh": "tailscale",
-            "ingress": "cloudflare",
-            "gate": "cloudflare_access",
-            "secrets": "bitwarden",
-            "backup": "r2",
-            "platform": "dokploy",
-        },
-        "cloudflare": {"account_id": account_id, "zone": domain, "team_name": team_name},
-        "mesh": {"tailnet": tailnet, "policy": "managed"},
-        "gate": {"policies": {"owner-only": {"emails": [owner_email], "session": "24h"}}, "catch_all": True},
-        "edge_security": {
-            "bot_fight_mode": True,
-            "block_ai_bots": True,
-            "blocked_paths": ["/.env", "/.git", "xmlrpc.php", "/wp-", "*.php"],
-        },
-        "state": {"backend": "r2", "bucket": "sealedstack-state"},
-        # D-050: explicit secret key mapping; omitted entries default to the
-        # logical name.
-        "secrets": {"project": "infra", "keys": {}},
-    }
-
-    apps = {
-        "apps": {
-            "hello": {
-                "source": {"image": "traefik/whoami:v1.10.3"},
-                "servers": [next(iter(servers))],
-                "hostnames": [f"hello.{domain}"],
-                "access": "owner-only",
-            }
-        }
-    }
+    stack = scaffold.stack_config(
+        infra_name=infra_name,
+        domain=domain,
+        owner_email=owner_email,
+        admin_user=admin_user,
+        ssh_keys=[admin_ssh_key] if admin_ssh_key else [],
+        approvers=[args.owner] if args.owner else [],
+        account_id=account_id,
+        team_name=team_name,
+        tailnet=tailnet,
+    )
+    apps = scaffold.apps_config(next(iter(servers)), domain)
 
     # Import the current tailnet policy verbatim before writing anything, so a
     # failed import leaves no half-written config (spec section 7, D-026).

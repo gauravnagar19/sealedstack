@@ -106,7 +106,7 @@ def run(
     *,
     apps: Optional[list[str]] = None,
     source: Optional[secrets_mod.SecretSource] = None,
-    project: str = "prod",
+    project: Optional[str] = None,
     out=None,
 ) -> dict:
     """Merge user-auth env into ``.build/env.json``; return the env map."""
@@ -129,7 +129,7 @@ def run(
         print("user-auth: no apps declare user_auth; nothing to do", file=out)
         return env_map
 
-    source = source or secrets_mod.build_source(config.stack, config.config_dir, env, project=project)
+    source = source or secrets_mod.build_source(config.stack, config.config_dir, env, project=project or config.app_project())
 
     for app in apps:
         impl = resolve_impl(config, app)

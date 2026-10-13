@@ -292,11 +292,15 @@
     "secrets": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Secret key mapping (D-050): each logical secret -> its key in the source. Omitted entries default to the logical name.",
+      "description": "Secret key mapping (D-050): each logical secret -> its key in the source. Omitted entries default to the upper-cased logical name.",
       "properties": {
         "project": {
           "type": "string",
-          "description": "Source project/namespace (e.g. the Bitwarden project)."
+          "description": "Source project/namespace for infra secrets (e.g. the Bitwarden project). Default: infra."
+        },
+        "app_project": {
+          "type": "string",
+          "description": "Source project that holds app secrets (`<app>.<NAME>` keys). Default: prod."
         },
         "keys": {
           "type": "object",

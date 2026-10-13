@@ -16,10 +16,12 @@ sys.path.insert(0, str(ROOT / "engine"))
 import configdir  # noqa: E402
 import registry as reg  # noqa: E402
 import validate as val  # noqa: E402
+from sealedstack import config as sconfig  # noqa: E402
 from sealedstack import secrets as ssecrets  # noqa: E402
 
 CONFIG = configdir.config_dir()
 SOURCE = ssecrets.build_source(val.load_yaml(CONFIG / "stack.yaml"), CONFIG, os.environ)
+CFG = sconfig.load_config(CONFIG, ROOT)
 
 
 def secret_lookup(name: str) -> tuple[bool, str]:
@@ -28,11 +30,12 @@ def secret_lookup(name: str) -> tuple[bool, str]:
     ``ok`` is False only when the lookup itself failed (auth/network), so a
     missing secret is not confused with a broken secrets session (N3).
     """
-    if os.environ.get(name):
-        return True, os.environ[name]
+    key = CFG.secret_key(name)  # D-050: config maps the logical name to the source key
+    if os.environ.get(key):
+        return True, os.environ[key]
     if SOURCE.kind == "bitwarden" and not os.environ.get("BWS_ACCESS_TOKEN"):
         return True, ""
-    result = SOURCE.get(name)
+    result = ssecrets.lookup(SOURCE, CFG, name)
     if result.found:
         return True, result.value
     if result.missing:

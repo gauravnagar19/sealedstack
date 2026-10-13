@@ -16,7 +16,9 @@ implementations:
     creates_server: false
     summary: Existing VPS; the SCP REST adapter applies the rule table once config/providers/netcup.yaml is filled in, otherwise apply it by hand.
     firewall: manual
+    # Needed only when the firewall adapter is enabled (config/providers/netcup.yaml exists).
     secrets: [NETCUP_API_USERNAME, NETCUP_API_PASSWORD]
+    adapter_config: providers/netcup.yaml
     config: [external_id]
     impl: { tofu_module: compute_netcup, stack: compute }
     docs: docs/netcup-firewall.md
@@ -151,6 +153,7 @@ implementations:
     summary: Existing VPS; the REST adapter applies the rule table once config/providers/contabo.yaml is filled in, otherwise apply it by hand.
     firewall: manual
     secrets: [CONTABO_CLIENT_ID, CONTABO_CLIENT_SECRET]
+    adapter_config: providers/contabo.yaml
     config: [external_id]
     impl: { tofu_module: compute_contabo, stack: compute }
     docs: https://api.contabo.com/

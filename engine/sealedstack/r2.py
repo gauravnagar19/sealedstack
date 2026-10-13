@@ -106,7 +106,7 @@ def lookup_token_id(
 
 
 def _found(source: secrets_mod.SecretSource, config: config_mod.Config, logical: str) -> Optional[str]:
-    result = source.get(config.secret_key(logical))
+    result = secrets_mod.lookup(source, config, logical)
     return result.value if result.found else None
 
 
@@ -144,7 +144,7 @@ def resolve(
             return None
         raise _error(
             "R2 credentials are needed but cannot be derived.",
-            f"`cloudflare_api_token` (source key {token_key}) was not found in the "
+            f"{secrets_mod.describe(config, TOKEN_KEY)} was not found in the "
             f"'{source.kind}' secret source.",
             f"Add {token_key} (with \"{R2_PERMISSION}\") to the secret source.",
         )

@@ -43,6 +43,45 @@ WRITE_COMMANDS = frozenset(
 )
 
 
+# D-050: the logical secrets every setup writes explicitly into
+# ``stack.yaml: secrets.keys`` (logical name -> default key in the secret source).
+# Any other logical name defaults to its upper-cased form (``hcloud_token`` ->
+# ``HCLOUD_TOKEN``), so renaming is always a one-line change in config.
+CORE_SECRET_KEYS = {
+    "cloudflare_api_token": "CLOUDFLARE_API_TOKEN",
+    "tailscale_oauth_client_id": "TAILSCALE_OAUTH_CLIENT_ID",
+    "tailscale_oauth_client_secret": "TAILSCALE_OAUTH_CLIENT_SECRET",
+    "state_passphrase": "STATE_PASSPHRASE",
+    "bot_private_key": "SEALEDSTACK_BOT_PRIVATE_KEY",
+}
+
+# Source keys older releases read; still honoured (with a warning) when the
+# default key is absent and the mapping does not name another key.
+LEGACY_SECRET_KEYS = {
+    "state_passphrase": "state_passphrase",
+}
+
+DEFAULT_SECRET_PROJECT = "infra"
+DEFAULT_APP_SECRET_PROJECT = "prod"
+
+
+def default_secret_key(logical: str) -> str:
+    """The key a logical secret has in the source unless config renames it."""
+    logical = str(logical)
+    return CORE_SECRET_KEYS.get(logical.lower(), logical.upper())
+
+
+def default_secret_keys() -> dict:
+    """The explicit defaults ``setup`` writes into ``stack.yaml`` (D-050)."""
+    return dict(CORE_SECRET_KEYS)
+
+
+def default_bootstrap_secrets(server: str) -> tuple[str, str]:
+    """(ip_secret, password_secret) defaults for an existing server (D-049)."""
+    env_name = str(server).upper().replace("-", "_")
+    return f"SERVER_IP_{env_name}", f"ROOT_PASSWORD_{env_name}"
+
+
 class ConfigError(RuntimeError):
     """A problem locating or reading the config/code root."""
 
@@ -128,22 +167,45 @@ class Config:
 
     # -- secret key mapping (D-050) -----------------------------------------
 
-    def source_project(self, default: str = "infra") -> str:
+    def source_project(self, default: str = DEFAULT_SECRET_PROJECT) -> str:
+        """The secret-source project for infra secrets (``secrets.project``)."""
         return str((self.stack.get("secrets") or {}).get("project") or default)
 
-    def secret_key(self, logical: str) -> str:
-        """The source key for a logical secret (defaults to the logical name)."""
+    def app_project(self, default: str = DEFAULT_APP_SECRET_PROJECT) -> str:
+        """The project that holds app secrets (``secrets.app_project``, default ``prod``)."""
+        return str((self.stack.get("secrets") or {}).get("app_project") or default)
+
+    def explicit_secret_key(self, logical: str) -> str:
+        """The key named in ``secrets.keys`` for a logical secret, or ``""``.
+
+        Logical names are matched case-insensitively, so configs written with the
+        older upper-case names keep working.
+        """
         keys = (self.stack.get("secrets") or {}).get("keys") or {}
-        return str(keys.get(logical, logical))
+        wanted = str(logical).lower()
+        for name, value in keys.items():
+            if str(name).lower() == wanted and value:
+                return str(value)
+        return ""
+
+    def secret_key(self, logical: str) -> str:
+        """The source key for a logical secret: the configured one, else the default."""
+        return self.explicit_secret_key(logical) or default_secret_key(logical)
+
+    def legacy_secret_key(self, logical: str) -> str:
+        """A deprecated fallback key, only when config does not rename the secret."""
+        if self.explicit_secret_key(logical):
+            return ""
+        return LEGACY_SECRET_KEYS.get(str(logical).lower(), "")
 
     def bootstrap_secrets(self, name: str) -> tuple[str, str]:
         """(ip_secret, password_secret) for an existing server (D-049 defaults)."""
         spec = (self.servers.get("servers") or {}).get(name) or {}
         boot = spec.get("bootstrap") or {}
-        env_name = name.upper().replace("-", "_")
+        default_ip, default_pw = default_bootstrap_secrets(name)
         return (
-            str(boot.get("ip_secret") or f"SERVER_IP_{env_name}"),
-            str(boot.get("password_secret") or f"ROOT_PASSWORD_{env_name}"),
+            str(boot.get("ip_secret") or default_ip),
+            str(boot.get("password_secret") or default_pw),
         )
 
     def app_secret_key(self, app: str, name: str) -> str:

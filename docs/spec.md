@@ -263,7 +263,7 @@ user_auth:
 
 | Project | Holds |
 |---|---|
-| `infra` | Cloudflare API token, Tailscale API credentials, state encryption passphrase, R2 state credentials, Dokploy API key, Dokploy→worker SSH key |
+| `infra` | Cloudflare API token, Tailscale API credentials, state encryption passphrase, Dokploy API key, Dokploy→worker SSH key |
 | `prod` | `<app>.<NAME>` for production apps, e.g. `shop.CLERK_SECRET_KEY` |
 | `staging` | The same naming, for staging (v0.2+) |
 
@@ -448,7 +448,7 @@ Users install nothing locally: a browser, a Git hosting account and the credenti
 | Cloudflare account (Free plan) with Zero Trust enabled | ✅ | Zero Trust and R2 may ask for a payment method even on free plans |
 | Cloudflare API token (`CLOUDFLARE_API_TOKEN`) | ✅ | Account: Cloudflare Tunnel Edit, Access Apps and Policies Edit, Workers R2 Storage Edit. Zone: DNS Edit, Zone WAF Edit, Bot Management Edit, Single Redirect Edit. The R2 S3 keys are derived from it (D-044, D-054): key id = the token's id, secret = SHA-256 of the token value; `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` are an optional override |
 | Tailscale account with MagicDNS on, and an OAuth client | ✅ | Scopes `policy_file`, `auth_keys`, `devices:core`. Server auth keys are minted from it; no long-lived API key |
-| `STATE_PASSPHRASE` | ✅ | At least 16 characters; encrypts the OpenTofu state (key name configurable, default `state_passphrase`) |
+| `STATE_PASSPHRASE` | ✅ | At least 16 characters; encrypts the OpenTofu state (key name configurable in `secrets.keys`, default `STATE_PASSPHRASE`; the older key `state_passphrase` is read as a deprecated fallback) |
 | Bitwarden account plus a free organisation with Secrets Manager | ✅ | One **read-only** machine-account token, held in CI as `BWS_ACCESS_TOKEN` |
 | Server credentials, per existing server | ✅ for Netcup / any-ssh | `SERVER_IP_<NAME>` and `ROOT_PASSWORD_<NAME>`; the key names are declared in `servers.yaml` under `bootstrap` (D-049, D-050). API providers need only their token |
 | `admin.ssh_keys` in `stack.yaml` | ✅ | Operator SSH public keys, installed at bootstrap (not secrets, D-040) |

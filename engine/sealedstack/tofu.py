@@ -26,19 +26,18 @@ def default_runner(argv: Sequence[str], env: Mapping[str, str]) -> int:
 
 
 def require(source: secrets_mod.SecretSource, config: config_mod.Config, name: str) -> str:
-    """Read a required infra secret (honouring D-050 key mapping)."""
-    key = config.secret_key(name)
-    result = source.get(key)
+    """Read a required infra secret (honouring the D-050 key mapping)."""
+    result = secrets_mod.lookup(source, config, name)
     if not result.found:
         raise config_mod.ConfigError(
-            f"sealedstack: missing required secret '{key}' in the '{source.kind}' source"
+            f"sealedstack: missing required secret {secrets_mod.describe(config, name)} "
+            f"in the '{source.kind}' source (project '{config.source_project()}')"
         )
     return result.value
 
 
 def optional(source: secrets_mod.SecretSource, config: config_mod.Config, name: str) -> str:
-    key = config.secret_key(name)
-    result = source.get(key)
+    result = secrets_mod.lookup(source, config, name)
     return result.value if result.found else ""
 
 
