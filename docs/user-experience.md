@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Final (v1 UX): signed off by the owner on 2026-10-11.** This document is authoritative for everything a user sees and does. [spec.md](spec.md) §6 defers to it. Changes need a new decision in [decisions.md](decisions.md). |
 | Date | 2026-10-11 |
-| Decisions | D-034 to D-047 ([decisions.md](decisions.md)). Amended on 2026-10-12 by D-056: the caller workflow in §4 step 2 also grants `packages: read`. Amended on 2026-10-13 by D-057: app release jobs join the tailnet as `tag:release` (Dokploy API only), not `tag:ci`; by D-058: the bot identity for now is a fine-grained personal access token (§4 step 4 checklist); by D-059: `drift` is also a manual command, and the scheduled drift workflow is off unless `SEALEDSTACK_DRIFT_ENABLED=true`; by D-060: the app release caller written by the onboarding PR (§5, §7) also grants `deployments: write`, and each release is recorded as a GitHub Deployment of `production` in the app repo. |
+| Decisions | D-034 to D-047 ([decisions.md](decisions.md)). Amended on 2026-10-12 by D-056: the caller workflow in §4 step 2 also grants `packages: read`. Amended on 2026-10-13 by D-057: app release jobs join the tailnet as `tag:release` (Dokploy API only), not `tag:ci`; by D-058: the bot identity for now is a fine-grained personal access token (§4 step 4 checklist); by D-059: `drift` is also a manual command, and scheduled drift (the hourly run after `status` and the `drift.yml` workflow) is off unless the repository variable `SEALEDSTACK_DRIFT_ENABLED` is `true` (§8 table, §13); by D-060: the app release caller written by the onboarding PR (§5, §7) also grants `deployments: write`, and each release is recorded as a GitHub Deployment of `production` in the app repo. |
 
 Mockups use GitHub wording; GitLab equivalents are in §11. `<v>` means the pinned sealedstack version (e.g. `0.6.0`), and `<owner>` the sealedstack publisher.
 
@@ -72,7 +72,7 @@ on:
   issue_comment:
     types: [created]
   schedule:
-    - cron: "17 * * * *"          # hourly status + drift
+    - cron: "17 * * * *"          # hourly status (+ drift if SEALEDSTACK_DRIFT_ENABLED=true)
 jobs:
   sealedstack:
     uses: <owner>/sealedstack/.github/workflows/infra.yml@v0.6.0
@@ -355,7 +355,7 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 | `add-server` | Run workflow | `production` | Yes + PR |
 | `add-app` | Run workflow | — | Opens PRs only |
 | `status` | Hourly + after every apply | — | Updates the Status issue |
-| `drift` | Hourly, right after `status`; also Run workflow / `/sealedstack drift` (D-059) | — | No: a problem becomes a Status-issue comment |
+| `drift` | Run workflow / `/sealedstack drift` any time; hourly right after `status` only when the repository variable `SEALEDSTACK_DRIFT_ENABLED` is `true` (D-059) | — | No: a problem becomes a Status-issue comment |
 | `restore` | Run workflow | `production` + typed name | Yes |
 | `drill` | Weekly + Run workflow | — | Throwaway DB only |
 
@@ -398,7 +398,8 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 |---|---|
 | Infra CI file name | `.github/workflows/sealedstack.yml` (GitHub), `.gitlab-ci.yml` include (GitLab) |
 | Approval environment name | `production` |
-| Status/drift schedule | Hourly (minute 17); restore drill weekly, Sunday 03:00 UTC |
+| Status schedule | Hourly (minute 17); restore drill weekly, Sunday 03:00 UTC |
+| Scheduled drift | Off. The hourly run does `status` only; set the repository variable `SEALEDSTACK_DRIFT_ENABLED=true` to add `drift` right after it (D-059). Manual `drift` is always available |
 | Backup alert | Newest backup older than 2× its schedule |
 | Version-age warning | > 6 months, or any applicable advisory |
 | Comment command prefix | `/sealedstack` |

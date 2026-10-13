@@ -75,7 +75,7 @@ on:
   issue_comment:
     types: [created]
   schedule:
-    - cron: "17 * * * *"          # hourly status + drift
+    - cron: "17 * * * *"          # hourly status (+ drift if SEALEDSTACK_DRIFT_ENABLED=true)
 jobs:
   sealedstack:
     uses: <owner>/sealedstack/.github/workflows/infra.yml@v<version>
@@ -182,6 +182,14 @@ reports no changes.
 When the first run is green, **close TCP 22 at the provider firewall** and delete
 `SERVER_IP_SERVER_1` and `ROOT_PASSWORD_SERVER_1` from Bitwarden. The server is
 reached only by its tailnet name from then on.
+
+## Optional: scheduled drift detection
+
+The hourly run always does `status`. To add drift detection right after it, set the
+repository variable `SEALEDSTACK_DRIFT_ENABLED` to `true` (Settings, Secrets and
+variables, Actions, Variables). It is off by default. You can run `drift` by hand
+at any time (Run workflow, or `/sealedstack drift`) whatever the variable says
+([D-059](decisions.md)).
 
 ## What next
 

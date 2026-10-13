@@ -89,9 +89,65 @@ def test_push_elsewhere_or_without_config_or_without_relevant_files_runs_nothing
     assert infraci.resolve(ev("push"), f, c).command == "apply"  # no file list in the payload: apply
 
 
-def test_schedule_runs_status_then_drift(tmp_path):
+def test_schedule_runs_status_without_drift_when_the_switch_is_unset(tmp_path):
+    # D-059: scheduled drift is off by default; status is always on
     res = infraci.resolve(ev("schedule"), make_forge(), make_config(tmp_path))
+    assert (res.command, res.follow, res.write) == ("status", [], False)
+    assert "SEALEDSTACK_DRIFT_ENABLED" in res.note and res.outputs()["follow"] == ""
+    off = infraci.resolve(ev("schedule"), make_forge(), make_config(tmp_path), drift=False)
+    assert off.follow == []
+
+
+def test_schedule_runs_status_then_drift_when_the_switch_is_true(tmp_path):
+    res = infraci.resolve(ev("schedule"), make_forge(), make_config(tmp_path), drift=True)
     assert (res.command, res.follow, res.write) == ("status", ["drift"], False)
+
+
+def test_the_switch_is_read_from_the_environment_variable():
+    assert infraci.drift_enabled({"SEALEDSTACK_DRIFT_ENABLED": "true"})
+    assert infraci.drift_enabled({"SEALEDSTACK_DRIFT_ENABLED": " True "})
+    for value in ("", "false", "1", "yes"):
+        assert not infraci.drift_enabled({"SEALEDSTACK_DRIFT_ENABLED": value})
+    assert not infraci.drift_enabled({})
+
+
+def test_ci_resolve_honours_the_switch_end_to_end(tmp_path):
+    import json as _json
+
+    config = make_config(tmp_path)
+    event_path = tmp_path / "event.json"
+    event_path.write_text("{}")
+    base = {
+        "SEALEDSTACK_CONFIG": str(tmp_path / "config"), "GITHUB_EVENT_PATH": str(event_path),
+        "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": SLUG, "GITHUB_REF": "refs/heads/main",
+        "GITHUB_SHA": SHA, "GITHUB_ACTOR": "github-actions", "SEALEDSTACK_CODE_ROOT": str(tmp_path),
+    }
+    results = {}
+    for label, extra in (("unset", {}), ("true", {"SEALEDSTACK_DRIFT_ENABLED": "true"})):
+        out = tmp_path / f"out-{label}"
+        out.write_text("")
+        rc = infraci.main(["resolve", "--output", str(out)], env={**base, **extra}, forge=make_forge())
+        assert rc == 0
+        results[label] = dict(line.split("=", 1) for line in out.read_text().splitlines() if "=" in line)
+    assert (results["unset"]["command"], results["unset"]["follow"]) == ("status", "")
+    assert (results["true"]["command"], results["true"]["follow"]) == ("status", "drift")
+    assert config  # the config directory was valid for both runs
+
+
+def test_infra_workflow_passes_the_switch_to_the_resolve_step():
+    doc = yaml.safe_load((REPO / ".github" / "workflows" / "infra.yml").read_text(encoding="utf-8"))
+    step = next(s for s in doc["jobs"]["resolve"]["steps"] if s.get("id") == "resolve")
+    assert step["env"]["SEALEDSTACK_DRIFT_ENABLED"] == "${{ vars.SEALEDSTACK_DRIFT_ENABLED }}"
+    assert "-e SEALEDSTACK_DRIFT_ENABLED" in step["run"]
+
+
+def test_manual_drift_does_not_depend_on_the_switch(tmp_path):
+    f, c = make_forge(), make_config(tmp_path)
+    for drift in (False, True):
+        res = infraci.resolve(ev("workflow_dispatch", actor="writer", command="drift"), f, c, drift=drift)
+        assert (res.command, res.follow) == ("drift", [])
+        comment = infraci.resolve(comment_event("/sealedstack drift", actor="writer"), f, c, drift=drift)
+        assert comment.command == "drift"
 
 
 def test_dispatch_runs_the_chosen_command_including_plan_and_apply(tmp_path):
@@ -341,7 +397,7 @@ def test_a_failed_apply_is_reported_on_the_pr(tmp_path):
 def test_status_updates_the_status_issue_and_comments_on_problems(tmp_path):
     f, c = make_forge(), make_config(tmp_path)
     event = ev("schedule", actor="github-actions")
-    res = infraci.resolve(event, f, c)
+    res = infraci.resolve(event, f, c, drift=True)
 
     class H:
         def __init__(self, id, status, detail=""):
@@ -355,6 +411,16 @@ def test_status_updates_the_status_issue_and_comments_on_problems(tmp_path):
     assert number and "my-infra status" in f.issues[number]["body"] and "hello.example.com" in f.issues[number]["body"]
     assert any("cloudflare.token" in cm.body for cm in f.comments[(SLUG, number)])
     assert calls == [["drift"]]  # the follow-up runs through the engine
+
+
+def test_status_alone_runs_no_drift_follow_up_when_the_switch_is_off(tmp_path):
+    f, c = make_forge(), make_config(tmp_path)
+    event = ev("schedule", actor="github-actions")
+    res = infraci.resolve(event, f, c)
+    calls = []
+    assert infraci.execute(res, event, f, c, runner_for(calls=calls), status_fn=lambda: (c, "0.6.0", [])) == 0
+    assert calls == []  # status ran natively; no drift was started
+    assert statusissue.issue_number(f, SLUG)
 
 
 def test_drift_is_a_comment_on_the_status_issue_not_a_failure(tmp_path):

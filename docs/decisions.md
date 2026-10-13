@@ -246,7 +246,7 @@ GitHub environments with required reviewers are still used where the plan suppor
 **Why:** The App's installation-token minting isn't built; a narrow token is enough for a single owner and doesn't block the live run.
 
 ### D-059 — `drift.yml` stays, off by default · 2026-10-13 · accepted
-**Decision:** The scheduled drift workflow runs only when the infra repo sets `SEALEDSTACK_DRIFT_ENABLED=true`. `drift` is also a manual command in the infra workflow's dispatch list.
+**Decision:** Scheduled drift runs only when the infra repo sets the repository variable `SEALEDSTACK_DRIFT_ENABLED=true`. That one switch gates both the `drift.yml` workflow and the drift step that follows `status` in the hourly scheduled run of `infra.yml`; `status` itself always runs. `drift` is also a manual command (Run workflow and `/sealedstack drift`), which never depends on the switch.
 **Why:** Drift checks are useful but not needed for the first live run, and a workflow that fails on repos without config is noise.
 
 ### D-060 — Released versions are recorded as GitHub Deployments in the app repo · 2026-10-13 · accepted (refines D-032 and finding F7)

@@ -182,7 +182,7 @@ on:
   issue_comment:
     types: [created]
   schedule:
-    - cron: "17 * * * *"          # hourly status + drift
+    - cron: "17 * * * *"          # hourly status (+ drift if SEALEDSTACK_DRIFT_ENABLED=true)
 jobs:
   sealedstack:
     uses: __OWNER__/sealedstack/.github/workflows/infra.yml@v__VERSION__

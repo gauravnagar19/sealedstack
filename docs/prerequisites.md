@@ -202,6 +202,7 @@ Setup creates these in your infra repo. You edit them through pull requests.
   server never needs repository access ([D-024](decisions.md)). The infra repo
   publishes the deploy settings (compose ID, CI identity) to each app repo
   ([D-023](decisions.md)).
-- **Drift job:** the scheduled drift check reads the same secrets as `check`. Use
+- **Drift job:** scheduled drift is off unless the repository variable
+  `SEALEDSTACK_DRIFT_ENABLED` is `true` (D-059). When on, it reads the same secrets as `check`. Use
   a **separate** machine account for it if you want to keep app CI's access to
   `prod` only.

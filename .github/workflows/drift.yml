@@ -4,7 +4,8 @@ name: drift
 # account / tokens with read access to `infra` (do not reuse the app-CI account,
 # which reads `prod` only — spec §6). It runs only when the repository variable
 # SEALEDSTACK_DRIFT_ENABLED is "true" (this repo ships no real config; an infra
-# repo gets drift detection from infra.yml's scheduled run instead).
+# repo gets drift detection from infra.yml's scheduled run instead, which is
+# gated by the same variable).
 #
 # The runner joins the tailnet as tag:ci with workload identity (OIDC) first,
 # using the repository variables SEALEDSTACK_TS_OAUTH_CLIENT_ID and

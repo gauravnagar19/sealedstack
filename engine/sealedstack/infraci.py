@@ -12,7 +12,7 @@
 |---------------------------|----------------------------------------------------------|
 | pull_request              | ``plan`` (``check`` on the Setup PR)                     |
 | push to the default branch| ``apply`` (waits for ``/sealedstack approve`` if needed) |
-| schedule                  | ``status``, then drift detection                         |
+| schedule                  | ``status``, then drift only if SEALEDSTACK_DRIFT_ENABLED |
 | issue_comment             | the ``/sealedstack <cmd>`` in the comment               |
 | workflow_dispatch         | the chosen command                                       |
 
@@ -165,12 +165,24 @@ def _touches_relevant_files(payload: dict) -> Optional[bool]:
     return False if saw_files or len(commits) < 20 else None
 
 
+def drift_enabled(env: Mapping[str, str]) -> bool:
+    """The scheduled drift switch (D-059): the repository variable ``SEALEDSTACK_DRIFT_ENABLED``."""
+    return str(env.get("SEALEDSTACK_DRIFT_ENABLED", "")).strip().lower() == "true"
+
+
 def resolve(
     event: Event,
     forge: forge_mod.Forge,
     config: Optional[config_mod.Config],
+    *,
+    drift: bool = False,
 ) -> Resolution:
-    """Map an event to the command to run (or nothing), enforcing who may run it."""
+    """Map an event to the command to run (or nothing), enforcing who may run it.
+
+    ``drift`` is the scheduled-drift switch (``drift_enabled(env)``): the schedule
+    always runs ``status`` and adds drift detection only when it is on. A manual
+    ``drift`` (dispatch or comment) never depends on it.
+    """
     approvers = config.approvers() if config else []
     name = event.name
 
@@ -206,7 +218,12 @@ def resolve(
     if name == "schedule":
         if config is None:
             return _skip("no config/ yet")
-        return Resolution(command="status", follow=["drift"], note="scheduled: status, then drift detection")
+        if drift:
+            return Resolution(command="status", follow=["drift"], note="scheduled: status, then drift detection")
+        return Resolution(
+            command="status",
+            note="scheduled: status (scheduled drift is off; set the repository variable SEALEDSTACK_DRIFT_ENABLED=true to turn it on)",
+        )
 
     if name == "issue_comment":
         return _resolve_comment(event, forge, config, approvers)
@@ -519,7 +536,7 @@ def main(argv: Optional[list] = None, *, env: Optional[Mapping[str, str]] = None
             return 1
 
     if verb == "resolve":
-        res = resolve(event, forge, config)
+        res = resolve(event, forge, config, drift=drift_enabled(env))
         print(f"sealedstack ci: {res.note or 'nothing to do'}", file=sys.stderr)
         if output_file:
             write_outputs(output_file, res.outputs())

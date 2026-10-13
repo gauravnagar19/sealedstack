@@ -132,7 +132,7 @@ given, the command comes from the event:
 |---|---|
 | Pull request opened or updated | `plan`, posted (and updated in place) as a PR comment; on the Setup PR, `check` updates the checklist |
 | Push to `main` (a merge) | `apply`. If no approver has agreed yet it posts "waiting for `/sealedstack approve`" on the PR and exits successfully; a direct push is refused (D-052) |
-| Schedule (hourly) | `status` (updates the Status issue), then drift detection (a problem becomes a Status-issue comment) |
+| Schedule (hourly) | `status` (updates the Status issue); then drift detection, a problem becoming a Status-issue comment, only when the repository variable `SEALEDSTACK_DRIFT_ENABLED` is `true` (D-059) |
 | Comment `/sealedstack <cmd>` | Writers can run `check`, `plan`, `status`, `drill`, `drift`; approvers can run `up`, `apply` and `approve`. After a merge, `approve` triggers the `apply` |
 | Run workflow | The chosen command, including `plan`, `apply` and `drift` (a read-only check, no approval) |
 
