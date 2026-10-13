@@ -47,7 +47,7 @@ def test_untouched_sections_pass_through_and_rules_appended(tmp_path):
     assert data["groups"]["group:admins"] == ["alice@example.com"]
     assert data["ssh"][0]["users"] == ["root"]
     assert data["nodeAttrs"][0]["attr"] == ["funnel"]
-    assert any(g["src"] == ["tag:ci"] and g["ip"] == ["tcp:3000"] for g in data["grants"])
+    assert any(g["src"] == ["tag:ci"] and g["ip"] == ["tcp:22", "tcp:3000"] for g in data["grants"])
     assert data["tagOwners"]["tag:server"] == ["autogroup:admin"]
 
 

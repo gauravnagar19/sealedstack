@@ -78,3 +78,18 @@ def test_sealedstack_block_is_complete():
     assert block["tagOwners"]["tag:ci"] == ["autogroup:admin"]
     assert block["acls"]
     assert block["tests"]
+
+
+def test_tag_ci_reaches_ssh_and_the_dokploy_api_and_nothing_else():
+    """D-041: tag:ci -> tag:server on TCP 22 and 3000; the policy tests pin it."""
+    m = load_mesh_policy()
+    ci_acls = [r for r in m.sealedstack_acls() if r["src"] == ["tag:ci"]]
+    assert len(ci_acls) == 1 and ci_acls[0]["dst"] == ["tag:server:22", "tag:server:3000"]
+    ci_grants = [r for r in m.sealedstack_grants() if r["src"] == ["tag:ci"]]
+    assert len(ci_grants) == 1 and ci_grants[0]["ip"] == ["tcp:22", "tcp:3000"]
+    tests = m.sealedstack_tests()
+    assert {"src": ["tag:ci"], "accept": ["tag:server:22"]} in tests
+    assert {"src": ["tag:ci"], "accept": ["tag:server:3000"]} in tests
+    assert {"src": ["tag:ci"], "deny": ["tag:server:5432"]} in tests
+    # never the old 'CI may not SSH' assertion
+    assert {"src": ["tag:ci"], "deny": ["tag:server:22"]} not in tests

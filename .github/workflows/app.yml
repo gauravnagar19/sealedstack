@@ -318,6 +318,16 @@ jobs:
           done
           [ "${missing}" -eq 0 ] || exit 1
 
+      - name: Require the Tailscale trust settings
+        env:
+          CLIENT_ID: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
+          AUDIENCE: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}
+        run: |
+          if [ -z "$CLIENT_ID" ] || [ -z "$AUDIENCE" ]; then
+            echo "::error::Tailscale workload identity is not configured for this repository. Set providers.mesh_tailscale.oauth_client_id and audience in the infra repo's config/stack.yaml (sealedstack publishes them as SEALEDSTACK_TS_OAUTH_CLIENT_ID / SEALEDSTACK_TS_AUDIENCE after an apply), or set those two repository variables by hand."
+            exit 1
+          fi
+
       - name: Join the tailnet as tag:ci
         uses: tailscale/github-action@v3
         with:

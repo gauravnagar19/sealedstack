@@ -94,6 +94,78 @@ jobs:
             exit 1
           fi
 
+      # D-041/G14: the runner joins the tailnet as tag:ci before any step that
+      # reaches a server or the Dokploy API (SSH 22, panel 3000). Servers are
+      # addressed by their MagicDNS name (<server>.<mesh.tailnet>), so the engine
+      # container runs with host networking to resolve it.
+      - name: Tailscale trust (OIDC workload identity, else the OAuth client)
+        id: ts
+        if: ${{ !contains(fromJSON('["setup","add-app"]'), inputs.command) }}
+        env:
+          VAR_CLIENT_ID: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
+          VAR_AUDIENCE: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          # OIDC settings are not secret: repository variables, else config/stack.yaml.
+          cfg="$(python3 - <<'PY'
+          import yaml
+          try:
+              stack = yaml.safe_load(open("config/stack.yaml", encoding="utf-8")) or {}
+          except OSError:
+              stack = {}
+          mesh = (stack.get("providers") or {}).get("mesh_tailscale") or {}
+          print(mesh.get("oauth_client_id") or "", mesh.get("audience") or "")
+          PY
+          )"
+          cfg_id="${cfg%% *}"; cfg_aud="${cfg#* }"
+          client_id="${VAR_CLIENT_ID:-$cfg_id}"
+          audience="${VAR_AUDIENCE:-$cfg_aud}"
+          if [ -n "$client_id" ] && [ -n "$audience" ]; then
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+            echo "client_id=$client_id" >> "$GITHUB_OUTPUT"
+            echo "audience=$audience" >> "$GITHUB_OUTPUT"
+            echo "Tailscale: joining with workload identity federation (OIDC)."
+          elif [ -n "$BWS_ACCESS_TOKEN" ]; then
+            echo "mode=secret" >> "$GITHUB_OUTPUT"
+            echo "::notice::Tailscale OIDC trust is not configured (providers.mesh_tailscale.oauth_client_id/audience); falling back to the OAuth client secret from the secret source."
+          else
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+            echo "::warning::Tailscale trust is not configured and no secret source token is set; this job cannot reach servers or Dokploy."
+          fi
+
+      - name: Read the Tailscale OAuth client (fallback)
+        id: ts_secret
+        if: steps.ts.outputs.mode == 'secret'
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Masked in the log, written to this step's outputs only.
+          for pair in "tailscale_oauth_client_id client_id" "tailscale_oauth_client_secret client_secret"; do
+            set -- $pair
+            docker run --rm -v "$PWD:/infra" -w /infra -v "$GITHUB_OUTPUT:/ghout" \
+              -e SEALEDSTACK_CONFIG=/infra/config -e BWS_ACCESS_TOKEN \
+              "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
+              debug ci-export "$1" --name "$2" --output /ghout
+          done
+
+      - name: Join the tailnet as tag:ci (OIDC)
+        if: steps.ts.outputs.mode == 'oidc'
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ steps.ts.outputs.client_id }}
+          audience: ${{ steps.ts.outputs.audience }}
+          tags: tag:ci
+
+      - name: Join the tailnet as tag:ci (OAuth client fallback)
+        if: steps.ts.outputs.mode == 'secret'
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ steps.ts_secret.outputs.client_id }}
+          oauth-secret: ${{ steps.ts_secret.outputs.client_secret }}
+          tags: tag:ci
+
       - name: Approval gate (D-052)
         if: >-
           contains(fromJSON('["apply","up","add-server","restore","server sync"]'), inputs.command)
@@ -123,7 +195,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          docker run --rm -i \
+          docker run --rm -i --network host \
             -v "$PWD:/infra" -w /infra \
             -e SEALEDSTACK_CONFIG=/infra/config \
             -e SEALEDSTACK_WORKDIR=/infra/.sealedstack \

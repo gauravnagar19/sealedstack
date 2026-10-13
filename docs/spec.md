@@ -431,7 +431,7 @@ Every command is `sealedstack <noun> <verb>`. It is the same vocabulary as a wor
 | A gated hostname exposed by mistake | The catch-all Access app on `*.<domain>`, and the connector validates the Access token (`originRequest.access.required`) |
 | Unauthenticated app requests (public apps) | In-app auth (Clerk); Turnstile on sign-up (v0.2+) |
 | Stolen laptop | SSH key held in the Bitwarden agent (locked vault); `BWS_ACCESS_TOKEN` revocable; Tailscale device revocable |
-| CI compromise | `tag:ci` can reach only port 3000 (the Dokploy API); its machine account reads `prod` only |
+| CI compromise | `tag:ci` can reach only ports 22 (SSH, key required) and 3000 (the Dokploy API) (D-041); its machine account reads `prod` only |
 | Leaked secrets in git | No secret values in config; `.build/` gitignored; gitleaks pre-commit hook |
 | Supply chain | All images and tools pinned to exact versions; Renovate PRs (roadmap) |
 | Losing the state file | Encrypted with OpenTofu state encryption (passphrase in Bitwarden) and stored in R2 |

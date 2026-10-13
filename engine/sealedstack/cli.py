@@ -78,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  app add               onboard an app\n"
             "  db restore <app>      restore a database backup\n"
             "  db drill <app>        restore into a throwaway database and check it\n"
-            "  debug render|publish|providers|onboard   internals for troubleshooting\n"
+            "  debug render|publish|providers|onboard|ci-export   internals for troubleshooting\n"
             "\n"
             "run `sealedstack <command> --help` for a command's options.\n"
         ),
@@ -110,7 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     debug = _leaf(sub, "debug", "internals for troubleshooting")
     debug_sub = debug.add_subparsers(dest="verb", title="debug commands")
-    for verb in ("render", "publish", "providers", "onboard"):
+    for verb in ("render", "publish", "providers", "onboard", "ci-export"):
         _leaf(debug_sub, verb, verb).add_argument("extras", nargs="*")
 
     db = _leaf(sub, "db", "databases")
@@ -142,6 +142,7 @@ PASSTHROUGH = {
     "debug publish": 0,
     "debug providers": 0,
     "debug onboard": 0,
+    "debug ci-export": 0,
     "restore": 1,
     "drill": 1,
     "db restore": 1,
@@ -334,6 +335,8 @@ def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
         return Action(command, argv=[[python, _script(code_root, "registry.py"), "list", *extras]])
     if command == "debug onboard":
         return Action(command, argv=[[python, "-m", "sealedstack.onboard", *extras]])
+    if command == "debug ci-export":
+        return Action(command, argv=[[python, "-m", "sealedstack.ciexport", *extras]])
     return Action(command)
 
 

@@ -2,8 +2,14 @@ name: drift
 
 # Scheduled `tofu plan` against the real accounts. Requires its OWN machine
 # account / tokens with read access to `infra` (do not reuse the app-CI account,
-# which reads `prod` only — spec §6). Configure these repository secrets:
-#   TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET  (Tailscale OAuth client, tag:ci)
+# which reads `prod` only — spec §6). It runs only when the repository variable
+# SEALEDSTACK_DRIFT_ENABLED is "true" (this repo ships no real config; an infra
+# repo gets drift detection from infra.yml's scheduled run instead).
+#
+# The runner joins the tailnet as tag:ci with workload identity (OIDC) first,
+# using the repository variables SEALEDSTACK_TS_OAUTH_CLIENT_ID and
+# SEALEDSTACK_TS_AUDIENCE (D-041); only if those are unset does it fall back to
+# the OAuth client secrets TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET. Also configure:
 #   BWS_ACCESS_TOKEN, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
 #   state_passphrase
 on:
@@ -14,15 +20,40 @@ on:
 permissions:
   contents: read
   issues: write
+  id-token: write
 
 jobs:
   plan:
     name: tofu plan (edge + platform)
+    if: ${{ vars.SEALEDSTACK_DRIFT_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Join the tailnet as tag:ci
+      - name: Tailscale trust
+        id: ts
+        env:
+          CLIENT_ID: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
+          AUDIENCE: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}
+        run: |
+          if [ -n "$CLIENT_ID" ] && [ -n "$AUDIENCE" ]; then
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+            echo "Tailscale: joining with workload identity federation (OIDC)."
+          else
+            echo "mode=secret" >> "$GITHUB_OUTPUT"
+            echo "::notice::Tailscale OIDC trust is not configured; falling back to the OAuth client secret."
+          fi
+
+      - name: Join the tailnet as tag:ci (OIDC)
+        if: steps.ts.outputs.mode == 'oidc'
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
+          audience: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}
+          tags: tag:ci
+
+      - name: Join the tailnet as tag:ci (OAuth client fallback)
+        if: steps.ts.outputs.mode == 'secret'
         uses: tailscale/github-action@v3
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}

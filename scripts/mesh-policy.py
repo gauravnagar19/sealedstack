@@ -16,7 +16,7 @@ block for manual pasting and exits 0.
 F1: a default tailnet still carries the allow-all rule
 ``{"src": ["*"], "dst": ["*"], "ip": ["*"]}``. That lets any device, including
 ``tag:ci``, reach every port on a server, so Tailscale rejects sealedstack's
-deny-22 test and the servers are not actually sealed. When such a broad rule is
+``tag:ci`` deny-5432 test and the servers are not actually sealed. When such a broad rule is
 present this script **refuses** with a clear message. Set
 ``mesh.narrow_allow_all: true`` to let it rewrite the exact ``* -> *`` rule to
 ``autogroup:member -> autogroup:member:*`` (members' own devices only; tagged
@@ -66,7 +66,8 @@ NARROWED_DST = "autogroup:member:*"
 def sealedstack_acls() -> list[dict]:
     return [
         {"action": "accept", "src": ["autogroup:admin"], "dst": ["tag:server:*"]},
-        {"action": "accept", "src": ["tag:ci"], "dst": ["tag:server:3000"]},
+        # D-041: CI bootstraps and syncs servers (SSH) and calls the Dokploy API.
+        {"action": "accept", "src": ["tag:ci"], "dst": ["tag:server:22", "tag:server:3000"]},
         {"action": "accept", "src": ["tag:server"], "dst": ["tag:server:5432"]},
     ]
 
@@ -75,7 +76,7 @@ def sealedstack_grants() -> list[dict]:
     # Grants imply accept; the port belongs in `ip`, not in `dst` (grants-syntax).
     return [
         {"src": ["autogroup:admin"], "dst": ["tag:server"], "ip": ["*"]},
-        {"src": ["tag:ci"], "dst": ["tag:server"], "ip": ["tcp:3000"]},
+        {"src": ["tag:ci"], "dst": ["tag:server"], "ip": ["tcp:22", "tcp:3000"]},
         {"src": ["tag:server"], "dst": ["tag:server"], "ip": ["tcp:5432"]},
     ]
 
@@ -83,8 +84,10 @@ def sealedstack_grants() -> list[dict]:
 def sealedstack_tests() -> list[dict]:
     return [
         {"src": ["autogroup:admin"], "accept": ["tag:server:22"]},
-        {"src": ["tag:ci"], "deny": ["tag:server:22"]},
+        {"src": ["tag:ci"], "accept": ["tag:server:22"]},
         {"src": ["tag:ci"], "accept": ["tag:server:3000"]},
+        # CI must not reach anything else on a server (e.g. the database port).
+        {"src": ["tag:ci"], "deny": ["tag:server:5432"]},
     ]
 
 
@@ -126,7 +129,7 @@ def broad_rules(policy: dict) -> list[tuple[str, dict]]:
     Covers the exact allow-all rule (``src * -> dst *``) and any other rule that
     accepts to ``*`` / ``autogroup:*``. Such a rule lets any device reach every
     port on a sealedstack server, so the tailnet is not actually sealed and
-    Tailscale may reject sealedstack's ``tag:ci`` deny-22 test.
+    Tailscale may reject sealedstack's ``tag:ci`` deny-5432 test.
     """
     found: list[tuple[str, dict]] = []
     for key in ("acls", "grants"):
@@ -269,7 +272,7 @@ def print_broad_refusal(broad: list[tuple[str, dict]], source: pathlib.Path) -> 
         "             every port on sealedstack's servers (a default allow-all\n"
         "             tailnet). sealedstack will not manage a policy that leaves\n"
         "             `tag:server` wide open: any device, including `tag:ci`, could\n"
-        "             reach port 22 and the tailnet would reject the deny-22 test.\n"
+        "             reach every port and the tailnet would reject the deny-5432 test.\n"
         "\n"
         "             Offending rule(s):",
         file=sys.stderr,
@@ -362,7 +365,7 @@ def main() -> int:
         return 1
 
     # F1: a default allow-all tailnet makes sealedstack's servers unreachable to
-    # lock down and makes Tailscale reject the deny-22 test. Refuse (or narrow on
+    # lock down and makes Tailscale reject the tag:ci deny-5432 test. Refuse (or narrow on
     # request) before merging.
     broad = broad_rules(policy)
     if broad and policy_mode != "unmanaged":

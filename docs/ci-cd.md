@@ -28,7 +28,7 @@ git tag v1.2.3 && git push --tags
 app CI (GitHub Actions, GitLab, …)
         │  joins the tailnet as tag:ci
         ▼
-tailscale0 ──► <control-server>:3000   (Dokploy API; the only port tag:ci may reach)
+tailscale0 ──► <control-server>:3000   (Dokploy API; with 22 for SSH, the only ports tag:ci may reach)
         │
         ▼
 POST /api/compose.deploy { composeId }
@@ -65,11 +65,14 @@ owns the whole ACL ([D-014](decisions.md),
 the one grant CI gets is:
 
 ```json
-{ action: "accept", src: ["tag:ci"], dst: ["tag:server:3000"] },
+{ action: "accept", src: ["tag:ci"], dst: ["tag:server:22", "tag:server:3000"] },
 ```
 
-So `tag:ci` can reach port 3000 on a server and nothing else. Add no other
-grants for CI.
+So `tag:ci` can reach ports 22 and 3000 on a server and nothing else (D-041:
+port 22 is for the infra repo's own jobs, which bootstrap and sync servers over
+SSH with an authorised key; port 3000 is the Dokploy API). The policy tests also
+assert that `tag:ci` is denied everything else, for example the database port
+5432. Add no other grants for CI.
 
 ### The OAuth client
 
