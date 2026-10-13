@@ -125,11 +125,34 @@ def test_setup_opens_the_pr_and_posts_the_living_checklist(tmp_path):
     assert "STATE_PASSPHRASE (≥ 16 chars)" in comment
     assert "`SERVER_IP_SERVER_1`" in comment and "`ROOT_PASSWORD_SERVER_1`" in comment and "port 22" in comment
     assert "Netcup: open TCP 22 temporarily" not in comment or "docs/netcup-firewall.md" in comment
-    assert "Create \"sealedstack-bot\" (1 click)" in comment and "github.com/settings/apps/new?" in comment
+    # D-058: the bot identity is a fine-grained token, not an App
+    assert "fine-grained token `GH_TOKEN`" in comment and "github.com/settings/personal-access-tokens/new?" in comment
+    assert "Contents: read and write" in comment and "Pull requests: read and write" in comment
+    assert "Variables: read and write" in comment and "Environments: read and write" in comment
+    assert "github.com/settings/apps/new" not in comment and "GitHub App" not in comment
     assert "Optional: Clerk keys" in comment and "not needed yet" in comment
     ready, total = map(int, re.search(r"Progress: (\d+) of (\d+) ready", comment).groups())
     assert 0 < ready < total and ready >= 2  # config + version pins are already green
     assert "Merge this PR when everything above is ✅" in comment
+
+
+def test_the_app_link_is_hidden_behind_experimental_app(tmp_path):
+    f = new_forge()
+    rc, _ = run_setup(tmp_path, f, argv=[*ARGS, "--experimental-app"])
+    assert rc == 0
+    comment = f.comments[(SLUG, f.prs[0]["number"])][0].body
+    assert "github.com/settings/apps/new?" in comment and "not used yet (D-058)" in comment
+    assert "fine-grained token `GH_TOKEN`" in comment  # the token stays the default
+
+
+def test_the_token_link_prefills_the_fine_grained_form():
+    from sealedstack import botpermissions
+
+    url = botpermissions.token_url("you/my-infra")
+    assert url.startswith("https://github.com/settings/personal-access-tokens/new?")
+    assert "name=sealedstack-bot" in url and "target_name=you" in url and "expires_in=90" in url
+    assert "contents=write" in url and "pull_requests=write" in url and "issues=write" in url
+    assert "metadata=read" in url and "administration" not in url  # optional permission is not pre-filled
 
 
 def test_the_bot_link_prefills_the_app_registration():

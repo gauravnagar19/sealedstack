@@ -895,7 +895,32 @@ def check_forge(ctx: CheckContext) -> list[Result]:
     return _check_github(ctx)
 
 
+def _forge_repos(ctx: CheckContext) -> list[tuple[str, str]]:
+    """(repo, kind) for the infra repo (when known) and every onboarded app repo."""
+    repos: list[tuple[str, str]] = []
+    infra = str(ctx.env.get("GITHUB_REPOSITORY") or "")
+    if infra:
+        repos.append((infra, "infra"))
+    for _name, repo in _app_repos(ctx.config.apps):
+        if all(repo != known for known, _kind in repos):
+            repos.append((repo, "app"))
+    return repos
+
+
+# Harmless reads: (permission, path, applies to). A read that returns 403 means the
+# token lacks that permission on the repository. Write levels cannot be read from
+# the API (a fine-grained token does not describe itself), so they are not probed.
+_GITHUB_READ_PROBES = (
+    ("Contents", "/repos/{repo}/contents/", ("infra", "app")),
+    ("Pull requests", "/repos/{repo}/pulls?state=open&per_page=1", ("infra", "app")),
+    ("Issues", "/repos/{repo}/issues?per_page=1", ("infra", "app")),
+    ("Variables", "/repos/{repo}/actions/variables?per_page=1", ("app",)),
+)
+
+
 def _check_github(ctx: CheckContext) -> list[Result]:
+    from . import botpermissions
+
     token = ctx.env.get("GH_TOKEN") or ctx.env.get("GITHUB_TOKEN") or ""
     if not token:
         return [
@@ -904,7 +929,7 @@ def _check_github(ctx: CheckContext) -> list[Result]:
                 "forge",
                 "skip",
                 detail="GH_TOKEN/GITHUB_TOKEN is not set",
-                fix="add the bot identity token to the secret source",
+                fix="add the bot identity: a fine-grained personal access token as the repository secret GH_TOKEN (D-058)",
                 docs=DOCS_FORGE,
             )
         ]
@@ -914,55 +939,103 @@ def _check_github(ctx: CheckContext) -> list[Result]:
         "X-GitHub-Api-Version": "2022-11-28",
     }
     results: list[Result] = []
+    kind = botpermissions.token_kind(token)
+    if kind == "classic":
+        results.append(
+            Result(
+                "forge.token_type", "forge", "warn",
+                detail="GH_TOKEN is a classic personal access token: it works, but it reaches every repository you can",
+                fix="replace it with a fine-grained token limited to the infra repo and the app repos "
+                    f"({botpermissions.short_list()})",
+                docs=DOCS_FORGE,
+            )
+        )
     try:
         response = ctx.http.request("GET", f"{GITHUB_API}/user", headers=headers)
         data = _json_or_none(response)
         ok = response.status == 200
-        results.append(
-            Result(
-                "forge.identity",
-                "forge",
-                "ok" if ok else "fail",
-                detail=f"authenticated as {data.get('login')}" if ok else f"identity check failed (HTTP {response.status})",
-                fix="" if ok else "check the GitHub token",
-                docs=DOCS_FORGE,
-            )
-        )
-    except Exception as exc:  # noqa: BLE001
-        return [Result("forge.identity", "forge", "fail", detail=str(exc), docs=DOCS_FORGE)]
-
-    for _name, repo in _app_repos(ctx.config.apps):
-        pr_ok = False
-        var_ok = False
-        try:
-            pr_response = ctx.http.request("GET", f"{GITHUB_API}/repos/{repo}/pulls?state=open&per_page=1", headers=headers)
-            pr_ok = pr_response.status == 200
-            var_response = ctx.http.request("GET", f"{GITHUB_API}/repos/{repo}/actions/variables?per_page=1", headers=headers)
-            var_ok = var_response.status == 200
-        except Exception as exc:  # noqa: BLE001
-            results.append(
-                Result(f"forge.repo.{repo}", "forge", "fail", detail=str(exc), fix="check network access", docs=DOCS_FORGE)
-            )
-            continue
-        if pr_ok and var_ok:
-            results.append(Result(f"forge.repo.{repo}", "forge", "ok", detail="can read PRs and Actions variables"))
-        else:
-            missing = []
-            if not pr_ok:
-                missing.append("pull_requests")
-            if not var_ok:
-                missing.append("variables")
+        # The built-in Actions token is not a user: /user is refused, so skip the
+        # identity line for it (the bot row explains the consequence).
+        if ok or kind != "builtin":
             results.append(
                 Result(
-                    f"forge.repo.{repo}",
+                    "forge.identity",
                     "forge",
-                    "fail",
-                    detail=f"bot lacks: {', '.join(missing)}",
-                    fix="install the GitHub App on this repo with pull requests and variables (write) permissions",
+                    "ok" if ok else "fail",
+                    detail=f"authenticated as {data.get('login')}" if ok else f"identity check failed (HTTP {response.status})",
+                    fix="" if ok else "check the GitHub token (expired, revoked or mistyped)",
                     docs=DOCS_FORGE,
                 )
             )
+    except Exception as exc:  # noqa: BLE001
+        return results + [Result("forge.identity", "forge", "fail", detail=str(exc), docs=DOCS_FORGE)]
+
+    for repo, repo_kind in _forge_repos(ctx):
+        results.append(_check_github_repo(ctx, headers, repo, repo_kind))
     return results
+
+
+def _check_github_repo(ctx: CheckContext, headers: Mapping[str, str], repo: str, repo_kind: str) -> Result:
+    from . import botpermissions
+
+    rid = f"forge.repo.{repo}"
+    try:
+        head = ctx.http.request("GET", f"{GITHUB_API}/repos/{repo}", headers=headers)
+        if head.status in (403, 404):
+            return Result(
+                rid, "forge", "fail",
+                detail=f"the token cannot see {repo} (HTTP {head.status})",
+                fix=f"add {repo} under Repository access of the fine-grained token (or fix the repo name in apps.yaml)",
+                docs=DOCS_FORGE,
+            )
+        role = _json_or_none(head).get("permissions")
+        if isinstance(role, dict) and role.get("push") is False:
+            return Result(
+                rid, "forge", "fail",
+                detail=f"the token's user has no push access to {repo}",
+                fix="the account that owns the token needs write access to this repository",
+                docs=DOCS_FORGE,
+            )
+        missing: list[str] = []
+        proven: list[str] = []
+        for permission, path, applies in _GITHUB_READ_PROBES:
+            if repo_kind not in applies:
+                continue
+            response = ctx.http.request("GET", f"{GITHUB_API}{path.format(repo=repo)}", headers=headers)
+            # An empty repository answers /contents/ with 404; that is not a missing permission.
+            if response.status == 200 or (permission == "Contents" and response.status == 404):
+                proven.append(permission)
+            else:
+                missing.append(permission)
+        warn = ""
+        if repo_kind == "app":
+            env_response = ctx.http.request(
+                "GET", f"{GITHUB_API}/repos/{repo}/environments/production/secrets/public-key", headers=headers
+            )
+            if env_response.status == 200:
+                proven.append("Environments")
+            elif env_response.status == 404:
+                warn = (
+                    "the `production` environment does not exist yet: create it in the repo's Settings, Environments "
+                    "(or grant the token Administration: write so sealedstack can)"
+                )
+            else:
+                missing.append("Environments")
+    except Exception as exc:  # noqa: BLE001
+        return Result(rid, "forge", "fail", detail=str(exc), fix="check network access", docs=DOCS_FORGE)
+    if missing:
+        needed = {p.name: p for p in botpermissions.required()}
+        names = ", ".join(f"{name}: {'read and write' if needed[name].access == 'write' else 'read'}" for name in missing)
+        return Result(
+            rid, "forge", "fail",
+            detail=f"the token lacks permissions on {repo}: {', '.join(missing)}",
+            fix=f"edit the fine-grained token and grant {names} (full list: {botpermissions.short_list()})",
+            docs=DOCS_FORGE,
+        )
+    detail = f"{repo}: read access verified ({', '.join(proven)}); write levels are confirmed on first use"
+    if warn:
+        return Result(rid, "forge", "warn", detail=f"{detail}; {warn}", fix=warn, docs=DOCS_FORGE)
+    return Result(rid, "forge", "ok", detail=detail)
 
 
 def _check_gitlab(ctx: CheckContext) -> list[Result]:
@@ -1112,23 +1185,35 @@ def check_servers(ctx: CheckContext) -> list[Result]:
 
 
 def check_bot(ctx: CheckContext) -> list[Result]:
-    """The bot identity (D-039): a GitHub App (id, private key, installation) kept in
-    the secret source, or a fine-grained token in the ``GH_TOKEN`` repository secret."""
-    app_keys = ("SEALEDSTACK_BOT_APP_ID", "bot_private_key", "SEALEDSTACK_BOT_INSTALLATION_ID")
+    """The bot identity (D-058): a fine-grained personal access token in ``GH_TOKEN``.
+
+    The GitHub App path (D-039) is not built yet: its credentials in the secret
+    source are not used, so they do not satisfy this row.
+    """
+    from . import botpermissions
     from . import secrets as secrets_mod
 
+    token = ctx.env.get("GH_TOKEN") or ""
+    kind = botpermissions.token_kind(token) if token else ""
+    flagged = ctx.env.get("SEALEDSTACK_BOT_TOKEN_SET", "").lower() == "true"
+    if (token and kind != "builtin") or flagged:
+        label = {"fine-grained": "fine-grained token", "classic": "classic token"}.get(kind, "token")
+        return [Result("forge.bot", "forge", "ok", detail=f"bot identity configured ({label} in GH_TOKEN)")]
+    app_keys = ("SEALEDSTACK_BOT_APP_ID", "bot_private_key", "SEALEDSTACK_BOT_INSTALLATION_ID")
     have_app = all(secrets_mod.lookup(ctx.secrets, ctx.config, key).found for key in app_keys)
-    have_token = ctx.env.get("SEALEDSTACK_BOT_TOKEN_SET", "").lower() == "true"
-    if have_app or have_token:
-        how = "GitHub App credentials in the secret source" if have_app else "token in the GH_TOKEN repository secret"
-        return [Result("forge.bot", "forge", "ok", detail=f"bot identity configured ({how})")]
+    why = (
+        "GH_TOKEN is the workflow's built-in token (its pull requests do not start the plan workflows)"
+        if kind == "builtin"
+        else "no bot identity: its pull requests are what start the plan workflows (the built-in token's do not)"
+    )
+    if have_app:
+        why += "; the GitHub App credentials in the secret source are not used yet (D-058)"
     return [
         Result(
             "forge.bot", "forge", "fail",
-            detail="no bot identity: its pull requests are what start the plan workflows (the built-in token's do not)",
-            fix="create the GitHub App \"sealedstack-bot\" (link in the checklist), install it on this repository and store "
-                "SEALEDSTACK_BOT_APP_ID / SEALEDSTACK_BOT_PRIVATE_KEY / SEALEDSTACK_BOT_INSTALLATION_ID in the secret "
-                "source; or add a fine-grained token as the repository secret GH_TOKEN",
+            detail=why,
+            fix="create a fine-grained personal access token named sealedstack-bot with these repository permissions on the "
+                f"infra repo and the app repos: {botpermissions.short_list()}; store it as the repository secret GH_TOKEN",
             docs=DOCS_FORGE,
         )
     ]

@@ -61,12 +61,20 @@ def test_no_pin_row_outside_an_infra_repo(tmp_path):
 
 
 def test_the_bot_row(tmp_path):
+    """D-058: the bot identity is a fine-grained token in GH_TOKEN; the App is not used yet."""
     none = by_id(preflight.check_bot(make_ctx(tmp_path / "a", secrets=EnvSource({}))))["forge.bot"]
-    assert none.status == "fail" and "sealedstack-bot" in none.fix
-    token = by_id(preflight.check_bot(make_ctx(tmp_path / "b", secrets=EnvSource({}), env={"SEALEDSTACK_BOT_TOKEN_SET": "true"})))
-    assert token["forge.bot"].status == "ok"
+    assert none.status == "fail" and "fine-grained personal access token" in none.fix and "Pull requests: read and write" in none.fix
+    token = by_id(preflight.check_bot(make_ctx(tmp_path / "b", secrets=EnvSource({}), env={"GH_TOKEN": "github_pat_example"})))
+    assert token["forge.bot"].status == "ok" and "fine-grained token" in token["forge.bot"].detail
+    flag = by_id(preflight.check_bot(make_ctx(tmp_path / "b2", secrets=EnvSource({}), env={"SEALEDSTACK_BOT_TOKEN_SET": "true"})))
+    assert flag["forge.bot"].status == "ok"
+    # the workflow's built-in token (what GH_TOKEN falls back to) is not a bot identity
+    builtin = by_id(preflight.check_bot(make_ctx(tmp_path / "d", secrets=EnvSource({}), env={"GH_TOKEN": "ghs_builtin"})))["forge.bot"]
+    assert builtin.status == "fail" and "built-in token" in builtin.detail
+    # App credentials are not used yet, so they do not satisfy the row
     app = {"SEALEDSTACK_BOT_APP_ID": "1", "SEALEDSTACK_BOT_PRIVATE_KEY": "k", "SEALEDSTACK_BOT_INSTALLATION_ID": "2"}
-    assert by_id(preflight.check_bot(make_ctx(tmp_path / "c", secrets=EnvSource(app))))["forge.bot"].status == "ok"
+    only_app = by_id(preflight.check_bot(make_ctx(tmp_path / "c", secrets=EnvSource(app))))["forge.bot"]
+    assert only_app.status == "fail" and "not used yet (D-058)" in only_app.detail
 
 
 def test_the_tailnet_and_policy_are_not_reported_as_config_errors(tmp_path):

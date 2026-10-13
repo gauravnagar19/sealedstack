@@ -452,7 +452,7 @@ Users install nothing locally: a browser, a Git hosting account and the credenti
 | Bitwarden account plus a free organisation with Secrets Manager | ✅ | One **read-only** machine-account token, held in CI as `BWS_ACCESS_TOKEN` |
 | Server credentials, per existing server | ✅ for Netcup / any-ssh | `SERVER_IP_<NAME>` and `ROOT_PASSWORD_<NAME>`; the key names are declared in `servers.yaml` under `bootstrap` (D-049, D-050). API providers need only their token |
 | `admin.ssh_keys` in `stack.yaml` | ✅ | Operator SSH public keys, installed at bootstrap (not secrets, D-040) |
-| Bot identity (`sealedstack-bot`) | ✅ | A user-owned GitHub App created from the Setup checklist's manifest link (D-039) |
+| Bot identity (`sealedstack-bot`) | ✅ | A fine-grained personal access token in the repository secret `GH_TOKEN`, limited to the infra and app repos (D-058). The user-owned GitHub App (D-039) comes later |
 | A GitHub account and a private infra repository | ✅ | Hosts the two bootstrap files and runs the engine in GitHub Actions |
 | A server: Ubuntu 24.04 or Debian 12, ≥ 2 vCPU / 4 GB / 40 GB (control) | ✅ | Workers: ≥ 1 vCPU / 2 GB |
 | Clerk account | Only for `user_auth: clerk` apps | |

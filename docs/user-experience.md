@@ -149,7 +149,7 @@ Progress: 3 of 9 ready. Fix the ❌ items below, then comment `/sealedstack chec
 | ⏳ | Tailscale policy imported into `config/tailscale-policy.hujson` | waits for the OAuth client |
 | ❌ | **STATE_PASSPHRASE** (≥ 16 chars) | not found. → generate one in Bitwarden |
 | ❌ | **Server server-1**: `ip_secret` → `SERVER_IP_SERVER_1`, `password_secret` → `ROOT_PASSWORD_SERVER_1` (from `servers.yaml`) + port 22 open | not found in Bitwarden. → add both keys; [Netcup: open TCP 22 temporarily](…) |
-| ❌ | **Bot identity** (GitHub App) | not created. → **[Create "sealedstack-bot" (1 click)](…)**, then install it on this repo |
+| ❌ | **Bot identity** (fine-grained token `GH_TOKEN`) | not set. → **[Create the token (pre-filled)](…)**: only this repo and your app repos; Contents, Pull requests, Issues, Variables, Environments, Workflows (read and write), Metadata (read). Add it as the repository secret `GH_TOKEN`. *(D-058 amendment: the GitHub App, "Create sealedstack-bot (1 click)", comes later.)* |
 | — | Optional: Clerk keys | not needed yet (no app uses Clerk) |
 
 Merge this PR when everything above is ✅. Nothing has been changed outside this repo yet.
@@ -401,7 +401,7 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 | Backup alert | Newest backup older than 2× its schedule |
 | Version-age warning | > 6 months, or any applicable advisory |
 | Comment command prefix | `/sealedstack` |
-| Bot name | `sealedstack-bot` (user-owned GitHub App) |
+| Bot name | `sealedstack-bot` (a fine-grained personal access token for now, D-058; a user-owned GitHub App later, D-039) |
 | Bootstrap secrets per existing server | Key names declared in `servers.yaml` (`bootstrap.ip_secret` / `password_secret`, default `SERVER_IP_<NAME>` / `ROOT_PASSWORD_<NAME>`); values only in the secret source (D-049, D-050) |
 | Secret key names | Declared in `stack.yaml: secrets.keys` (logical → source key); defaults written explicitly by Setup (D-050) |
 | First app | `hello` (`traefik/whoami`, owner-only) |

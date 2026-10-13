@@ -4,12 +4,12 @@ implementations:
   - id: github
     name: GitHub
     status: experimental
-    summary: GitHub REST via a user-owned GitHub App installation token; opens the Setup PR, posts the living checklist, pins the Status issue and publishes app-repo variables/secrets.
-    secrets: [SEALEDSTACK_BOT_APP_ID, SEALEDSTACK_BOT_PRIVATE_KEY, SEALEDSTACK_BOT_INSTALLATION_ID]
+    summary: GitHub REST via a fine-grained personal access token (GH_TOKEN, D-058; the GitHub App comes later); opens the Setup PR, posts the living checklist, pins the Status issue and publishes app-repo variables/secrets.
+    secrets: [GH_TOKEN]
     config: [owner]
     impl: { adapter: engine/sealedstack/forge.py }
     docs: https://docs.github.com/en/rest
-    notes: "bot: sealedstack-bot (user-owned GitHub App; manifest flow)"
+    notes: "bot: sealedstack-bot (fine-grained token for now, D-058; user-owned GitHub App later, D-039)"
   - id: gitlab
     name: GitLab
     status: planned

@@ -29,6 +29,7 @@ from typing import Callable, Mapping, Optional, Sequence
 import yaml
 
 from . import botmanifest
+from . import botpermissions
 from . import checklist
 from . import config as config_mod
 from . import discover
@@ -64,6 +65,7 @@ class SetupArgs:
     ssh_keys: list = field(default_factory=list)
     force: bool = False
     local: bool = False
+    experimental_app: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,6 +88,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="an admin SSH public key (default: none; the checklist asks for it)")
     parser.add_argument("--force", action="store_true", help="overwrite an existing config/")
     parser.add_argument("--local", action="store_true", help="write the files here instead of opening a PR")
+    parser.add_argument("--experimental-app", action="store_true",
+                        help="also show the GitHub App registration link in the checklist (not used yet, D-058)")
     return parser
 
 
@@ -97,6 +101,7 @@ def parse_args(argv: Sequence[str]) -> SetupArgs:
     return SetupArgs(
         domain=ns.domain, email=ns.email, admin=ns.admin, servers=servers, secrets=ns.secrets,
         name=ns.name, owner=ns.owner, ssh_keys=list(ns.ssh_key), force=ns.force, local=ns.local,
+        experimental_app=ns.experimental_app,
     )
 
 
@@ -213,7 +218,8 @@ def run(
         print(f"sealedstack: opened the Setup PR #{number}", file=out)
 
     items = initial_items(files, root=root, env=env, repo=repo, owner=owner, version=version,
-                          http=http, secrets=secrets, tcp_probe=tcp_probe)
+                          http=http, secrets=secrets, tcp_probe=tcp_probe,
+                          experimental_app=args.experimental_app)
     forge.upsert_comment(repo, number, checklist.render(items), marker=checklist.MARKER)
     print(f"sealedstack: posted the setup checklist on PR #{number}. Create the prerequisites, then comment "
           "`/sealedstack check`.", file=out)
@@ -244,6 +250,7 @@ def initial_items(
     http: Optional[HttpClient] = None,
     secrets: Optional[secrets_mod.SecretSource] = None,
     tcp_probe: Optional[Callable] = None,
+    experimental_app: bool = False,
 ) -> list:
     """The first checklist: run the preflight against a scratch copy of the new config."""
     with tempfile.TemporaryDirectory(prefix="sealedstack-setup-") as tmp:
@@ -266,7 +273,8 @@ def initial_items(
             tcp_probe=tcp_probe, build_dir=scratch / ".build",
         )
         results = preflight.run_checks(ctx)
-    return checklist_items(results, config, repo=repo, owner=owner, version=version, env=env)
+    return checklist_items(results, config, repo=repo, owner=owner, version=version, env=env,
+                           experimental_app=experimental_app)
 
 
 def prepare_check(
@@ -371,6 +379,7 @@ def checklist_items(
     owner: str,
     version: str,
     env: Optional[Mapping[str, str]] = None,
+    experimental_app: bool = False,
 ) -> list:
     """Turn preflight results into the prerequisite rows of the Setup checklist."""
     env = env or {}
@@ -499,16 +508,19 @@ def checklist_items(
                 fix += " " + link("Netcup: open TCP 22 temporarily", "netcup-firewall.md")
             add("fail", label, res.detail, fix.strip())
 
-    # 10. the bot
+    # 10. the bot (D-058: a fine-grained personal access token for now)
     bot = by_id.get("forge.bot")
     if bot is not None and bot.status == "ok":
-        add("ok", "Bot identity", bot.detail)
+        add("ok", "Bot identity (`GH_TOKEN`)", bot.detail)
     else:
-        url = botmanifest.registration_url(botmanifest.BOT_NAME, f"https://github.com/{repo}" if repo else "")
-        add("fail", "Bot identity (GitHub App)", "not created",
-            f"**[Create \"sealedstack-bot\" (1 click)]({url})**, generate a private key, install it on this repo, and add "
-            "`SEALEDSTACK_BOT_APP_ID`, `SEALEDSTACK_BOT_PRIVATE_KEY` and `SEALEDSTACK_BOT_INSTALLATION_ID` to the secret "
-            "source (or add a fine-grained token as the repository secret `GH_TOKEN`)")
+        url = botpermissions.token_url(repo)
+        add("fail", "Bot identity: fine-grained token `GH_TOKEN`", "not set",
+            f"**[Create the token (pre-filled)]({url})**: owner = you, expiry 90 days, **Only select repositories**: this "
+            "repo plus each app repo, then these repository permissions: "
+            f"{botpermissions.short_list()}. Add it as the repository secret `GH_TOKEN`. "
+            "(Administration: write is optional, only to let sealedstack create the `production` environment.)"
+            + (f" Experimental, not used yet (D-058): [register the GitHub App]({botmanifest.registration_url(botmanifest.BOT_NAME, f'https://github.com/{repo}' if repo else '')})."
+               if experimental_app or env.get("SEALEDSTACK_EXPERIMENTAL_APP") else ""))
 
     # Anything else that is not green gets its own row: the checklist never reports
     # "ready" while the check itself would fail.

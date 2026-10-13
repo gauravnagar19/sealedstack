@@ -34,7 +34,7 @@ in the encrypted OpenTofu state.
 | State passphrase | Bitwarden: `STATE_PASSPHRASE` | At least 16 random characters. Encrypts the OpenTofu state. |
 | Existing server: public IP and root password | Bitwarden: `SERVER_IP_<NAME>`, `ROOT_PASSWORD_<NAME>` | `<NAME>` is the server name upper-cased with `-` as `_`, so `server-1` gives `SERVER_IP_SERVER_1`. Used once by the first bootstrap; delete them afterwards. |
 | Admin SSH public key(s) | `config/stack.yaml`: `admin.ssh_keys` | A public key, not a secret. Installed on every server at bootstrap. |
-| Bot identity | Bitwarden: `SEALEDSTACK_BOT_APP_ID`, `SEALEDSTACK_BOT_PRIVATE_KEY`, `SEALEDSTACK_BOT_INSTALLATION_ID` | A GitHub App (`sealedstack-bot`) created from the checklist's one-click manifest link. Its pull requests trigger the plan workflows, which the built-in `GITHUB_TOKEN` cannot. |
+| Bot identity | GitHub repository secret `GH_TOKEN` | A **fine-grained personal access token** limited to the infra repo and the app repos ([permissions below](#bot-identity-fine-grained-token)). Its pull requests trigger the plan workflows, which the built-in `GITHUB_TOKEN` cannot ([D-058](decisions.md)). |
 | Approvers | `config/stack.yaml`: `approvers` | GitHub usernames allowed to approve write commands. Setup defaults it to the repository owner. |
 
 ### Key names are declared in config
@@ -121,6 +121,36 @@ Zone scope (`example.com`):
 
 `check` probes each permission and tells you exactly which one is missing. Your
 **Account ID** and **Zone** go into `config/stack.yaml`; they are not secrets.
+
+## Bot identity: fine-grained token
+
+For now the bot identity (`sealedstack-bot`) is a **fine-grained personal access
+token** ([D-058](decisions.md)); a user-owned GitHub App comes later. Create it at
+GitHub, Settings, Developer settings, Fine-grained tokens (the Setup checklist
+links the form with the name, owner, expiry and permissions pre-filled):
+
+- **Resource owner:** you (or the organisation that owns the repos).
+- **Repository access:** *Only select repositories*: the infra repo and each
+  onboarded app repo. Nothing else.
+- **Expiration:** 90 days is a good start; put the date in your calendar.
+- **Repository permissions** (everything else stays *No access*):
+
+| Permission | Access | Why |
+|---|---|---|
+| Metadata | Read | Mandatory for every token; also used to look up a user's repository role (comment-command and approver checks). |
+| Contents | Read and write | Read files and branches, and write the Setup, onboarding and version-bump branches. |
+| Pull requests | Read and write | Open the Setup, onboarding and upgrade PRs; read PRs for the plan, approval and merge checks. |
+| Issues | Read and write | The pinned Status issue, the living checklist and plan comments (PR comments go through the Issues API). |
+| Variables | Read and write | Publish the deploy settings (compose ids, Dokploy URL, release trust ids, registry) to each app repo. |
+| Environments | Read and write | Store the Dokploy API key as an environment secret (`production`) in each app repo. GitHub files environment secrets under Environments, not Secrets. |
+| Workflows | Read and write | PRs that add or change `.github/workflows/*` files (the app release workflow, version-bump PRs) are refused without it. |
+| Administration (optional) | Read and write | Only to let sealedstack create the `production` environment itself. Skip it and create that environment by hand in each app repo. |
+
+Add it as the **repository secret `GH_TOKEN`** in the infra repo. `check` probes
+that the token can reach the infra repo and every app repo in `apps.yaml` with
+harmless reads, names the permission that is missing, and warns about a classic
+token or a missing `production` environment. GitHub does not let a token read back
+its own write levels, so write access is confirmed the first time it is used.
 
 ## Tailscale OAuth client
 

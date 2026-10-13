@@ -277,19 +277,90 @@ FORGE_APPS = {
 }
 
 
+FINE_GRAINED = "github_pat_example"
+
+
+def github_stub(*, denied=(), env_status=200, repo_status=200, role=None) -> StubClient:
+    """A GitHub API stub: every read answers 200 except the permissions in ``denied``."""
+    http = StubClient()
+    http.add("api.github.com/user", Route(json_body={"login": "sealedstack-bot"}))
+    probes = {
+        "Contents": "/contents/",
+        "Pull requests": "/pulls?state=open",
+        "Issues": "/issues?per_page=1",
+        "Variables": "/actions/variables",
+    }
+    for permission, needle in probes.items():
+        http.add(needle, Route(status=403 if permission in denied else 200, json_body=[]))
+    http.add("/environments/production/secrets/public-key", Route(status=env_status, json_body={}))
+    http.add("api.github.com/repos/", Route(status=repo_status, json_body={"permissions": role} if role else {}))
+    return http
+
+
 def test_check_forge_github_via_mock(tmp_path):
     config = make_config(tmp_path, apps=FORGE_APPS)
-    http = (
-        StubClient()
-        .add("api.github.com/user", Route(json_body={"login": "sealedstack-bot"}))
-        .add("/pulls", Route(json_body=[]))
-        .add("actions/variables", Route(status=403, json_body={}))
-    )
-    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": "t"}, http=http)
+    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(denied=("Variables",)))
     results = by_id(preflight.check_forge(ctx))
     assert results["forge.identity"].status == "ok"
-    assert results["forge.repo.owner/app"].status == "fail"
-    assert "variables" in results["forge.repo.owner/app"].detail
+    repo = results["forge.repo.owner/app"]
+    assert repo.status == "fail"
+    assert "Variables" in repo.detail and "Variables: read and write" in repo.fix
+
+
+def test_check_forge_probes_the_infra_repo_and_each_app_repo_with_reads_only(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    http = github_stub()
+    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED, "GITHUB_REPOSITORY": "you/my-infra"}, http=http)
+    results = by_id(preflight.check_forge(ctx))
+    assert results["forge.repo.you/my-infra"].status == "ok"
+    assert results["forge.repo.owner/app"].status == "ok"
+    assert "Environments" in results["forge.repo.owner/app"].detail  # app repos also need the environment secret
+    assert "Environments" not in results["forge.repo.you/my-infra"].detail
+    # nothing was written: harmless reads only
+    assert {r["method"] for r in http.requests} == {"GET"}
+    # the infra repo is not asked for variables (it never needs them)
+    assert not any("you/my-infra/actions/variables" in r["url"] for r in http.requests)
+
+
+def test_check_forge_names_the_permission_a_repo_is_missing(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(denied=("Issues", "Pull requests")))
+    repo = by_id(preflight.check_forge(ctx))["forge.repo.owner/app"]
+    assert repo.status == "fail" and "Issues" in repo.detail and "Pull requests" in repo.detail
+    assert "Issues: read and write" in repo.fix and "Pull requests: read and write" in repo.fix
+
+
+def test_check_forge_a_repo_outside_the_tokens_access_is_one_clear_failure(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(repo_status=404))
+    repo = by_id(preflight.check_forge(ctx))["forge.repo.owner/app"]
+    assert repo.status == "fail" and "cannot see owner/app" in repo.detail and "Repository access" in repo.fix
+
+
+def test_check_forge_flags_a_user_without_push_access(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(role={"push": False, "pull": True}))
+    repo = by_id(preflight.check_forge(ctx))["forge.repo.owner/app"]
+    assert repo.status == "fail" and "no push access" in repo.detail
+
+
+def test_check_forge_warns_when_the_production_environment_is_missing(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(env_status=404))
+    repo = by_id(preflight.check_forge(ctx))["forge.repo.owner/app"]
+    assert repo.status == "warn" and "`production` environment does not exist" in repo.detail
+    denied = by_id(preflight.check_forge(make_ctx(
+        tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(env_status=403))))["forge.repo.owner/app"]
+    assert denied.status == "fail" and "Environments" in denied.detail
+
+
+def test_check_forge_warns_about_a_classic_token(tmp_path):
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": "ghp_example"}, http=github_stub())
+    kind = by_id(preflight.check_forge(ctx))["forge.token_type"]
+    assert kind.status == "warn" and "fine-grained" in kind.fix
+    fine = by_id(preflight.check_forge(make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub())))
+    assert "forge.token_type" not in fine
 
 
 # --------------------------------------------------------------------------- #
