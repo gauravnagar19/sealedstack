@@ -36,6 +36,7 @@ PERMISSIONS: tuple[Permission, ...] = (
     Permission("Pull requests", "pull_requests", "write", "Open the Setup, onboarding and upgrade PRs; read PRs for the plan, approval and merge checks."),
     Permission("Issues", "issues", "write", "The pinned Status issue, the living checklist and plan comments (PR comments go through the Issues API)."),
     Permission("Variables", "actions_variables", "write", "Publish the deploy settings (compose ids, Dokploy URL, release trust ids, registry) to each app repo."),
+    Permission("Deployments", "deployments", "read", "Read each app repo's latest successful `production` deployment, the released version recorded by the app release workflow (D-060), to redeploy it after a server rebuild."),
     Permission("Environments", "environments", "write", "Store the Dokploy API key as an environment secret (`production`) in each app repo. GitHub files environment secrets under Environments, not Secrets."),
     Permission("Workflows", "workflows", "write", "PRs that add or change `.github/workflows/*` files (the app release workflow, version-bump PRs) are refused without it."),
     Permission(
@@ -74,13 +75,15 @@ CALLS: dict[tuple[str, str], tuple[str, str]] = {
     ("GET", "{}/public-key"): ("Environments", "read"),
     ("PUT", "{}/{}"): ("Environments", "write"),
     ("GET", "/repos/{}/collaborators/{}/permission"): ("Metadata", "read"),
+    ("GET", "/repos/{}/deployments"): ("Deployments", "read"),
+    ("GET", "/repos/{}/deployments/{}/statuses"): ("Deployments", "read"),
 }
 
 # GitHub calls made outside ``GitHubForge`` (kept here so the list is complete).
 OTHER_CALLS: tuple[tuple[str, str], ...] = (
     ("scripts/render.py: GET /repos/{repo}/contents/... (app manifests)", "Contents read"),
     ("scripts/validate.py: GET /repos/{repo}", "Metadata read"),
-    ("app.yml `gh variable set SEALEDSTACK_RELEASED_VERSION` (runs in the app repo)", "Variables write"),
+    ("app.yml creates a deployment and its status in the APP repo with the built-in GITHUB_TOKEN (`deployments: write` in the caller); no bot permission", "none"),
 )
 
 REPOSITORY_ACCESS = "Only select repositories: the infra repository plus each onboarded app repository."

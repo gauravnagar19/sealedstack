@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Final (v1 UX): signed off by the owner on 2026-10-11.** This document is authoritative for everything a user sees and does. [spec.md](spec.md) §6 defers to it. Changes need a new decision in [decisions.md](decisions.md). |
 | Date | 2026-10-11 |
-| Decisions | D-034 to D-047 ([decisions.md](decisions.md)). Amended on 2026-10-12 by D-056: the caller workflow in §4 step 2 also grants `packages: read`. Amended on 2026-10-13 by D-057: app release jobs join the tailnet as `tag:release` (Dokploy API only), not `tag:ci`; by D-058: the bot identity for now is a fine-grained personal access token (§4 step 4 checklist); by D-059: `drift` is also a manual command, and the scheduled drift workflow is off unless `SEALEDSTACK_DRIFT_ENABLED=true`. |
+| Decisions | D-034 to D-047 ([decisions.md](decisions.md)). Amended on 2026-10-12 by D-056: the caller workflow in §4 step 2 also grants `packages: read`. Amended on 2026-10-13 by D-057: app release jobs join the tailnet as `tag:release` (Dokploy API only), not `tag:ci`; by D-058: the bot identity for now is a fine-grained personal access token (§4 step 4 checklist); by D-059: `drift` is also a manual command, and the scheduled drift workflow is off unless `SEALEDSTACK_DRIFT_ENABLED=true`; by D-060: the app release caller written by the onboarding PR (§5, §7) also grants `deployments: write`, and each release is recorded as a GitHub Deployment of `production` in the app repo. |
 
 Mockups use GitHub wording; GitLab equivalents are in §11. `<v>` means the pinned sealedstack version (e.g. `0.6.0`), and `<owner>` the sealedstack publisher.
 
@@ -149,7 +149,7 @@ Progress: 3 of 9 ready. Fix the ❌ items below, then comment `/sealedstack chec
 | ⏳ | Tailscale policy imported into `config/tailscale-policy.hujson` | waits for the OAuth client |
 | ❌ | **STATE_PASSPHRASE** (≥ 16 chars) | not found. → generate one in Bitwarden |
 | ❌ | **Server server-1**: `ip_secret` → `SERVER_IP_SERVER_1`, `password_secret` → `ROOT_PASSWORD_SERVER_1` (from `servers.yaml`) + port 22 open | not found in Bitwarden. → add both keys; [Netcup: open TCP 22 temporarily](…) |
-| ❌ | **Bot identity** (fine-grained token `GH_TOKEN`) | not set. → **[Create the token (pre-filled)](…)**: only this repo and your app repos; Contents, Pull requests, Issues, Variables, Environments, Workflows (read and write), Metadata (read). Add it as the repository secret `GH_TOKEN`. *(D-058 amendment: the GitHub App, "Create sealedstack-bot (1 click)", comes later.)* |
+| ❌ | **Bot identity** (fine-grained token `GH_TOKEN`) | not set. → **[Create the token (pre-filled)](…)**: only this repo and your app repos; Contents, Pull requests, Issues, Variables, Environments, Workflows (read and write), Deployments, Metadata (read). Add it as the repository secret `GH_TOKEN`. *(D-058 amendment: the GitHub App, "Create sealedstack-bot (1 click)", comes later.)* |
 | — | Optional: Clerk keys | not needed yet (no app uses Clerk) |
 
 Merge this PR when everything above is ✅. Nothing has been changed outside this repo yet.
@@ -235,6 +235,7 @@ Local development is unchanged: `docker compose up --build` still works.
 - **Every merge to `main`** builds images and creates `v0.0.N` (about 2–3 min). Nothing deploys.
 - **To release:** in the app repo, **Actions → release → Run workflow → tag `v0.0.N`**. It deploys in about 1 minute and reports the result to the job summary and the Status issue.
 - **To roll back:** run Release again with the previous tag (about 1 minute; no rebuild).
+- **Each release is recorded** as a deployment of the `production` environment in the app repo (Code page → Deployments), with the version and the servers. If a server is ever rebuilt, `up` redeploys the version of the latest successful deployment (D-060). A failed release is recorded as failed and never used for that.
 - **A failed release** fails the job and leaves the previous version running. The summary shows the deploy log tail and the likely cause.
 
 ---

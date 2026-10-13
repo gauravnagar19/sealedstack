@@ -112,8 +112,9 @@ best-effort. It may **silently skip** deletions when:
 - `GITHUB_TOKEN` lacks permission to delete packages (common for user-owned
   packages), or
 - the package is owned by an org or user whose API scope doesn't match, or
-- no `SEALEDSTACK_RELEASED_VERSION` / Dokploy lookup is available to identify
-  the currently-deployed version.
+- no successful `production` deployment is recorded in the app repo and no Dokploy
+  lookup is available to identify the currently-deployed version (the retired
+  `SEALEDSTACK_RELEASED_VERSION` variable is only a deprecated fallback).
 
 Retention never breaks a build; it just may not happen.
 

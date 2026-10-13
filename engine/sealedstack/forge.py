@@ -12,6 +12,7 @@ secret source.
 """
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -116,6 +117,52 @@ class Forge:
     def commit_files(self, repo: str, branch: str, files: Mapping[str, str], message: str) -> None:  # pragma: no cover
         """Commit ``files`` (path -> text) to an existing ``branch`` (one commit per file on GitHub)."""
         raise NotImplementedError
+
+    def latest_successful_deployment(self, repo: str, environment: str = "production") -> dict:  # pragma: no cover
+        """The newest deployment of ``environment`` whose outcome is success (D-060):
+        ``{id, ref, version, servers}``; empty dict when there is none."""
+        raise NotImplementedError
+
+
+# --------------------------------------------------------------------------- #
+# Released versions are recorded as deployments in the app repo (D-060)
+# --------------------------------------------------------------------------- #
+_OUTCOME_STATES = ("success", "failure", "error")
+
+
+def deployment_outcome(statuses: Sequence[Mapping]) -> str:
+    """The outcome of one deployment from its statuses (newest first).
+
+    Only ``success``, ``failure`` and ``error`` decide the outcome: ``queued``,
+    ``in_progress``, ``pending`` and ``inactive`` do not. GitHub marks an older
+    successful deployment ``inactive`` when a newer one succeeds, so the newest
+    deciding status is the one that counts. ``""`` means no outcome yet.
+    """
+    for status in statuses:
+        state = str(status.get("state") or "")
+        if state in _OUTCOME_STATES:
+            return state
+    return ""
+
+
+def deployment_record(deployment: Mapping) -> dict:
+    """``{id, ref, version, servers}`` from a GitHub-shaped deployment (payload may be a string)."""
+    payload = deployment.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except ValueError:
+            payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    ref = str(deployment.get("ref") or "")
+    servers = payload.get("servers")
+    return {
+        "id": deployment.get("id"),
+        "ref": ref,
+        "version": str(payload.get("version") or ref),
+        "servers": [str(s) for s in servers] if isinstance(servers, list) else [],
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -331,6 +378,14 @@ class GitHubForge(Forge):
         except ForgeError:
             return "none"
 
+    def latest_successful_deployment(self, repo: str, environment: str = "production") -> dict:
+        deployments = self._request("GET", f"/repos/{repo}/deployments?environment={environment}&per_page=30") or []
+        for deployment in deployments:  # newest first
+            statuses = self._request("GET", f"/repos/{repo}/deployments/{deployment['id']}/statuses?per_page=30") or []
+            if deployment_outcome(statuses) == "success":
+                return deployment_record(deployment)
+        return {}
+
 
 def _b64(text: str) -> str:
     import base64
@@ -384,6 +439,7 @@ class InMemoryForge(Forge):
     branch_heads: dict = field(default_factory=dict)
     pull_requests: dict = field(default_factory=dict)
     commits: list = field(default_factory=list)
+    deployments: dict = field(default_factory=dict)
     _next: int = 1000
     _clock: int = 0
 
@@ -519,3 +575,32 @@ class InMemoryForge(Forge):
 
     def branch_head(self, repo: str, branch: str) -> str:
         return str(self.branch_heads.get((repo, branch), ""))
+
+    def add_deployment(
+        self,
+        repo: str,
+        *,
+        ref: str,
+        statuses: Sequence[str] = ("success",),
+        environment: str = "production",
+        payload: Optional[Mapping] = None,
+    ) -> int:
+        """Record a deployment (tests). ``statuses`` is in the order they were posted."""
+        number = self._id()
+        self.deployments.setdefault(repo, []).append(
+            {
+                "id": number,
+                "ref": ref,
+                "environment": environment,
+                "payload": dict(payload) if payload is not None else {"version": ref, "servers": []},
+                "statuses": [{"state": state} for state in statuses],
+            }
+        )
+        return number
+
+    def latest_successful_deployment(self, repo: str, environment: str = "production") -> dict:
+        rows = [d for d in self.deployments.get(repo, []) if d["environment"] == environment]
+        for deployment in reversed(rows):  # newest first, like GitHub
+            if deployment_outcome(list(reversed(deployment["statuses"]))) == "success":
+                return deployment_record(deployment)
+        return {}

@@ -9,13 +9,15 @@
 #         event: ${{ github.event_name }}
 #         tag: ${{ inputs.tag }}
 #       secrets: inherit
-#       permissions: { contents: write, packages: write, id-token: write, actions: write }
+#       permissions: { contents: write, packages: write, id-token: write, actions: write, deployments: write }
 #
 # On push: mint the next v0.0.X tag and build/push each `build:` service to
 #          $SEALEDSTACK_REGISTRY, then prune old images.
 # On workflow_dispatch: deploy an existing tag (no rebuild), joining the tailnet
 #          as tag:release (Dokploy API on TCP 3000 only, never SSH; D-057) and
-#          updating only release-owned Dokploy fields (D-032).
+#          updating only release-owned Dokploy fields (D-032), then recording the
+#          released version as a GitHub Deployment of environment `production` in
+#          this repo with the built-in GITHUB_TOKEN (D-060).
 name: app-release
 
 on:
@@ -41,6 +43,7 @@ permissions:
   packages: write
   id-token: write
   actions: write
+  deployments: write
 
 # F5: serialise releases per repository so two close pushes cannot mint the same
 # v0.0.N. Do not cancel an in-flight release.
@@ -208,7 +211,9 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PACKAGE: ${{ needs.setup.outputs.package }}
       TTL_DAYS: "7"
-      # Keep the currently-deployed version in addition to the last 30 (F8).
+      # Keep the currently-deployed version in addition to the last 30 (F8). It is
+      # read from the latest successful `production` deployment (D-060); the old
+      # repository variable is only a deprecated fallback and is no longer written.
       DEPLOYED_VERSION: ${{ vars.SEALEDSTACK_RELEASED_VERSION }}
       DOKPLOY_URL: ${{ vars.SEALEDSTACK_DOKPLOY_URL }}
       DOKPLOY_KEY: ${{ secrets.SEALEDSTACK_DOKPLOY_API_KEY }}
@@ -227,9 +232,19 @@ jobs:
           else
             scope="/users/${owner}"
           fi
-          # The deployed version comes from the recorded variable, falling back
-          # to the APP_VERSION in Dokploy when that is not available.
-          deployed="${DEPLOYED_VERSION:-}"
+          # The deployed version comes from the latest successful `production`
+          # deployment (D-060), then the deprecated variable, then the APP_VERSION
+          # in Dokploy when neither is available.
+          deployed=""
+          for deployment_id in $(gh api "/repos/${GITHUB_REPOSITORY}/deployments?environment=production&per_page=30" --jq '.[].id' 2>/dev/null || true); do
+            outcome="$(gh api "/repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=30" \
+              --jq '[.[] | select(.state == "success" or .state == "failure" or .state == "error")] | (.[0].state // "")' 2>/dev/null || true)"
+            if [ "${outcome}" = "success" ]; then
+              deployed="$(gh api "/repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}" --jq '.payload.version // .ref' 2>/dev/null || true)"
+              break
+            fi
+          done
+          deployed="${deployed:-${DEPLOYED_VERSION:-}}"
           if [ -z "${deployed}" ] && [ -n "${DOKPLOY_URL:-}" ] && [ -n "${COMPOSE_IDS:-}" ]; then
             deployed="$(python3 - <<'PY' || true
           import json
@@ -360,6 +375,41 @@ jobs:
           PY
           echo "rendered .build/deploy-compose.yml"
 
+      - name: Start the production deployment record
+        # D-060: the released version is recorded as a GitHub Deployment of
+        # environment `production` in THIS repository, with the built-in
+        # GITHUB_TOKEN (needs `deployments: write` from the caller). The infra repo
+        # reads the latest successful one to redeploy after a server rebuild.
+        id: deployment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+          COMPOSE_IDS: ${{ vars.SEALEDSTACK_COMPOSE_IDS }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > "${RUNNER_TEMP}/deployment.json"
+          import json
+          import os
+
+          ids = json.loads(os.environ.get("COMPOSE_IDS") or "{}")
+          version = os.environ["VERSION"]
+          print(json.dumps({
+              "ref": version,
+              "environment": "production",
+              "description": "sealedstack release " + version,
+              "auto_merge": False,
+              "required_contexts": [],
+              "production_environment": True,
+              "payload": {"version": version, "servers": sorted(ids)},
+          }))
+          PY
+          id="$(gh api --method POST "/repos/${GITHUB_REPOSITORY}/deployments" --input "${RUNNER_TEMP}/deployment.json" --jq .id)"
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+          gh api --method POST "/repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses" \
+            -f state=in_progress -f environment=production \
+            -f log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null
+          echo "recording deployment ${id} for ${VERSION}"
+
       - name: Update release-owned fields and deploy
         env:
           DOKPLOY_URL: ${{ vars.SEALEDSTACK_DOKPLOY_URL }}
@@ -440,19 +490,25 @@ jobs:
               print(f"{server}: deployment {new_id} done")
           PY
 
-      - name: Record the released version for rebuild recovery
-        # F7: a server rebuild recreates the compose without APP_VERSION. Keep
-        # the last released version in a repository variable so the infra repo
-        # can redeploy it after a rebuild instead of waiting for a re-release.
-        # Writing a repo variable needs `actions: write`; the built-in
-        # GITHUB_TOKEN cannot, so use the bot identity (D-039) and FAIL loudly if
-        # recording fails (a silent failure means a rebuild comes back empty).
+      - name: Mark the deployment successful
+        if: ${{ success() && steps.deployment.outputs.id != '' }}
         env:
-          GH_TOKEN: ${{ secrets.SEALEDSTACK_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
           VERSION: ${{ needs.setup.outputs.version }}
         run: |
           set -euo pipefail
-          gh variable set SEALEDSTACK_RELEASED_VERSION \
-            --repo "${GITHUB_REPOSITORY}" --body "${VERSION}"
-          echo "recorded SEALEDSTACK_RELEASED_VERSION=${VERSION}"
+          gh api --method POST "/repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses" \
+            -f state=success -f environment=production \
+            -f log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null
+          echo "recorded ${VERSION} as the released version (deployment ${DEPLOYMENT_ID})"
 
+      - name: Mark the deployment failed
+        if: ${{ (failure() || cancelled()) && steps.deployment.outputs.id != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
+        run: |
+          gh api --method POST "/repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses" \
+            -f state=failure -f environment=production \
+            -f log_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null || true

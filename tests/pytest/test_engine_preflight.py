@@ -289,6 +289,7 @@ def github_stub(*, denied=(), env_status=200, repo_status=200, role=None) -> Stu
         "Pull requests": "/pulls?state=open",
         "Issues": "/issues?per_page=1",
         "Variables": "/actions/variables",
+        "Deployments": "/deployments?environment=production",
     }
     for permission, needle in probes.items():
         http.add(needle, Route(status=403 if permission in denied else 200, json_body=[]))
@@ -307,6 +308,15 @@ def test_check_forge_github_via_mock(tmp_path):
     assert "Variables" in repo.detail and "Variables: read and write" in repo.fix
 
 
+def test_check_forge_names_deployments_read_when_the_token_lacks_it(tmp_path):
+    # D-060: the infra side reads each app repo's latest successful production deployment
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(denied=("Deployments",)))
+    repo = by_id(preflight.check_forge(ctx))["forge.repo.owner/app"]
+    assert repo.status == "fail"
+    assert "Deployments" in repo.detail and "Deployments: read" in repo.fix and "read and write" not in repo.fix.split("full list")[0]
+
+
 def test_check_forge_probes_the_infra_repo_and_each_app_repo_with_reads_only(tmp_path):
     config = make_config(tmp_path, apps=FORGE_APPS)
     http = github_stub()
@@ -320,6 +330,8 @@ def test_check_forge_probes_the_infra_repo_and_each_app_repo_with_reads_only(tmp
     assert {r["method"] for r in http.requests} == {"GET"}
     # the infra repo is not asked for variables (it never needs them)
     assert not any("you/my-infra/actions/variables" in r["url"] for r in http.requests)
+    assert not any("you/my-infra/deployments" in r["url"] for r in http.requests)
+    assert any("owner/app/deployments?environment=production" in r["url"] for r in http.requests)
 
 
 def test_check_forge_names_the_permission_a_repo_is_missing(tmp_path):

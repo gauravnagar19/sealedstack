@@ -35,6 +35,7 @@ def run(
     client: Optional[dokploy_mod.DokployClient] = None,
     state: Optional[platformstate_mod.PlatformState] = None,
     db=None,
+    forge=None,
     out=None,
     sleep=None,
 ) -> None:
@@ -67,6 +68,7 @@ def run(
         source=source,
         client=client,
         state=state,
+        forge=forge,
         out=out,
         **({} if sleep is None else {"sleep": sleep}),
     )

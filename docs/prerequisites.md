@@ -142,6 +142,7 @@ links the form with the name, owner, expiry and permissions pre-filled):
 | Pull requests | Read and write | Open the Setup, onboarding and upgrade PRs; read PRs for the plan, approval and merge checks. |
 | Issues | Read and write | The pinned Status issue, the living checklist and plan comments (PR comments go through the Issues API). |
 | Variables | Read and write | Publish the deploy settings (compose ids, Dokploy URL, release trust ids, registry) to each app repo. |
+| Deployments | Read | Read each app repo's latest successful `production` deployment, the released version recorded by the app release workflow (D-060), to redeploy it after a server rebuild. |
 | Environments | Read and write | Store the Dokploy API key as an environment secret (`production`) in each app repo. GitHub files environment secrets under Environments, not Secrets. |
 | Workflows | Read and write | PRs that add or change `.github/workflows/*` files (the app release workflow, version-bump PRs) are refused without it. |
 | Administration (optional) | Read and write | Only to let sealedstack create the `production` environment itself. Skip it and create that environment by hand in each app repo. |

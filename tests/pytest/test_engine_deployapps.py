@@ -9,6 +9,7 @@ from sealedstack import deployapps
 def test_set_app_version_replaces_and_appends():
     assert deployapps.set_app_version("APP_VERSION=v1\nFOO=bar", "v2") == "APP_VERSION=v2\nFOO=bar"
     assert deployapps.set_app_version("FOO=bar", "v2") == "FOO=bar\nAPP_VERSION=v2"
+    assert deployapps.set_app_version("", "v2") == "APP_VERSION=v2"  # a fresh compose has an empty env
 
 
 def test_app_hash_changes_with_ids_and_env():

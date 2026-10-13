@@ -669,6 +669,7 @@ jobs:
       packages: write
       id-token: write
       actions: write
+      deployments: write # record the released version as a deployment (D-060)
 """
 
 

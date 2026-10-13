@@ -915,6 +915,7 @@ _GITHUB_READ_PROBES = (
     ("Pull requests", "/repos/{repo}/pulls?state=open&per_page=1", ("infra", "app")),
     ("Issues", "/repos/{repo}/issues?per_page=1", ("infra", "app")),
     ("Variables", "/repos/{repo}/actions/variables?per_page=1", ("app",)),
+    ("Deployments", "/repos/{repo}/deployments?environment=production&per_page=1", ("app",)),
 )
 
 
