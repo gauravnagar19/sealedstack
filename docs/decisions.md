@@ -236,3 +236,15 @@ GitHub environments with required reviewers are still used where the plan suppor
 ### D-056 — Callers of the reusable workflows grant `packages: read` · 2026-10-12 · accepted (amends D-048 by one line)
 **Decision:** The infra repo's caller workflow grants `packages: read`, so the private engine image can be pulled. The snippets in the user-experience document, the docs and the generated files are updated.
 **Why:** The engine image is private (D-053); without the permission the job cannot pull it.
+
+### D-057 — App release jobs use their own Tailscale tag, `tag:release` · 2026-10-13 · accepted (refines D-041)
+**Decision:** The reusable app release workflow joins the tailnet as `tag:release`, which may reach `tag:server` on TCP 3000 only (the Dokploy API). `tag:ci` (the infra repo's jobs) keeps TCP 22 and 3000. `tag:release` has its own Tailscale OIDC trust credential, published to app repos as separate variables.
+**Why:** App repos should be able to deploy their own releases, but never SSH into servers.
+
+### D-058 — The bot identity for now is a fine-grained personal access token · 2026-10-13 · accepted (defers D-039)
+**Decision:** The bot identity (`GH_TOKEN`) is a fine-grained personal access token, limited to the infra repo and the onboarded app repos, with exactly the permissions sealedstack needs. The user-owned GitHub App (D-039) is built later, before going public (a roadmap item next to D-053). The manifest flow stays in the code behind `--experimental-app` and isn't used yet.
+**Why:** The App's installation-token minting isn't built; a narrow token is enough for a single owner and doesn't block the live run.
+
+### D-059 — `drift.yml` stays, off by default · 2026-10-13 · accepted
+**Decision:** The scheduled drift workflow runs only when the infra repo sets `SEALEDSTACK_DRIFT_ENABLED=true`. `drift` is also a manual command in the infra workflow's dispatch list.
+**Why:** Drift checks are useful but not needed for the first live run, and a workflow that fails on repos without config is noise.
