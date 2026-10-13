@@ -20,6 +20,7 @@ class Response:
     headers: Mapping[str, str] = field(default_factory=dict)
     body: bytes = b""
     url: str = ""
+    set_cookies: list = field(default_factory=list)  # every Set-Cookie header, in order
 
     def json(self) -> Any:
         if not self.body:
@@ -77,6 +78,7 @@ class UrllibClient(HttpClient):
                     headers=dict(resp.headers.items()),
                     body=resp.read(),
                     url=url,
+                    set_cookies=list(resp.headers.get_all("Set-Cookie") or []),
                 )
         except urllib.error.HTTPError as exc:
             # A 4xx/5xx is a normal result the checks inspect (403 = missing
@@ -86,6 +88,7 @@ class UrllibClient(HttpClient):
                 headers=dict(exc.headers.items()) if exc.headers else {},
                 body=exc.read(),
                 url=url,
+                set_cookies=list(exc.headers.get_all("Set-Cookie") or []) if exc.headers else [],
             )
 
 
@@ -97,6 +100,7 @@ class Route:
     json_body: Any = None
     text: str = ""
     headers: Mapping[str, str] = field(default_factory=dict)
+    set_cookies: list = field(default_factory=list)
 
 
 class StubClient(HttpClient):
@@ -139,5 +143,5 @@ class StubClient(HttpClient):
                     body = _json.dumps(route.json_body).encode("utf-8")
                 else:
                     body = route.text.encode("utf-8")
-                return Response(status=route.status, headers=route.headers, body=body, url=url)
+                return Response(status=route.status, headers=route.headers, body=body, url=url, set_cookies=list(route.set_cookies))
         return Response(status=404, headers={}, body=b"{}", url=url)

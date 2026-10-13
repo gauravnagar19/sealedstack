@@ -260,8 +260,8 @@ gh secret set DOKPLOY_API_KEY --repo you/shop --body "<from Bitwarden>"
 ```
 
 - `DOKPLOY_URL` is the control server over MagicDNS, always `http://<control-server>:3000`.
-- `DOKPLOY_API_KEY` lives in Bitwarden `infra` (`DOKPLOY_API_KEY`); it is created
-  by Dokploy on first boot.
+- `DOKPLOY_API_KEY` is created on first boot by `up` and kept in the encrypted state;
+  `apply` publishes it to the app repo as `SEALEDSTACK_DOKPLOY_API_KEY`.
 - `DOKPLOY_APP_ID` is the `compose_ids[<app>][<server>]` value above. On
   `apply` it can change; re-publish it then (v0.2 automates this).
 

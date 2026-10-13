@@ -13,6 +13,12 @@ from . import secrets as secrets_mod
 from .http import HttpClient, UrllibClient
 
 
+NO_KEY_MESSAGE = (
+    "no Dokploy API key yet: `sealedstack up` creates it on first boot (phase dokploy-bootstrap) and keeps it in the "
+    "encrypted state. To use your own, add DOKPLOY_API_KEY to the secret source."
+)
+
+
 class DokployError(RuntimeError):
     """A Dokploy API call failed."""
 
@@ -78,7 +84,9 @@ def from_config(
 ) -> DokployClient:
     env = dict(env or {})
     source = source or secrets_mod.build_source(config.stack, config.config_dir, env)
-    result = secrets_mod.lookup(source, config, "DOKPLOY_API_KEY")
-    if not result.found:
-        raise DokployError(f"{secrets_mod.describe(config, 'DOKPLOY_API_KEY')} not found in the '{source.kind}' source")
-    return DokployClient(f"http://{control_host(config)}:3000", result.value, http=http)
+    from . import generated as generated_mod
+
+    key = generated_mod.resolve_api_key(config, env, source)
+    if not key:
+        raise DokployError(NO_KEY_MESSAGE)
+    return DokployClient(f"http://{control_host(config)}:3000", key, http=http)

@@ -38,7 +38,7 @@ Run the validation gate (everything is in `AGENTS.md`):
 python3 scripts/registry.py check
 python3 scripts/render.py --allow-unresolved && python3 scripts/validate.py
 tofu fmt -check -recursive tofu
-for s in state edge platform compute; do
+for s in state generated edge platform compute; do
   tofu -chdir=tofu/stacks/$s init -backend=false >/dev/null && tofu -chdir=tofu/stacks/$s validate
 done
 ansible-lint

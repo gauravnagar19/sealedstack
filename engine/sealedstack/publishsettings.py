@@ -49,11 +49,11 @@ def run(
 
     compose_ids = (state or platformstate_mod.PlatformState(config, env, source)).output("compose_ids") or {}
     dokploy_url = f"http://{dokploy_mod.control_host(config)}:3000"
-    dokploy_key = secrets_mod.lookup(source, config, "DOKPLOY_API_KEY")
-    if not dokploy_key.found:
-        raise config_mod.ConfigError(
-            f"{secrets_mod.describe(config, 'DOKPLOY_API_KEY')} not found in the '{source.kind}' source"
-        )
+    from . import generated as generated_mod
+
+    api_key = generated_mod.resolve_api_key(config, env, source)
+    if not api_key:
+        raise config_mod.ConfigError(dokploy_mod.NO_KEY_MESSAGE)
 
     providers = config.stack.get("providers") or {}
     mesh = providers.get("mesh_tailscale") or {}
@@ -79,7 +79,7 @@ def run(
         _set_variable(forge, repo, "SEALEDSTACK_REGISTRY", registry, out)
 
         forge.ensure_environment(repo, "production")
-        forge.set_secret(repo, "SEALEDSTACK_DOKPLOY_API_KEY", dokploy_key.value, environment="production")
+        forge.set_secret(repo, "SEALEDSTACK_DOKPLOY_API_KEY", api_key, environment="production")
         print("    secret SEALEDSTACK_DOKPLOY_API_KEY (env production)", file=out)
 
     print("publish-app-settings: done", file=out)

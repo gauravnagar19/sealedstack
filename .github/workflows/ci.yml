@@ -88,7 +88,7 @@ jobs:
           # Encryption needs a value even for -backend=false validation (H8).
           TF_VAR_state_passphrase: ci-dummy
         run: |
-          for stack in state edge platform compute; do
+          for stack in state generated edge platform compute; do
             tofu -chdir="tofu/stacks/${stack}" init -backend=false -input=false >/dev/null
             tofu -chdir="tofu/stacks/${stack}" validate
           done

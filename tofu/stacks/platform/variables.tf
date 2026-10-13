@@ -4,7 +4,7 @@ variable "dokploy_endpoint" {
 }
 
 variable "dokploy_api_key" {
-  description = "Dokploy API key (infra.DOKPLOY_API_KEY)."
+  description = "Dokploy API key (created through Dokploy's API on first boot and kept in the encrypted state; DOKPLOY_API_KEY in the secret source overrides it)."
   type        = string
   sensitive   = true
 }
@@ -35,13 +35,13 @@ variable "admin_user" {
 }
 
 variable "dokploy_ssh_public_key" {
-  description = "Public half of the Dokploy->worker key (infra.DOKPLOY_SSH_PUBLIC_KEY)."
+  description = "Public half of the Dokploy->worker key (generated into the encrypted state)."
   type        = string
   default     = ""
 }
 
 variable "dokploy_ssh_private_key" {
-  description = "Private half of the Dokploy->worker key (infra.DOKPLOY_SSH_PRIVATE_KEY)."
+  description = "Private half of the Dokploy->worker key (generated into the encrypted state)."
   type        = string
   default     = ""
   sensitive   = true

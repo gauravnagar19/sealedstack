@@ -67,26 +67,16 @@ created against a *default* (non-aliased) provider config may need a one-time
 `tofu init -reconfigure` (which `tofu_ready` already does) is the normal fix;
 if a plan reports provider-config moves, follow the re-association prompt.
 
-## `bws` cannot create a secret without the value in `argv`
+## Generated values live only in the encrypted state
 
-The Bitwarden Secrets Manager CLI (`bws` 2.1.0) only accepts a secret value as a
-**positional argument** to `bws secret create`. There is no `--value-file`,
-stdin or environment input, and `secret edit --value` is argv-only too. The
-Secrets Manager REST API is not an escape hatch: values are end-to-end
-encrypted client-side with the machine account's organisation key, so a plain
-`curl --data` cannot produce a value the SDK can decrypt, and reproducing that
-crypto is out of scope.
-
-Impact:
-
-- Only the **generated Dokploy worker SSH key** is affected
-  (`engine/sealedstack/dokploykey.py`, `DOKPLOY_SSH_PRIVATE_KEY` /
-  `DOKPLOY_SSH_PUBLIC_KEY`), and only on **multi-server** setups.
-- On a single-server / control-only setup the key is never generated and the
-  limitation does not apply.
-- The key is created **once**, written with mode `0600`, and never leaves the
-  machine except into Bitwarden. The only exposure is a brief appearance in the
-  local process list while `bws secret create` runs.
+sealedstack never writes to the secret source (D-038). The Dokploy to worker SSH
+key pair, the CI SSH key pair, the Dokploy admin password and the Dokploy API key
+(created through Dokploy's API on first boot) are kept in the `generated` stack's
+encrypted state. If an earlier build stored `DOKPLOY_SSH_PRIVATE_KEY` /
+`DOKPLOY_SSH_PUBLIC_KEY` in Bitwarden, they are simply no longer read; delete
+them. The Dokploy first-boot calls are pinned to Dokploy v0.30.8 and have been
+exercised against a mocked API only; if Dokploy changes them, create a key by hand
+and add it as `DOKPLOY_API_KEY`.
 
 ## Secrets providers: which can be read back
 

@@ -8,6 +8,7 @@
 # Required extra-vars:
 #   target_name          MagicDNS / servers.yaml key (e.g. server-1)
 #   tailscale_auth_key   single-use, pre-authorised tag:server key
+#   admin_ssh_identity   (optional) path to the CI private key used for the keyed-SSH check
 #   admin_ssh_keys_json  operator public keys as a JSON array (from
 #                        config/admin.ssh_keys, D-040; required, since password
 #                        auth is disabled below)
@@ -81,20 +82,14 @@
     # fails, hardening never runs and the server keeps its password window.
     - name: Verify keyed SSH to the admin user before disabling password auth
       ansible.builtin.command:
-        argv:
-          - ssh
-          - -o
-          - BatchMode=yes
-          - -o
-          - StrictHostKeyChecking=accept-new
-          - -o
-          - UserKnownHostsFile=/dev/null
-          - -o
-          - ConnectTimeout=10
-          - -p
-          - "{{ ansible_port | default(22) }}"
-          - "{{ admin_user }}@{{ ansible_host | default(inventory_hostname) }}"
-          - "true"
+        # `admin_ssh_identity` is the CI key (a 0600 file); without it the
+        # operator's agent or default keys are used (a local run).
+        argv: >-
+          {{ ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
+              '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=10']
+             + (['-o', 'IdentitiesOnly=yes', '-i', admin_ssh_identity] if (admin_ssh_identity | default('')) | length > 0 else [])
+             + ['-p', (ansible_port | default(22)) | string,
+                admin_user ~ '@' ~ (ansible_host | default(inventory_hostname)), 'true'] }}
       delegate_to: localhost
       become: false
       changed_when: false

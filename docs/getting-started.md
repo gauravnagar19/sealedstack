@@ -159,12 +159,11 @@ and then reports its progress to the job summary and the Status issue
 the step, the cause and the fix, and **running `up` again continues** where it
 stopped.
 
-> **Current limitation.** The Dokploy first-admin account and API key are still
-> created by hand on the first run: after the server is bootstrapped, open
-> `http://server-1:3000` over Tailscale, create the admin account, generate a key
-> under *Settings, Profile, API/CLI Keys* and store it in Bitwarden as
-> `DOKPLOY_API_KEY`, then run `up` again. Automating this is tracked in the
-> project backlog.
+`up` also creates the Dokploy admin account and an API key itself, through
+Dokploy's API over the tailnet. The generated admin password and the key live only
+in the encrypted state. If you ever need the admin login, run
+`sealedstack status --show-dokploy-admin --break-glass` in a local session (it is
+refused in CI and shows the password once).
 
 ## 6. Verify
 

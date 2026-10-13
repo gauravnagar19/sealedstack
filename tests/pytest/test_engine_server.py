@@ -11,6 +11,8 @@ import yaml
 from sealedstack import config as config_mod, secrets as secrets_mod, server
 from sealedstack.secrets import SecretResult
 
+from fake_generated import fake_generated
+
 REPO = Path(__file__).resolve().parents[2]
 
 
@@ -94,7 +96,6 @@ def test_up_existing_machine_bootstraps_then_sites(tmp_path, capsys):
     io = FakeIO(
         captures={
             "sealedstack.tailscalekey": "tskey-auth-xyz",
-            "sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy",
         }
     )
     source = FakeSource(
@@ -106,7 +107,7 @@ def test_up_existing_machine_bootstraps_then_sites(tmp_path, capsys):
         }
     )
 
-    msg = server.up(config, {}, "web-1", source=source, io=io)
+    msg = server.up(config, {}, "web-1", source=source, io=io, generated=fake_generated())
 
     joined = [" ".join(r) for r in io.runs]
     assert any("bootstrap.yml" in x and "-u root" in x for x in joined)
@@ -119,30 +120,35 @@ def test_up_existing_machine_bootstraps_then_sites(tmp_path, capsys):
 def test_up_needs_no_sudo_password_and_passes_none_to_ansible(tmp_path):
     """D-055: no admin_sudo_password secret; no sudo/become password reaches Ansible."""
     config = make_config(tmp_path)
-    io = FakeIO(captures={"sealedstack.tailscalekey": "tskey", "sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy"})
+    io = FakeIO(captures={"sealedstack.tailscalekey": "tskey"})
     source = FakeSource({"SERVER_IP_WEB_1": "203.0.113.10", "ROOT_PASSWORD_WEB_1": "rootpw",
                          "TAILSCALE_OAUTH_CLIENT_ID": "id", "TAILSCALE_OAUTH_CLIENT_SECRET": "sec"})
-    server.up(config, {}, "web-1", source=source, io=io)
+    server.up(config, {}, "web-1", source=source, io=io, generated=fake_generated())
     assert len(io.vars_files) == 2  # bootstrap + site
     for vars_file in io.vars_files:
         assert "admin_password" not in vars_file and "ansible_become_password" not in vars_file
+        # the CI key (generated into the state) is authorised and is the login identity
+        assert "ssh-ed25519 AAAA-ci sealedstack-ci" in vars_file["admin_ssh_keys_json"]
     assert io.vars_files[0]["ansible_password"] == "rootpw"  # the one-time root login only
 
 
 def test_sync_passes_only_public_keys(tmp_path):
     config = make_config(tmp_path)
     io = FakeIO()
-    assert server.sync(config, {}, "web-1", source=FakeSource({}), io=io) == 0
-    assert io.vars_files == [{"admin_ssh_keys_json": json.dumps(["ssh-ed25519 AAAA you@example.com"])}]
+    assert server.sync(config, {}, "web-1", source=FakeSource({}), io=io, generated=fake_generated()) == 0
+    vars_file = io.vars_files[0]
+    assert json.loads(vars_file["admin_ssh_keys_json"]) == ["ssh-ed25519 AAAA you@example.com", "ssh-ed25519 AAAA-ci sealedstack-ci"]
+    assert vars_file["dokploy_ssh_public_key"] == "ssh-ed25519 AAAA-dokploy sealedstack-dokploy"
+    assert "ansible_ssh_private_key_file" in vars_file and "admin_password" not in vars_file
 
 
 def test_up_without_bootstrap_secrets_only_reasserts_the_baseline(tmp_path, capsys):
     """D-049: the secrets are deleted after the first bootstrap, so `up` must be re-runnable."""
     config = make_config(tmp_path, provider="netcup")
-    io = FakeIO(captures={"sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy"})
+    io = FakeIO()
     source = FakeSource({})  # no SERVER_IP_/ROOT_PASSWORD_
 
-    msg = server.up(config, {}, "web-1", source=source, io=io)
+    msg = server.up(config, {}, "web-1", source=source, io=io, generated=fake_generated())
 
     joined = [" ".join(r) for r in io.runs]
     assert not any("bootstrap.yml" in x for x in joined)  # no public-SSH bootstrap
@@ -156,7 +162,7 @@ def test_up_with_only_one_bootstrap_secret_is_an_error(tmp_path):
     config = make_config(tmp_path, provider="netcup")
     source = FakeSource({"SERVER_IP_WEB_1": "203.0.113.10"})
     with pytest.raises(config_mod.ConfigError, match="ROOT_PASSWORD_WEB_1"):
-        server.up(config, {}, "web-1", source=source, io=FakeIO())
+        server.up(config, {}, "web-1", source=source, io=FakeIO(), generated=fake_generated())
 
 
 def test_up_site_failure_without_secrets_names_the_missing_keys(tmp_path):
@@ -166,9 +172,9 @@ def test_up_site_failure_without_secrets_names_the_missing_keys(tmp_path):
             return 4
 
     config = make_config(tmp_path, provider="netcup")
-    io = FailingIO(captures={"sealedstack.dokploykey": "ssh-ed25519 BBBB dokploy"})
+    io = FailingIO()
     with pytest.raises(config_mod.ConfigError, match="SERVER_IP_WEB_1 and ROOT_PASSWORD_WEB_1"):
-        server.up(config, {}, "web-1", source=FakeSource({}), io=io)
+        server.up(config, {}, "web-1", source=FakeSource({}), io=io, generated=fake_generated())
 
 
 def test_default_prompt_does_not_crash_without_a_terminal(monkeypatch, capsys):

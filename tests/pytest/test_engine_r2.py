@@ -253,7 +253,9 @@ def test_edge_and_platform_tfvars_use_derived_keys(tmp_path):
     e = edge.tf_vars(config, {"BWS_ACCESS_TOKEN": "t"}, source, http=verify_http())
     assert e["TF_VAR_backup_access_key_id"] == TOKEN_ID
     assert e["TF_VAR_backup_secret_access_key"] == EXPECTED_SECRET
-    p = platform.tf_vars(config, {}, source, http=verify_http())
+    from fake_generated import fake_generated
+
+    p = platform.tf_vars(config, {}, source, http=verify_http(), generated=fake_generated())
     assert p["TF_VAR_object_storage_access_key_id"] == TOKEN_ID
     assert p["TF_VAR_backup_secret_access_key"] == EXPECTED_SECRET
 

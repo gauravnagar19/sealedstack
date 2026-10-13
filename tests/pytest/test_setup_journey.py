@@ -202,7 +202,6 @@ SECRETS_ALL = {
     "CLOUDFLARE_API_TOKEN": "cf-token", "TAILSCALE_OAUTH_CLIENT_ID": "ts-id", "TAILSCALE_OAUTH_CLIENT_SECRET": "ts-secret",
     "STATE_PASSPHRASE": "0123456789abcdef", "SERVER_IP_SERVER_1": "203.0.113.9", "ROOT_PASSWORD_SERVER_1": "pw",
     "BWS_ACCESS_TOKEN": "bws",
-    "DOKPLOY_API_KEY": "dk",  # still a user secret until Task 7 generates it into the state
 }
 
 

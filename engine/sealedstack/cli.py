@@ -100,6 +100,10 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         _leaf(sub, name, help).add_argument("extras", nargs="*")
 
+    status_leaf = sub.choices["status"]
+    status_leaf.add_argument("--show-dokploy-admin", action="store_true",
+                             help="print the generated Dokploy admin login once (local --break-glass session only)")
+
     server = _leaf(sub, "server", "servers")
     server_sub = server.add_subparsers(dest="verb", title="server commands")
     server_add = _leaf(server_sub, "add", "bootstrap/register a server")
@@ -283,6 +287,25 @@ def _status_handler(config, env, code_root, json_output, runner):
     return status_mod.run(code_root=code_root, env=env, json_output=json_output)
 
 
+def _show_admin_handler(break_glass: bool) -> Callable:
+    def handler(config, env, code_root, json_output, runner):
+        from . import generated as generated_mod
+        from . import secrets as secrets_mod
+
+        if config is None:
+            print(f"{PROG}: no config found", file=sys.stderr)
+            return 2
+        source = secrets_mod.build_source(config.stack, config.config_dir, env)
+        is_ci = cfg.Runtime.detect(code_root, env).is_ci
+        try:
+            return generated_mod.show_admin(config, env, source, is_ci=is_ci, break_glass=break_glass)
+        except cfg.ConfigError as exc:
+            print(f"{PROG}: {exc}", file=sys.stderr)
+            return 1
+
+    return handler
+
+
 def _approve_handler(write_command: str) -> Callable:
     """Enforce the D-052 approval gate for a write command (used by CI)."""
 
@@ -338,6 +361,8 @@ def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
     if command == "up":
         return Action(command, handler=_orchestrate_handler("up"))
     if command == "status":
+        if getattr(args, "show_dokploy_admin", False):
+            return Action(command, handler=_show_admin_handler(bool(getattr(args, "break_glass", False))))
         return Action(command, handler=_status_handler)
     if command == "drift":
         return Action(command, handler=_drift_handler)

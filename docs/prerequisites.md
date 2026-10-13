@@ -94,8 +94,7 @@ D-044).
 | Key | When | Notes |
 |---|---|---|
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | optional override | Not needed. The R2 S3 keys are derived from the Cloudflare token (D-054): key id = the token's id, secret = the SHA-256 hex of the token value. The token must include *Workers R2 Storage: Edit*. Set both keys only to use a separate R2 token. |
-| `DOKPLOY_API_KEY` | platform stage | Created in the Dokploy panel after the first bootstrap (see the [limitation in getting started](getting-started.md#5-merge-pr-1-then-run-up)). |
-| `DOKPLOY_SSH_PRIVATE_KEY`, `DOKPLOY_SSH_PUBLIC_KEY` | worker servers | Generated on the first run and stored in the secret source. |
+| `DOKPLOY_API_KEY` | optional override | Not needed. `up` creates the Dokploy admin account and an API key through Dokploy's API and keeps them in the encrypted state. Set it only to use a key you made by hand. |
 | `HCLOUD_TOKEN` | compute `hetzner` | Read and write API token. Only when Hetzner creates the server. |
 | `NETCUP_API_USERNAME`, `NETCUP_API_PASSWORD` | compute `netcup` | Required **only** when the firewall adapter is enabled (`config/providers/netcup.yaml` exists). Without it, apply the [rule table](netcup-firewall.md) by hand and no API credentials are needed. |
 | `<app>.<NAME>` | apps with secrets | For example `shop.CLERK_SECRET_KEY`. |

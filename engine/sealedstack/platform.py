@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import config as config_mod
+from . import dokploy as dokploy_mod
+from . import generated as generated_mod
 from . import r2 as r2_mod
 from . import secrets as secrets_mod
 from . import tofu as tofu_mod
@@ -39,6 +41,7 @@ def tf_vars(
     source: secrets_mod.SecretSource,
     *,
     http=None,
+    generated=None,
 ) -> dict[str, str]:
     stack = config.stack
     account_id = str((stack.get("cloudflare") or {}).get("account_id") or "")
@@ -46,13 +49,18 @@ def tf_vars(
 
     variables: dict[str, str] = {}
     variables["TF_VAR_dokploy_endpoint"] = f"http://{control_host(config)}:3000"
-    variables["TF_VAR_dokploy_api_key"] = tofu_mod.require(source, config, "DOKPLOY_API_KEY")
+    gen = generated if generated is not None else generated_mod.shared(config, env, source, http=http)
+    api_key = generated_mod.resolve_api_key(config, env, source, gen)
+    if not api_key:
+        raise config_mod.ConfigError(dokploy_mod.NO_KEY_MESSAGE)
+    variables["TF_VAR_dokploy_api_key"] = api_key
     variables["TF_VAR_registry_pull_token"] = env.get("REGISTRY_PULL_TOKEN") or tofu_mod.optional(
         source, config, "REGISTRY_PULL_TOKEN"
     )
     variables["TF_VAR_admin_user"] = str(stack.get("admin_user") or "")
-    variables["TF_VAR_dokploy_ssh_public_key"] = tofu_mod.optional(source, config, "DOKPLOY_SSH_PUBLIC_KEY")
-    variables["TF_VAR_dokploy_ssh_private_key"] = tofu_mod.optional(source, config, "DOKPLOY_SSH_PRIVATE_KEY")
+    # The Dokploy -> worker key pair is generated into the encrypted state (D-038).
+    variables["TF_VAR_dokploy_ssh_public_key"] = gen.get("dokploy_ssh_public_key")
+    variables["TF_VAR_dokploy_ssh_private_key"] = gen.get("dokploy_ssh_private_key")
 
     # Object storage (needs.object_storage): R2 bucket per app.
     variables["TF_VAR_cloudflare_api_token"] = env.get("CLOUDFLARE_API_TOKEN") or tofu_mod.optional(

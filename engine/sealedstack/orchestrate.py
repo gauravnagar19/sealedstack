@@ -75,12 +75,16 @@ def phases(
         ]
 
     if command == "up":
-        result = [Phase("state-init", _mod("stateinit"))]
+        # `generated` keeps what sealedstack creates (SSH key pairs, the Dokploy admin
+        # password) in the encrypted state; it only needs the state bucket.
+        result = [Phase("state-init", _mod("stateinit")), Phase("generated", _mod("generated"))]
         result += prefix
         result.append(Phase("edge-apply", _mod("edge", "apply")))
         for server in servers:
             result.append(Phase(f"server-up:{server}", _mod("server", "up", server), up_only=True))
         result += [
+            # Create the Dokploy admin + API key through its API (over the tailnet).
+            Phase("dokploy-bootstrap", _mod("dokploybootstrap"), up_only=True),
             Phase("platform-apply", _mod("platform", "apply")),
             Phase("post-apply", _mod("postapply")),
             Phase("publish", _mod("publishsettings")),

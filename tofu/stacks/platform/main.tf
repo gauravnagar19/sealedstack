@@ -248,7 +248,7 @@ resource "terraform_data" "require_worker_key" {
   lifecycle {
     precondition {
       condition     = length(var.dokploy_ssh_private_key) > 0
-      error_message = "Worker servers are declared but DOKPLOY_SSH_PRIVATE_KEY is empty. Run `just server-up` (which generates it) or set the key in Bitwarden."
+      error_message = "Worker servers are declared but DOKPLOY_SSH_PRIVATE_KEY is empty. Run `sealedstack up` (its generated phase creates the key pair in the encrypted state)."
     }
   }
 }

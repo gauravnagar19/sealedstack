@@ -44,6 +44,8 @@ def make_config(tmp_path: Path, backup: dict | None = None) -> config_mod.Config
     (tmp_path / "tofu" / "stacks" / "platform").mkdir(parents=True)
     return config_mod.load_config(config_dir=cfg_dir, code_root=tmp_path, env={})
 
+from fake_generated import fake_generated  # noqa: E402
+
 
 def test_control_host_uses_tailnet(tmp_path):
     config = make_config(tmp_path)
@@ -52,14 +54,14 @@ def test_control_host_uses_tailnet(tmp_path):
 
 def test_tfvars_requires_dokploy_key(tmp_path):
     config = make_config(tmp_path)
-    with pytest.raises(config_mod.ConfigError):
-        platform.tf_vars(config, {}, FakeSource({}))
+    with pytest.raises(config_mod.ConfigError, match="sealedstack up"):
+        platform.tf_vars(config, {}, FakeSource({}), generated=fake_generated())
 
 
 def test_tfvars_endpoint_from_control_host(tmp_path):
     config = make_config(tmp_path)
     source = FakeSource({"DOKPLOY_API_KEY": "dk"})
-    variables = platform.tf_vars(config, {}, source)
+    variables = platform.tf_vars(config, {}, source, generated=fake_generated())
     assert variables["TF_VAR_dokploy_endpoint"] == "http://control-1.tail1234.ts.net:3000"
     assert variables["TF_VAR_admin_user"] == "admin"
 
@@ -68,4 +70,4 @@ def test_tfvars_secondary_backup_required_when_configured(tmp_path):
     config = make_config(tmp_path, backup={"secondary": "https://backup2.example.com"})
     source = FakeSource({"DOKPLOY_API_KEY": "dk"})
     with pytest.raises(config_mod.ConfigError):
-        platform.tf_vars(config, {}, source)
+        platform.tf_vars(config, {}, source, generated=fake_generated())

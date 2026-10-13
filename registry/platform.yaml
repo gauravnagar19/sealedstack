@@ -5,7 +5,9 @@ implementations:
     name: Dokploy
     status: experimental
     summary: Compose deploys, Traefik, managed databases, backups, monitoring and worker servers.
-    secrets: [DOKPLOY_API_KEY]
+    # The API key is created through Dokploy's API on first boot and kept in the encrypted
+    # state; DOKPLOY_API_KEY in the secret source is an optional override (manual path).
+    optional_secrets: [DOKPLOY_API_KEY]
     config: [endpoint]
     impl: { tofu_module: platform_dokploy, tofu_stack: platform }
     docs: https://dokploy.com/

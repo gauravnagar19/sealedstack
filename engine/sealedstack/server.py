@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Optional
 
 from . import config as config_mod
+from . import generated as generated_mod
 from . import secrets as secrets_mod
 from . import tofu as tofu_mod
 
@@ -100,6 +101,7 @@ def up(
     source: Optional[secrets_mod.SecretSource] = None,
     io: Optional[ServerIO] = None,
     out=None,
+    generated: Optional[generated_mod.Generated] = None,
 ) -> str:
     """Bootstrap a server; returns the redacted success message."""
     if not name:
@@ -155,8 +157,14 @@ def up(
                 "TAILSCALE_OAUTH_CLIENT_SECRET": tofu_mod.require(source, config, "TAILSCALE_OAUTH_CLIENT_SECRET"),
             },
         )
-    dokploy_ssh_public_key = _capture_required(io, [sys.executable, "-m", "sealedstack.dokploykey"], env)
-    admin_ssh_keys_json = json.dumps(config.admin_ssh_keys())
+    # Generated keys live in the encrypted state (D-038): the Dokploy -> worker key
+    # and the CI key. The CI key is authorised for the admin user next to the
+    # operator's keys, so a runner on the tailnet can run the baseline over SSH.
+    gen = generated or generated_mod.shared(config, env, source)
+    state = gen.ensure()
+    dokploy_ssh_public_key = str(state["dokploy_ssh_public_key"])
+    admin_ssh_keys_json = json.dumps([*config.admin_ssh_keys(), str(state["ci_ssh_public_key"])])
+    identity = _write_identity(str(state["ci_ssh_private_key"]))
 
     fd, vars_path = tempfile.mkstemp()
     os.close(fd)
@@ -170,6 +178,7 @@ def up(
                     "tailscale_auth_key": auth_key,
                     "admin_user": admin_user,
                     "admin_ssh_keys_json": admin_ssh_keys_json,
+                    "admin_ssh_identity": identity,
                     "ansible_password": root_password or env.get("ROOT_PASSWORD", ""),
                 },
             )
@@ -190,6 +199,7 @@ def up(
             {
                 "dokploy_ssh_public_key": dokploy_ssh_public_key,
                 "admin_ssh_keys_json": admin_ssh_keys_json,
+                "ansible_ssh_private_key_file": identity,
             },
         )
         print(f"==> site {name} over Tailscale", file=out)
@@ -215,6 +225,7 @@ def up(
             raise config_mod.ConfigError(f"site.yml failed for {name} (exit {rc}){hint}")
     finally:
         vars_file.unlink(missing_ok=True)
+        Path(identity).unlink(missing_ok=True)
 
     if already_bootstrapped:
         print(_checklist(name), file=out)
@@ -244,6 +255,7 @@ def sync(
     *,
     source: Optional[secrets_mod.SecretSource] = None,
     io: Optional[ServerIO] = None,
+    generated: Optional[generated_mod.Generated] = None,
 ) -> int:
     """Re-run ``site.yml`` over the mesh (drift correction, upgrades)."""
     env = dict(env or os.environ)
@@ -251,13 +263,22 @@ def sync(
     source = source or secrets_mod.build_source(config.stack, config.config_dir, env)
     import tempfile
 
-    # D-055: the admin user has passwordless sudo, so no secret is needed here;
-    # only the (public) operator keys, so the ssh role re-asserts them.
+    # D-055: the admin user has passwordless sudo, so no password is needed here;
+    # the public keys (operator + CI) are re-asserted, and the CI key is the login.
+    state = (generated or generated_mod.shared(config, env, source)).ensure()
+    identity = _write_identity(str(state["ci_ssh_private_key"]))
     fd, vars_path = tempfile.mkstemp()
     os.close(fd)
     vars_file = Path(vars_path)
     try:
-        write_vars(vars_file, {"admin_ssh_keys_json": json.dumps(config.admin_ssh_keys())})
+        write_vars(
+            vars_file,
+            {
+                "admin_ssh_keys_json": json.dumps([*config.admin_ssh_keys(), str(state["ci_ssh_public_key"])]),
+                "dokploy_ssh_public_key": str(state["dokploy_ssh_public_key"]),
+                "ansible_ssh_private_key_file": identity,
+            },
+        )
         argv = ["ansible-playbook", "-i", str(Path(config.code_root) / "ansible" / "inventory.py")]
         if name:
             argv += ["--limit", name]
@@ -265,6 +286,18 @@ def sync(
         return io.run(argv, env)
     finally:
         vars_file.unlink(missing_ok=True)
+        Path(identity).unlink(missing_ok=True)
+
+
+def _write_identity(private_key: str) -> str:
+    """The CI SSH private key as a 0600 temp file (never in argv or the environment)."""
+    import tempfile
+
+    fd, path = tempfile.mkstemp(prefix="sealedstack-ci-key-")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(private_key if private_key.endswith("\n") else private_key + "\n")
+    os.chmod(path, 0o600)
+    return path
 
 
 def _capture_required(io: ServerIO, argv: list, env: Mapping[str, str]) -> str:
@@ -277,11 +310,10 @@ def _capture_required(io: ServerIO, argv: list, env: Mapping[str, str]) -> str:
 def _checklist(name: str) -> str:
     return (
         f"\nsealedstack: first-run checklist for '{name}'\n"
-        f"  1. Open the Dokploy panel over the mesh (http://{name}:3000) and create the first admin account.\n"
-        "  2. In Dokploy: Settings > Profile > API/CLI Keys, generate a key and store it as DOKPLOY_API_KEY in the 'infra' secrets project.\n"
-        "  3. Store STATE_PASSPHRASE in the 'infra' project (the R2 keys are derived from CLOUDFLARE_API_TOKEN), then run 'sealedstack up' (it creates the state bucket).\n"
-        "  4. Confirm the provider firewall rule table and close the temporary inbound TCP 22 window (docs/netcup-firewall.md).\n"
-        "  5. Run 'sealedstack check' to gate every step above.\n"
+        "  1. Confirm the provider firewall rule table and close the temporary inbound TCP 22 window (docs/netcup-firewall.md).\n"
+        "  2. Delete the bootstrap secrets (the server's IP and root password) from the secret source: they are no longer needed.\n"
+        "  3. 'sealedstack up' creates the Dokploy admin and API key itself (kept in the encrypted state); run it again to continue.\n"
+        "  4. Run 'sealedstack check' to gate every step above.\n"
     )
 
 
