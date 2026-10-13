@@ -21,7 +21,7 @@ from sealedstack.http import Route, StubClient  # noqa: E402
 from sealedstack.secrets import EnvSource  # noqa: E402
 
 TOKEN = "cf-token-value-0001"
-TOKEN_ID = "0123456789abcdef0123456789abcdef"
+TOKEN_ID = "example-token-id-0001"
 EXPECTED_SECRET = hashlib.sha256(TOKEN.encode()).hexdigest()
 
 
