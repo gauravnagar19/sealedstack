@@ -36,6 +36,7 @@ from . import commands as commands_mod
 from . import config as config_mod
 from . import forge as forge_mod
 from . import planreport
+from . import setupjob
 from . import statusissue
 
 # Comment commands (`/sealedstack <cmd>`).
@@ -331,8 +332,14 @@ def execute(
     env: Optional[Mapping[str, str]] = None,
     status_fn: Optional[Callable[[], tuple]] = None,
     out=None,
+    http=None,
+    secrets=None,
 ) -> int:
-    """Run the resolved command and report the result. Returns the job's exit code."""
+    """Run the resolved command and report the result. Returns the job's exit code.
+
+    ``http`` / ``secrets`` are injected by tests; in CI they are built from the
+    config and the environment.
+    """
     out = out if out is not None else sys.stderr
     if not res.proceed:
         print(f"sealedstack ci: nothing to run ({res.note})", file=out)
@@ -364,9 +371,10 @@ def execute(
             return 1
         pr = pr or decision.pr or 0
 
-    rc, output = _run_one(res.command, res.args, pr, event, forge, run, status_fn=status_fn, env=env)
+    rc, output = _run_one(res.command, res.args, pr, event, forge, run, status_fn=status_fn, env=env, config=config, http=http, secrets=secrets)
     for follow in res.follow:
-        rc2, _ = _run_one(follow, "", pr, event, forge, run, status_fn=status_fn, env=env)
+        rc2, _ = _run_one(follow, "", pr, event, forge, run, status_fn=status_fn, env=env, config=config,
+                          http=http, secrets=secrets)
         rc = rc or rc2
     return rc
 
@@ -381,11 +389,22 @@ def _run_one(
     *,
     status_fn: Optional[Callable[[], tuple]],
     env: Optional[Mapping[str, str]],
+    config: Optional[config_mod.Config] = None,
+    http=None,
+    secrets=None,
 ) -> tuple[int, str]:
     if command == "status" and status_fn is not None:
         return _run_status(event, forge, status_fn)
 
     argv = _argv(command, args)
+    setup_pr = command == "check" and bool(pr) and _is_setup_pr(forge, event.repo, pr)
+    if setup_pr and config is not None:
+        # The credentials may exist now: fill in what they reveal and import the
+        # tailnet policy as commits on the setup branch before checking.
+        try:
+            setupjob.prepare_check(config.config_dir, env=env or {}, forge=forge, repo=event.repo, http=http, secrets=secrets)
+        except Exception as exc:  # noqa: BLE001 - never block the checklist on discovery
+            print(f"sealedstack ci: could not prepare the setup branch: {exc}", file=sys.stderr)
     if command == "check" and pr and "--json" not in argv:
         argv.append("--json")
     rc, output = run(argv)
@@ -393,8 +412,12 @@ def _run_one(
     if command == "plan" and pr:
         forge.upsert_comment(event.repo, pr, planreport.render_plan(output, pr=pr, rc=rc), marker=approval.PLAN_MARKER)
     elif command == "check" and pr:
-        items = _check_items(output)
-        if items is not None:
+        results = _check_results(output)
+        if results is not None:
+            if setup_pr and config is not None:
+                items = _setup_items(results, config, event, env or {})
+            else:
+                items = checklist.from_results(results)
             forge.upsert_comment(event.repo, pr, checklist.render(items), marker=checklist.MARKER)
     elif command in ("apply", "up") and pr:
         mark = f"{RESULT_MARKER}<!-- {command} {event.sha[:12]} -->"
@@ -409,8 +432,22 @@ def _run_one(
     return rc, output
 
 
-def _check_items(output: str):
-    """The checklist items from a ``check --json`` run, or None if it is not JSON."""
+def _is_setup_pr(forge: forge_mod.Forge, repo: str, number: int) -> bool:
+    head = str((forge.get_pull_request(repo, number) or {}).get("head_ref") or "")
+    return head.startswith(SETUP_BRANCH_PREFIX)
+
+
+def _setup_items(results, config: config_mod.Config, event: Event, env: Mapping[str, str]):
+    """The Setup checklist rows, from a fresh read of the (possibly just edited) config."""
+    fresh = config_mod.load_config(config.config_dir, config.code_root, dict(env))
+    version_file = Path(config.config_dir).parent / "sealedstack.version"
+    version = version_file.read_text(encoding="utf-8").strip().lstrip("v") if version_file.is_file() else ""
+    owner = event.repo.split("/")[0]
+    return setupjob.checklist_items(results, fresh, repo=event.repo, owner=owner, version=version, env=env)
+
+
+def _check_results(output: str):
+    """The preflight results from a ``check --json`` run, or None if it is not JSON."""
     data = None
     decoder = json.JSONDecoder()
     offset = 0
@@ -430,7 +467,7 @@ def _check_items(output: str):
             self.id, self.status = d.get("id", ""), d.get("status", "fail")
             self.detail, self.fix = d.get("detail", ""), d.get("fix", "")
 
-    return checklist.from_results([_R(r) for r in data.get("results", [])])
+    return [_R(r) for r in data.get("results", [])]
 
 
 def _run_status(event: Event, forge: forge_mod.Forge, status_fn: Callable[[], tuple]) -> tuple[int, str]:

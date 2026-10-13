@@ -109,6 +109,14 @@ class Forge:
         (empty dict when the PR does not exist)."""
         raise NotImplementedError
 
+    def find_open_pr(self, repo: str, branch: str) -> int:  # pragma: no cover
+        """The number of the open PR whose head is ``branch`` (0 when there is none)."""
+        raise NotImplementedError
+
+    def commit_files(self, repo: str, branch: str, files: Mapping[str, str], message: str) -> None:  # pragma: no cover
+        """Commit ``files`` (path -> text) to an existing ``branch`` (one commit per file on GitHub)."""
+        raise NotImplementedError
+
 
 # --------------------------------------------------------------------------- #
 # GitHub (reference)
@@ -256,6 +264,19 @@ class GitHubForge(Forge):
             "title": str(pr.get("title") or ""),
         }
 
+    def find_open_pr(self, repo: str, branch: str) -> int:
+        owner = repo.split("/")[0]
+        prs = self._request("GET", f"/repos/{repo}/pulls?state=open&head={owner}:{branch}") or []
+        return int(prs[0]["number"]) if prs else 0
+
+    def commit_files(self, repo: str, branch: str, files: Mapping[str, str], message: str) -> None:
+        for path, content in files.items():
+            payload = {"message": message, "content": _b64(content), "branch": branch}
+            existing = self._file_sha(repo, path, branch)
+            if existing:
+                payload["sha"] = existing
+            self._request("PUT", f"/repos/{repo}/contents/{path}", json_body=payload)
+
     def set_variable(self, repo: str, name: str, value: str) -> None:
         try:
             self._request("POST", f"/repos/{repo}/actions/variables", json_body={"name": name, "value": value})
@@ -362,6 +383,7 @@ class InMemoryForge(Forge):
     commit_prs: dict = field(default_factory=dict)
     branch_heads: dict = field(default_factory=dict)
     pull_requests: dict = field(default_factory=dict)
+    commits: list = field(default_factory=list)
     _next: int = 1000
     _clock: int = 0
 
@@ -388,6 +410,17 @@ class InMemoryForge(Forge):
 
     def get_pull_request(self, repo: str, number: int) -> dict:
         return dict(self.pull_requests.get((repo, number), {}))
+
+    def find_open_pr(self, repo: str, branch: str) -> int:
+        for pr in self.prs:
+            if pr["repo"] == repo and pr["branch"] == branch and not pr.get("closed"):
+                return int(pr["number"])
+        return 0
+
+    def commit_files(self, repo: str, branch: str, files: Mapping[str, str], message: str) -> None:
+        for path, content in files.items():
+            self.files[(repo, branch, path)] = content
+        self.commits.append({"repo": repo, "branch": branch, "message": message, "files": sorted(files)})
 
     def pull_requests_for_commit(self, repo: str, sha: str) -> list:
         return list(self.commit_prs.get((repo, sha), []))
@@ -431,6 +464,10 @@ class InMemoryForge(Forge):
                 "base": base,
             }
         )
+        self.pull_requests[(repo, number)] = {
+            "number": number, "state": "open", "merged": False, "merge_commit_sha": "",
+            "head_ref": branch, "head_repo": repo, "base_ref": base, "title": title,
+        }
         return number
 
     def upsert_comment(self, repo: str, number: int, body: str, *, marker: str = "") -> int:

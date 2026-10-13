@@ -30,8 +30,8 @@ until you create one.
 Contributors running the tool from a checkout can create one in three ways:
 
 ```sh
-# 1. Interactive wizard
-sealedstack setup
+# 1. Interactive wizard (writes config/ locally; `setup` itself is the non-interactive CI job)
+sealedstack debug init
 
 # 2. Copy the samples and edit
 cp config/stack.example.yaml   config/stack.yaml

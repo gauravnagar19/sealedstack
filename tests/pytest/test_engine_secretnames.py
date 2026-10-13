@@ -113,17 +113,48 @@ def test_bootstrapped_present_secrets_ok_and_ip_never_printed(tmp_path):
     c = write_config(
         tmp_path, "h", servers={"servers": {"box-1": {"provider": "any-ssh", "role": "control", "os": "ubuntu-24.04"}}}
     )
+    probed = []
+
+    def probe(host, port, timeout):
+        probed.append((host, port))
+        return host == "203.0.113.9"  # only the public IP answers (port 22 open at the provider)
+
     ctx = preflight.build_context(
         c,
         env={},
         secrets=EnvSource({"SERVER_IP_BOX_1": "203.0.113.9", "ROOT_PASSWORD_BOX_1": "pw"}),
         version="0.5.0",
-        tcp_probe=lambda *a: False,
+        tcp_probe=probe,
     )
     r = {x.id: x for x in preflight.check_servers(ctx)}["servers.box-1"]
     assert r.status == "ok"
     assert "203.0.113.9" not in r.detail  # the IP is never printed (D-049)
     assert "SERVER_IP_BOX_1" in r.detail
+    assert ("203.0.113.9", 22) in probed
+
+
+def test_closed_port_22_fails_with_the_provider_fix_and_never_prints_the_ip(tmp_path):
+    c = write_config(
+        tmp_path, "h2", servers={"servers": {"box-1": {"provider": "any-ssh", "role": "control", "os": "ubuntu-24.04"}}}
+    )
+    ctx = preflight.build_context(
+        c, env={}, secrets=EnvSource({"SERVER_IP_BOX_1": "203.0.113.9", "ROOT_PASSWORD_BOX_1": "pw"}),
+        version="0.5.0", tcp_probe=lambda *a: False,
+    )
+    r = {x.id: x for x in preflight.check_servers(ctx)}["servers.box-1"]
+    assert r.status == "fail"
+    assert "TCP 22" in r.detail and "temporarily" in r.fix
+    assert "203.0.113.9" not in r.detail + r.fix
+
+
+def test_bootstrap_secrets_are_checked_before_the_tailnet_suffix_is_known(tmp_path):
+    c = write_config(
+        tmp_path, "h3", servers={"servers": {"box-1": {"provider": "any-ssh", "role": "control", "os": "ubuntu-24.04"}}}
+    )
+    c.stack["mesh"] = {"policy": "unmanaged", "tailnet": ""}
+    ctx = preflight.build_context(c, env={}, secrets=EnvSource({}), version="0.5.0", tcp_probe=lambda *a: False)
+    r = {x.id: x for x in preflight.check_servers(ctx)}["servers.box-1"]
+    assert r.status == "fail" and "SERVER_IP_BOX_1" in r.detail
 
 
 def test_admin_ssh_keys_come_from_config_not_env(tmp_path):

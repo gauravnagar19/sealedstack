@@ -198,7 +198,14 @@ def check_config(ctx: CheckContext) -> list[Result]:
         )
     )
 
-    cross_problems = validate.check_cross_file(ctx.config.stack, ctx.config.servers, ctx.config.apps)
+    # The MagicDNS suffix and the imported policy file are prerequisites of their own
+    # (the `tailscale` area explains and fixes them), not config errors.
+    cross_problems = [
+        problem
+        for problem in validate.check_cross_file(ctx.config.stack, ctx.config.servers, ctx.config.apps)
+        if not (problem.startswith("mesh: slots.mesh=tailscale requires mesh.tailnet")
+                or (problem.startswith("mesh: ") and "tailscale-policy.hujson is missing" in problem))
+    ]
     results.append(
         _result(
             "config.cross_file",
@@ -346,8 +353,30 @@ def _secret_result(ctx: "CheckContext", logical: str, why: str, *, min_length: i
     return Result(result_id, "secrets", "ok", detail=f"{why}: {label} present")
 
 
+def _check_secret_source(ctx: CheckContext) -> Result:
+    """Can the engine read the secret source at all (a missing token, a bad token)?"""
+    kind = ctx.secrets.kind
+    label = f"secret source: {kind}"
+    if kind == "bitwarden" and not ctx.env.get("BWS_ACCESS_TOKEN"):
+        return Result(
+            "secrets.source", "secrets", "fail",
+            detail="BWS_ACCESS_TOKEN is not set for this repository",
+            fix="create a read-only Bitwarden machine account for the project and add its token as the repository "
+                "secret BWS_ACCESS_TOKEN (the only secret kept in GitHub)",
+            docs=DOCS_SECRETS,
+        )
+    probe = ctx.secrets.get(ctx.config.secret_key("state_passphrase"))
+    if probe.errored:
+        return Result(
+            "secrets.source", "secrets", "fail", detail=f"{label}: {probe.detail}",
+            fix=f"fix access to the {kind} secret source (token, project '{ctx.config.source_project()}')",
+            docs=DOCS_SECRETS,
+        )
+    return Result("secrets.source", "secrets", "ok", detail=f"{label} reachable (project '{ctx.config.source_project()}')")
+
+
 def check_secrets(ctx: CheckContext) -> list[Result]:
-    results: list[Result] = []
+    results: list[Result] = [_check_secret_source(ctx)]
     seen: set[str] = set()
     for name, why in gather_needed_secrets(
         ctx.config.stack, ctx.config.servers, ctx.registry, ctx.config.config_dir
@@ -372,6 +401,27 @@ def _version_tuple(value: str) -> tuple[int, ...]:
 
 
 def check_versions(ctx: CheckContext) -> list[Result]:
+    return _check_engine_version(ctx) + _check_version_pin(ctx)
+
+
+def _check_version_pin(ctx: CheckContext) -> list[Result]:
+    """``sealedstack.version`` must equal the workflow ref (D-031); skipped outside an infra repo."""
+    from . import versionpin
+
+    root = Path(ctx.config.config_dir).parent
+    if not (root / "sealedstack.version").exists() and not (root / versionpin.WORKFLOW).exists():
+        return []
+    ok, detail = versionpin.check(root)
+    return [
+        Result(
+            "versions.pin", "versions", "ok" if ok else "fail", detail=detail,
+            fix="" if ok else "bump sealedstack.version and the workflow @ref together, in one pull request",
+            docs=DOCS_CONFIG,
+        )
+    ]
+
+
+def _check_engine_version(ctx: CheckContext) -> list[Result]:
     version = ctx.version
     newest = NEWEST_KNOWN_VERSION or "unknown (offline)"
     if not version:
@@ -976,23 +1026,15 @@ def check_servers(ctx: CheckContext) -> list[Result]:
         return [Result("servers.none", "servers", "skip", detail="no servers configured", docs="docs/limitations.md")]
 
     tailnet = str((ctx.config.stack.get("mesh") or {}).get("tailnet") or "")
-    if not tailnet:
-        return [
-            Result(
-                "servers.tailnet",
-                "servers",
-                "skip",
-                detail="mesh.tailnet is not set; cannot form server FQDNs",
-                docs=DOCS_TS,
-            )
-        ]
 
     results: list[Result] = []
     for name in servers:
         spec = servers.get(name) or {}
-        host = f"{name}.{tailnet}"
+        host = f"{name}.{tailnet}" if tailnet else name
         try:
-            reachable = bool(ctx.tcp_probe(host, 22, 5.0))
+            # Without the MagicDNS suffix nothing can be reached over the tailnet
+            # yet: the server counts as not bootstrapped.
+            reachable = bool(ctx.tcp_probe(host, 22, 5.0)) if tailnet else False
         except Exception as exc:  # noqa: BLE001
             results.append(Result(f"servers.{name}", "servers", "fail", detail=str(exc), docs="docs/limitations.md"))
             continue
@@ -1037,16 +1079,59 @@ def check_servers(ctx: CheckContext) -> list[Result]:
                 )
             )
         else:
-            # Never print the IP; only say the secrets are present.
-            results.append(
-                Result(
-                    f"servers.{name}",
-                    "servers",
-                    "ok",
-                    detail=f"bootstrap secrets present ({ip_key}, {pw_key}); run `sealedstack up` to bootstrap",
+            # Never print the IP. The first bootstrap logs in over the public IP,
+            # so TCP 22 must be open there (temporarily, at the provider).
+            ip = ip_res.value.strip()
+            try:
+                open_22 = bool(ip) and bool(ctx.tcp_probe(ip, 22, 5.0))
+            except Exception:  # noqa: BLE001
+                open_22 = False
+            if open_22:
+                results.append(
+                    Result(
+                        f"servers.{name}",
+                        "servers",
+                        "ok",
+                        detail=f"bootstrap secrets present ({ip_key}, {pw_key}) and TCP 22 is open; "
+                               "run `sealedstack up` to bootstrap",
+                    )
                 )
-            )
+            else:
+                results.append(
+                    Result(
+                        f"servers.{name}",
+                        "servers",
+                        "fail",
+                        detail=f"bootstrap secrets present ({ip_key}, {pw_key}) but TCP 22 is not reachable on the server's public IP",
+                        fix="open TCP 22 temporarily at the provider's firewall (close it again after the first `up`); "
+                            "check that the IP in the secret is current",
+                        docs="docs/netcup-firewall.md",
+                    )
+                )
     return results
+
+
+def check_bot(ctx: CheckContext) -> list[Result]:
+    """The bot identity (D-039): a GitHub App (id, private key, installation) kept in
+    the secret source, or a fine-grained token in the ``GH_TOKEN`` repository secret."""
+    app_keys = ("SEALEDSTACK_BOT_APP_ID", "bot_private_key", "SEALEDSTACK_BOT_INSTALLATION_ID")
+    from . import secrets as secrets_mod
+
+    have_app = all(secrets_mod.lookup(ctx.secrets, ctx.config, key).found for key in app_keys)
+    have_token = ctx.env.get("SEALEDSTACK_BOT_TOKEN_SET", "").lower() == "true"
+    if have_app or have_token:
+        how = "GitHub App credentials in the secret source" if have_app else "token in the GH_TOKEN repository secret"
+        return [Result("forge.bot", "forge", "ok", detail=f"bot identity configured ({how})")]
+    return [
+        Result(
+            "forge.bot", "forge", "fail",
+            detail="no bot identity: its pull requests are what start the plan workflows (the built-in token's do not)",
+            fix="create the GitHub App \"sealedstack-bot\" (link in the checklist), install it on this repository and store "
+                "SEALEDSTACK_BOT_APP_ID / SEALEDSTACK_BOT_PRIVATE_KEY / SEALEDSTACK_BOT_INSTALLATION_ID in the secret "
+                "source; or add a fine-grained token as the repository secret GH_TOKEN",
+            docs=DOCS_FORGE,
+        )
+    ]
 
 
 AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
@@ -1056,6 +1141,7 @@ AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
     check_cloudflare,
     check_tailscale,
     check_forge,
+    check_bot,
     check_servers,
 )
 

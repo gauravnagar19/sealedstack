@@ -20,7 +20,10 @@ PERMISSIONS = {
     "pull_requests": "write",
     "issues": "write",
     "actions": "write",
+    "actions_variables": "write",
     "secrets": "write",
+    "environments": "write",
+    "workflows": "write",  # version-bump PRs edit .github/workflows/sealedstack.yml
     "administration": "read",
     "metadata": "read",
 }
@@ -38,6 +41,28 @@ def manifest(name: str, homepage: str, redirect_url: str, *, webhook_url: str = 
         "default_permissions": PERMISSIONS,
         "default_events": EVENTS,
     }
+
+
+def registration_url(name: str = BOT_NAME, homepage: str = "", *, org: str = "") -> str:
+    """A GitHub link that opens the "register a GitHub App" form already filled in.
+
+    GitHub accepts the App's name, description, URL, permissions and events as
+    query parameters, so this works from a pull-request comment (a link cannot
+    POST the manifest). The user still clicks "Create GitHub App", then generates a
+    private key and installs the App on the infra repository.
+    """
+    from urllib.parse import urlencode
+
+    base = f"https://github.com/organizations/{org}/settings/apps/new" if org else "https://github.com/settings/apps/new"
+    params = [
+        ("name", name or BOT_NAME),
+        ("description", "Opens sealedstack's pull requests and posts its plan and checklist comments."),
+        ("url", homepage or "https://github.com/"),
+        ("public", "false"),
+        ("webhook_active", "false"),
+    ]
+    params += [(perm, level) for perm, level in PERMISSIONS.items() if perm != "metadata"]
+    return f"{base}?{urlencode(params)}"
 
 
 def form_html(name: str, homepage: str, redirect_url: str, *, state: str = "", org: str = "") -> str:

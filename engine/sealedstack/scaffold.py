@@ -8,6 +8,7 @@ Config holds names only, never secret values or IP addresses (D-008, D-049).
 """
 from __future__ import annotations
 
+import json
 from typing import Iterable, Mapping, Optional
 
 from . import config as config_mod
@@ -103,3 +104,68 @@ def apps_config(first_server: str, domain: str) -> dict:
             }
         }
     }
+
+
+def gitignore() -> str:
+    return ".sealedstack/\n*.tfstate*\n"
+
+
+def devcontainer_json(image: str) -> str:
+    """A devcontainer that runs the pinned engine image (D-046).
+
+    ``image`` includes the tag (``ghcr.io/<owner>/sealedstack:<version>``). Local
+    use is optional and read-mostly; this gives a browser Codespace, or a local VS
+    Code with a container runtime, a terminal with `sealedstack` ready and no
+    toolchain installed on the host.
+    """
+    return json.dumps(
+        {
+            "name": "sealedstack",
+            "image": image,
+            "workspaceFolder": "/infra",
+            "workspaceMount": "source=${localWorkspaceFolder},target=/infra,type=bind",
+            "containerEnv": {
+                "SEALEDSTACK_CONFIG": "/infra/config",
+                "SEALEDSTACK_WORKDIR": "/infra/.sealedstack",
+            },
+            "remoteEnv": {
+                "BWS_ACCESS_TOKEN": "${localEnv:BWS_ACCESS_TOKEN}",
+                "GH_TOKEN": "${localEnv:GH_TOKEN}",
+            },
+            "customizations": {"vscode": {"extensions": []}},
+        },
+        indent=2,
+    ) + "\n"
+
+
+def setup_readme(infra_name: str, image: str, version: str) -> str:
+    return f"""# {infra_name}
+
+Configuration for a sealed origin, run by sealedstack {version}.
+This repository holds only configuration and a pinned tool version: no secrets, no
+IP addresses and no sealedstack source code.
+
+## How changes happen
+
+Every change is a pull request. A plan appears as a comment on the PR; after you
+merge, an approver comments `/sealedstack approve` (or you run the workflow) and
+the change is applied. The pinned **Status** issue shows health, versions and drift.
+
+| You want to | Do this |
+|---|---|
+| Check prerequisites | Comment `/sealedstack check` on a pull request |
+| Add a server or an app | Actions, sealedstack, Run workflow: `add-server` or `add-app` |
+| Bring everything up | Actions, sealedstack, Run workflow: `up` |
+| Upgrade sealedstack | Merge the version-bump pull request (it changes `sealedstack.version` and the workflow ref together) |
+
+## Files
+
+- `config/stack.yaml`, `servers.yaml`, `apps.yaml`: what you edit, in pull requests.
+- `config/tailscale-policy.hujson`: your tailnet policy (imported by `check`); sealedstack adds only its own block.
+- `sealedstack.version` and `.github/workflows/sealedstack.yml`: the pinned version (they must match).
+- `.devcontainer/devcontainer.json`: opens a Codespace with the pinned image (`{image}`) for read-only commands.
+
+Secrets are never stored here. Their **names** are in `config/stack.yaml` under
+`secrets.keys` and in `config/servers.yaml` under `bootstrap`; the values live in
+your secret source.
+"""

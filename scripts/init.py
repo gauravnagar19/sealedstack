@@ -213,39 +213,6 @@ command reference.
 """
 
 
-def gitignore() -> str:
-    return ".sealedstack/\n*.tfstate*\n"
-
-
-def devcontainer_json(image: str) -> str:
-    """A devcontainer that runs the pinned engine image (D-046).
-
-    Local use is optional and read-mostly; this gives a browser Codespace, or a
-    local VS Code with a container runtime, a terminal with `sealedstack` ready
-    and no toolchain installed on the host.
-    """
-    return json.dumps(
-        {
-            "name": "sealedstack",
-            "image": image,
-            "workspaceFolder": "/infra",
-            "workspaceMount": "source=${localWorkspaceFolder},target=/infra,type=bind",
-            "containerEnv": {
-                "SEALEDSTACK_CONFIG": "/infra/config",
-                "SEALEDSTACK_WORKDIR": "/infra/.sealedstack",
-            },
-            "remoteEnv": {
-                "BWS_ACCESS_TOKEN": "${localEnv:BWS_ACCESS_TOKEN}",
-                "GH_TOKEN": "${localEnv:GH_TOKEN}",
-                "TAILSCALE_OAUTH_CLIENT_ID": "${localEnv:TAILSCALE_OAUTH_CLIENT_ID}",
-                "TAILSCALE_OAUTH_CLIENT_SECRET": "${localEnv:TAILSCALE_OAUTH_CLIENT_SECRET}",
-            },
-            "customizations": {"vscode": {"extensions": []}},
-        },
-        indent=2,
-    ) + "\n"
-
-
 def scaffold_infra(
     infra_root: pathlib.Path,
     *,
@@ -270,10 +237,10 @@ def scaffold_infra(
     )
     write_file(
         infra_root / ".devcontainer" / "devcontainer.json",
-        devcontainer_json(image),
+        scaffold.devcontainer_json(f"{image}:{version}"),
         force=force,
     )
-    write_file(infra_root / ".gitignore", gitignore(), force=force)
+    write_file(infra_root / ".gitignore", scaffold.gitignore(), force=force)
     write_file(infra_root / "README.md", infra_readme(infra_name, image), force=force)
 
 

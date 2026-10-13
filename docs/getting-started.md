@@ -131,8 +131,12 @@ permission list. The full list, with the exact key names, is in
    (Hetzner) needs only its token. See the [Netcup firewall](netcup-firewall.md)
    guide.
 5. **The bot identity.** Click the checklist's *Create sealedstack-bot* link. It
-   creates a GitHub App through a manifest flow, which you then install on this
-   repository.
+   opens GitHub's "register a GitHub App" form already filled in; create the App,
+   generate a private key, install it on this repository and store its id, key and
+   installation id in the secret source. (A fine-grained token in the repository
+   secret `GH_TOKEN` also works.) The very first Setup PR is opened with the
+   built-in token; later pull requests use the bot, because only a bot's pull
+   requests start the plan workflows.
 6. **Your SSH public key** goes into `config/stack.yaml` under `admin.ssh_keys`
    (it is not a secret).
 
