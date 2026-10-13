@@ -27,10 +27,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "engine"
 from sealedstack import scaffold  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-# The published image owner is configurable (env/flag); the default is the
-# project owner, not the non-existent `sealedstack` org the old code pointed at.
-DEFAULT_OWNER = os.environ.get("SEALEDSTACK_IMAGE_OWNER", "anomalyco")
-DEFAULT_IMAGE = os.environ.get("SEALEDSTACK_IMAGE", f"ghcr.io/{DEFAULT_OWNER}/sealedstack")
+# The engine image owner is the repository owner (or --owner / SEALEDSTACK_IMAGE_OWNER);
+# there is no placeholder default.
 TAILSCALE_POLICY_URL = "https://api.tailscale.com/api/v2/tailnet/-/acl"
 TAILSCALE_TOKEN_URL = "https://api.tailscale.com/api/v2/oauth/token"
 
@@ -83,6 +81,19 @@ def fetch_tailscale_policy() -> str:
         raise RuntimeError(f"Tailscale API returned HTTP {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"could not reach the Tailscale API: {exc.reason}") from exc
+
+
+def git_owner() -> str:
+    """The owner of the origin remote of the current directory, or ""."""
+    import re
+    import subprocess
+
+    try:
+        url = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, timeout=10).stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+    match = re.search(r"github\.com[:/]([^/]+)/", url)
+    return match.group(1) if match else ""
 
 
 def ask(prompt: str, default: str = "") -> str:
@@ -254,14 +265,15 @@ def main() -> int:
     )
     parser.add_argument(
         "--owner",
-        default=os.environ.get("SEALEDSTACK_IMAGE_OWNER", DEFAULT_OWNER),
-        help=f"owner (GitHub org/user) of the published image (default: {DEFAULT_OWNER})",
+        default=os.environ.get("SEALEDSTACK_IMAGE_OWNER") or git_owner(),
+        help="owner (GitHub org/user) of the engine image and the approver "
+        "(default: the owner of this repository's origin remote)",
     )
     parser.add_argument(
         "--image",
         default=None,
         help="full sealedstack tool image for the generated wrapper "
-        f"(default: ghcr.io/<owner>/sealedstack, env: SEALEDSTACK_IMAGE)",
+        f"(default: ghcr.io/<owner>/sealedstack)",
     )
     parser.add_argument(
         "--no-scaffold",
@@ -275,6 +287,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if not args.owner and not args.image:
+        print("could not tell the owner of the engine image: pass --owner <github-user-or-org> "
+              "(or run inside the infra repo, whose origin remote names it)", file=sys.stderr)
+        return 1
     # --image wins; otherwise derive the published image from the owner.
     image = args.image or f"ghcr.io/{args.owner}/sealedstack"
 

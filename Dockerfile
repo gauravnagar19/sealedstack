@@ -13,11 +13,12 @@
 # `just tool` does the local variant: it builds the toolbox as
 # `sealedstack-toolbox:dev` and passes that tag here.
 #
-# TOOLBOX_IMAGE defaults to the published toolbox for the repo owner, so a
-# clean `docker build .` (or a CI build) works without a local-only tag.
-ARG TOOLBOX_OWNER=anomalyco
-ARG TOOLBOX_IMAGE=ghcr.io/${TOOLBOX_OWNER}/sealedstack-toolbox:latest
+# TOOLBOX_IMAGE has no default: there is no placeholder owner to fall back to. Always
+# pass it (the release workflow passes the toolbox digest, `just tool` and CI the
+# locally built tag), e.g. --build-arg TOOLBOX_IMAGE=ghcr.io/<owner>/sealedstack-toolbox@sha256:...
+ARG TOOLBOX_IMAGE
 FROM ${TOOLBOX_IMAGE} AS tool
+ARG SOURCE_URL=""
 
 ENV SEALEDSTACK_CODE=/opt/sealedstack
 WORKDIR /infra
@@ -51,4 +52,4 @@ ENTRYPOINT ["sealedstack"]
 
 LABEL org.opencontainers.image.title="sealedstack" \
       org.opencontainers.image.description="sealedstack: build a sealed origin from an infra repo" \
-      org.opencontainers.image.source="https://github.com/anomalyco/sealedstack"
+      org.opencontainers.image.source="${SOURCE_URL}"

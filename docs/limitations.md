@@ -140,21 +140,13 @@ then destroys everything. It is intentionally hard to run by accident:
 Even so, it **spends money** (the VM) and **changes real provider state**.
 Read it before running it; never point it at your production config.
 
-## The tool image owner defaults to a placeholder
+## The engine image owner is your repository owner
 
-`scripts/init.py` defaults the published image owner to `anomalyco`
-(`SEALEDSTACK_IMAGE_OWNER`, or `DEFAULT_OWNER`), and the toolbox `Dockerfile`
-defaults `TOOLBOX_OWNER=anomalyco`. If you build or publish your own images, set
-the owner explicitly:
-
-```sh
-docker build --build-arg TOOLBOX_OWNER=<your-gh-owner> -f Dockerfile .
-export SEALEDSTACK_IMAGE_OWNER=<your-gh-owner>
-python3 scripts/init.py --owner <your-gh-owner>
-```
-
-Otherwise the generated `bin/sealedstack` and CI snippets point at an image
-namespace that is not yours.
+`sealedstack setup` and the interactive wizard (`debug init`) name the engine image
+`ghcr.io/<repository owner>/sealedstack:<version>`; there is no placeholder owner.
+Pass `--owner` to use another namespace. The tool `Dockerfile` has no default
+base image either: pass `--build-arg TOOLBOX_IMAGE=...` (the release workflow and
+`just tool` do).
 
 ## Approvals on GitHub Free private repositories: what they do and don't protect
 

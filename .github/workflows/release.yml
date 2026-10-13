@@ -109,7 +109,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            TOOLBOX_OWNER=${{ github.repository_owner }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
             TOOLBOX_IMAGE=ghcr.io/${{ github.repository_owner }}/sealedstack-toolbox@${{ needs.toolbox.outputs.digest }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/sealedstack:${{ steps.version.outputs.version }}

@@ -217,33 +217,52 @@ def _script(code_root: Path, name: str) -> str:
     return str(code_root / "scripts" / name)
 
 
-def _state_lock(config, env, http=None):
-    """Build the remote R2 state lock, or None when R2 credentials are absent."""
+def _r2_client(config, env, http=None, *, purpose: str = "remote state lock"):
+    """An S3 client for the R2 state bucket, or None when R2 credentials are absent."""
     if config is None:
         return None
     try:
-        from . import lock as lock_mod
+        from . import r2 as r2_mod
         from . import s3 as s3_mod
         from . import secrets as secrets_mod
 
         account = str((config.stack.get("cloudflare") or {}).get("account_id") or "")
-        source = secrets_mod.build_source(config.stack, config.config_dir, env)
-        from . import r2 as r2_mod
-
         if not account:
             return None
+        source = secrets_mod.build_source(config.stack, config.config_dir, env)
         try:
             creds = r2_mod.resolve(source, config, env, http=http, required=False)
         except r2_mod.R2Error as exc:
-            # No shared lock is possible; say why (never any key material).
-            print(f"{PROG}: remote state lock unavailable: {str(exc).splitlines()[0]}", file=sys.stderr)
+            # Say why (never any key material).
+            print(f"{PROG}: {purpose} unavailable: {str(exc).splitlines()[0]}", file=sys.stderr)
             return None
         if creds is None:
             return None
-        client = s3_mod.S3Client(f"https://{account}.r2.cloudflarestorage.com", creds.access_key_id, creds.secret_access_key)
-        return lock_mod.StateLock(lock_mod.S3LockBackend(client), owner=config.name or "sealedstack")
-    except Exception:  # noqa: BLE001 - fall back to the local lock
+        return s3_mod.S3Client(f"https://{account}.r2.cloudflarestorage.com", creds.access_key_id, creds.secret_access_key)
+    except Exception:  # noqa: BLE001 - fall back to the local lock / local progress
         return None
+
+
+def _state_lock(config, env, http=None):
+    """Build the remote R2 state lock, or None when R2 credentials are absent."""
+    client = _r2_client(config, env, http)
+    if client is None:
+        return None
+    from . import lock as lock_mod
+
+    return lock_mod.StateLock(lock_mod.S3LockBackend(client), owner=config.name or "sealedstack")
+
+
+def _progress(config, env, command: str, workdir: str, *, client=None):
+    """The record of finished `up` phases: R2 (shared across CI runs) plus a local mirror."""
+    from . import progress as progress_mod
+
+    client = client if client is not None else _r2_client(config, env, purpose="remote progress record")
+    key = f"sealedstack/{(config.name if config else '') or 'sealedstack'}/progress-{command}.json"
+    stores = [progress_mod.S3Store(client, key) if client is not None else None,
+              progress_mod.FileStore(Path(workdir) / f"phases-{command}.json")]
+    commit = env.get("GITHUB_SHA") or env.get("SEALEDSTACK_COMMIT", "")
+    return progress_mod.Progress(stores, commit=commit)
 
 
 def _orchestrate_handler(command: str) -> Callable:
@@ -255,6 +274,7 @@ def _orchestrate_handler(command: str) -> Callable:
         # added explicitly with `server add`.
         up_servers = servers[:1] if command == "up" else []
         workdir = env.get("SEALEDSTACK_WORKDIR") or str(code_root / ".sealedstack")
+        progress = _progress(config, env, command, workdir) if command == "up" else None
         state_path = Path(workdir) / f"phases-{command}.json"
         return orchestrate.run_phases(
             command,
@@ -263,7 +283,8 @@ def _orchestrate_handler(command: str) -> Callable:
             stack_name=(config.name if config else ""),
             servers=up_servers,
             json_output=json_output,
-            state_path=state_path,
+            state_path=None if progress is not None else state_path,
+            progress=progress,
         )
 
     return handler

@@ -92,6 +92,12 @@ class S3Client:
         headers = self._headers(method, key, _sha256_hex(body), dict(extra or {}), datetime.now(timezone.utc))
         return self._send(method, f"{self.endpoint}/{key}", headers, body)
 
+    def put(self, key: str, body: bytes) -> None:
+        """Create or replace ``key``."""
+        response = self._request("PUT", key, body=body, extra={"Content-Type": "application/json"})
+        if response.status not in (200, 201):
+            raise S3Error(f"put {key} failed (HTTP {response.status})")
+
     def put_if_absent(self, key: str, body: bytes) -> bool:
         """Create ``key`` only if it does not exist. True if created, False if it
         already exists (HTTP 412 Precondition Failed)."""

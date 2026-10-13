@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
+from . import progress as progress_mod
+
 
 @dataclass
 class Phase:
@@ -95,33 +97,6 @@ def phases(
     raise ValueError(f"no orchestration for {command!r}")
 
 
-def _load_done(state_path: Optional[Path]) -> set:
-    if state_path is None or not Path(state_path).exists():
-        return set()
-    try:
-        return set(json.loads(Path(state_path).read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, OSError):
-        return set()
-
-
-def _save_done(state_path: Optional[Path], done: set) -> None:
-    if state_path is None:
-        return
-    try:
-        Path(state_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(state_path).write_text(json.dumps(sorted(done)), encoding="utf-8")
-    except OSError:
-        pass
-
-
-def _clear_done(state_path: Optional[Path]) -> None:
-    if state_path is not None:
-        try:
-            Path(state_path).unlink(missing_ok=True)
-        except OSError:
-            pass
-
-
 def run_phases(
     command: str,
     *,
@@ -133,11 +108,13 @@ def run_phases(
     json_output: bool = False,
     stream=None,
     state_path: Optional[Path] = None,
+    progress=None,
 ) -> int:
     """Run the phases in order; stop at the first failure. Re-runnable.
 
-    When ``state_path`` is given, completed phases are recorded there and skipped
-    on a re-run, so ``up`` resumes after a mid-way failure (C3).
+    Completed phases are recorded (``progress``: the R2 state bucket plus a local
+    mirror; ``state_path`` alone gives a local file) and skipped on a re-run, so
+    ``up`` resumes after a mid-way failure, also on a fresh CI runner (C3, G10).
     """
     out = stream if stream is not None else sys.stderr
     plan = phases(
@@ -148,7 +125,11 @@ def run_phases(
         server_ips=server_ips,
     )
 
-    done = _load_done(state_path)
+    if progress is None and state_path is not None:
+        progress = progress_mod.Progress([progress_mod.FileStore(state_path)])
+    done, note = progress.load() if progress is not None else (set(), "")
+    if note:
+        print(f"sealedstack: {note}", file=out)
     records = []
     for phase in plan:
         if phase.name in done:
@@ -159,7 +140,8 @@ def run_phases(
         rc = runner(phase.argv, code_root)
         records.append({"phase": phase.name, "rc": rc})
         if rc != 0:
-            _save_done(state_path, done)
+            if progress is not None:
+                progress.save(done)
             if json_output:
                 print(json.dumps({"command": command, "failed": phase.name, "phases": records}))
             else:
@@ -170,9 +152,11 @@ def run_phases(
                 )
             return rc
         done.add(phase.name)
-        _save_done(state_path, done)
+        if progress is not None:
+            progress.save(done)
 
-    _clear_done(state_path)
+    if progress is not None:
+        progress.clear()
     if json_output:
         print(json.dumps({"command": command, "ok": True, "phases": records}))
     return 0

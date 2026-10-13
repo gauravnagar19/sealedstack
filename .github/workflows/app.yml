@@ -94,15 +94,21 @@ jobs:
         run: echo "package=${GITHUB_REPOSITORY##*/}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve the registry from config
-        # `publish-app-settings` writes SEALEDSTACK_REGISTRY (e.g.
-        # ghcr.io/<owner>) from the rendered registry slot (D-033). Never
-        # hardcode the host here.
+        # `publish` (infra apply) writes SEALEDSTACK_REGISTRY (e.g. ghcr.io/<owner>)
+        # from the registry slot (D-033). Until then, default to the owner's GHCR.
         id: registry
         env:
           SEALEDSTACK_REGISTRY: ${{ vars.SEALEDSTACK_REGISTRY }}
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          prefix="${SEALEDSTACK_REGISTRY:?SEALEDSTACK_REGISTRY is not set; run sealedstack publish-app-settings}"
+          # Before the first infra apply the variable does not exist yet: default to
+          # the repository owner's GHCR namespace (lower case, as GHCR requires), so
+          # the very first build works and the first release has images to deploy.
+          prefix="${SEALEDSTACK_REGISTRY:-ghcr.io/$(printf '%s' "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')}"
+          if [ -z "${SEALEDSTACK_REGISTRY}" ]; then
+            echo "SEALEDSTACK_REGISTRY is not set yet; using ${prefix} (the infra apply publishes it)."
+          fi
           echo "prefix=${prefix}" >> "$GITHUB_OUTPUT"
           echo "host=${prefix%%/*}" >> "$GITHUB_OUTPUT"
 
