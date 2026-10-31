@@ -61,6 +61,8 @@ CALLS: dict[tuple[str, str], tuple[str, str]] = {
     ("GET", "/repos/{}/pulls"): ("Pull requests", "read"),
     ("GET", "/repos/{}/commits/{}/pulls"): ("Pull requests", "read"),
     ("GET", "/repos/{}/issues"): ("Issues", "read"),
+    ("GET", "/repos/{}/issues/{}"): ("Issues", "read"),
+    ("GET", "/search/issues"): ("Issues", "read"),
     ("POST", "/repos/{}/issues"): ("Issues", "write"),
     ("PATCH", "/repos/{}/issues/{}"): ("Issues", "write"),
     ("GET", "/repos/{}/issues/{}/comments"): ("Issues", "read"),

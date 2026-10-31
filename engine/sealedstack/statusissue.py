@@ -12,6 +12,9 @@ from typing import Optional
 from . import forge as forge_mod
 
 MARKER = "<!-- sealedstack:status -->"
+# The Status issue's number is remembered in this repo variable when it is created, so
+# finding it again is one request instead of a search through every issue (DR-7).
+NUMBER_VARIABLE = "SEALEDSTACK_STATUS_ISSUE"
 
 
 def render(
@@ -78,14 +81,14 @@ def render_from_health(config, version: str, health: list) -> str:
 
 
 def issue_number(f: forge_mod.Forge, repo: str) -> Optional[int]:
-    return f.get_issue(repo, MARKER)
+    return f.get_issue(repo, MARKER, variable=NUMBER_VARIABLE)
 
 
 def publish(f: forge_mod.Forge, repo: str, body: str, *, title: str = "sealedstack status") -> int:
     """Create the pinned Status issue, or update it in place."""
     number = issue_number(f, repo)
     if number is None:
-        return f.create_issue(repo, title=title, body=body, pinned=True)
+        return f.create_issue(repo, title=title, body=body, pinned=True, variable=NUMBER_VARIABLE)
     f.update_issue(repo, number, title=title, body=body)
     return number
 

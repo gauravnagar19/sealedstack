@@ -18,9 +18,12 @@ def forge_calls() -> set[tuple[str, str]]:
     github = next(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == "GitHubForge")
     calls = set()
     for node in ast.walk(github):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "_request"):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("_request", "_paged")):
             continue
-        method, path = node.args[0], node.args[1]
+        if node.func.attr == "_paged":  # list endpoints that follow the Link header: always GET
+            method, path = ast.Constant(value="GET"), node.args[0]
+        else:
+            method, path = node.args[0], node.args[1]
         assert isinstance(method, ast.Constant), "the HTTP method must be a literal"
         if isinstance(path, ast.JoinedStr):
             text = "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in path.values)

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
 
@@ -91,10 +92,11 @@ class Forge:
         """True/False for a repository secret; None when the forge will not say."""
         raise NotImplementedError
 
-    def get_issue(self, repo: str, marker: str) -> Optional[int]:  # pragma: no cover
+    def get_issue(self, repo: str, marker: str, *, variable: str = "") -> Optional[int]:  # pragma: no cover
+        """The issue whose body carries ``marker`` (``variable`` names a repo variable remembering its number)."""
         raise NotImplementedError
 
-    def create_issue(self, repo: str, *, title: str, body: str, pinned: bool = False) -> int:  # pragma: no cover
+    def create_issue(self, repo: str, *, title: str, body: str, pinned: bool = False, variable: str = "") -> int:  # pragma: no cover
         raise NotImplementedError
 
     def update_issue(self, repo: str, number: int, *, title: Optional[str] = None, body: Optional[str] = None) -> None:  # pragma: no cover
@@ -198,7 +200,7 @@ class GitHubForge(Forge):
             raise ForgeError("GH_TOKEN is not set")
         return cls(token, http=http)
 
-    def _request(self, method: str, path: str, *, json_body=None, text: bool = False) -> object:
+    def _headers(self, text: bool = False) -> dict:
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/vnd.github+json",
@@ -206,14 +208,42 @@ class GitHubForge(Forge):
         }
         if text:
             headers["Accept"] = "application/vnd.github.raw"
-        response = self.http.request(method, f"{self.api}{path}", headers=headers, json_body=json_body)
+        return headers
+
+    def _send(self, method: str, url: str, *, json_body=None, text: bool = False):
+        response = self.http.request(method, url, headers=self._headers(text), json_body=json_body)
         if response.status >= 400:
+            path = url[len(self.api):] if url.startswith(self.api) else url
             raise ForgeError(f"{method} {path} failed (HTTP {response.status})", status=response.status)
+        return response
+
+    def _request(self, method: str, path: str, *, json_body=None, text: bool = False) -> object:
+        response = self._send(method, f"{self.api}{path}", json_body=json_body, text=text)
         if text:
             return response.text
         if not response.body:
             return None
         return response.json()
+
+    def _paged(self, path: str, *, per_page: int = 100, max_pages: int = 50) -> list:
+        """Every item of a list endpoint, following ``Link: <...>; rel="next"`` (DR-7).
+
+        GitHub returns 30 items per page by default and 100 at most; reading only the
+        first page silently loses everything after it. ``max_pages`` bounds a runaway
+        repository (50 x 100 items)."""
+        joiner = "&" if "?" in path else "?"
+        url = f"{self.api}{path}{joiner}per_page={per_page}"
+        items: list = []
+        for _ in range(max_pages):
+            response = self._send("GET", url)
+            page = response.json() if response.body else []
+            if isinstance(page, dict):  # search-style envelope
+                page = page.get("items") or []
+            items.extend(page or [])
+            url = next_link(response.headers)
+            if not url or not url.startswith(self.api + "/"):
+                break  # never follow a link off the API host with the token
+        return items
 
     def read_file(self, repo: str, path: str, ref: str = "main") -> str:
         return str(self._request("GET", f"/repos/{repo}/contents/{path}?ref={ref}", text=True))
@@ -270,8 +300,7 @@ class GitHubForge(Forge):
 
     def upsert_comment(self, repo: str, number: int, body: str, *, marker: str = "") -> int:
         if marker:
-            comments = self._request("GET", f"/repos/{repo}/issues/{number}/comments") or []
-            for comment in comments:
+            for comment in self._paged(f"/repos/{repo}/issues/{number}/comments"):
                 if marker in (comment.get("body") or ""):
                     # An unchanged body is left alone so its edit time (and with it
                     # the approvals that came after it, D-052) is not disturbed.
@@ -282,7 +311,7 @@ class GitHubForge(Forge):
         return int(created["id"])
 
     def issue_comments(self, repo: str, number: int) -> list:
-        comments = self._request("GET", f"/repos/{repo}/issues/{number}/comments?per_page=100") or []
+        comments = self._paged(f"/repos/{repo}/issues/{number}/comments")  # every page: an approval on a busy PR is late
         return [
             {
                 "author": (c.get("user") or {}).get("login", ""),
@@ -365,18 +394,44 @@ class GitHubForge(Forge):
                 return False
             return None
 
-    def get_issue(self, repo: str, marker: str) -> Optional[int]:
-        issues = self._request("GET", f"/repos/{repo}/issues?state=all&per_page=100") or []
-        for issue in issues:
+    def get_issue(self, repo: str, marker: str, *, variable: str = "") -> Optional[int]:
+        """The issue whose body carries ``marker``: a stored number, else search, else every page (DR-7)."""
+        if variable:
+            try:
+                stored = int(self.get_variable(repo, variable) or 0)
+            except (ForgeError, ValueError):
+                stored = 0
+            if stored:
+                try:
+                    issue = self._request("GET", f"/repos/{repo}/issues/{stored}") or {}
+                    if "pull_request" not in issue and marker in (issue.get("body") or ""):
+                        return stored
+                except ForgeError:
+                    pass
+        try:
+            query = urllib.parse.quote(f'"{marker}" repo:{repo} in:body is:issue')
+            found = self._request("GET", f"/search/issues?q={query}&per_page=100") or {}
+            for issue in found.get("items") or []:
+                if "pull_request" not in issue and marker in (issue.get("body") or ""):
+                    return int(issue["number"])
+        except ForgeError:
+            pass  # search is rate limited and lags behind new issues: fall through to the full list
+        for issue in self._paged(f"/repos/{repo}/issues?state=all"):
             if "pull_request" in issue:
                 continue
             if marker in (issue.get("body") or ""):
                 return int(issue["number"])
         return None
 
-    def create_issue(self, repo: str, *, title: str, body: str, pinned: bool = False) -> int:
+    def create_issue(self, repo: str, *, title: str, body: str, pinned: bool = False, variable: str = "") -> int:
         issue = self._request("POST", f"/repos/{repo}/issues", json_body={"title": title, "body": body})
-        return int(issue["number"])
+        number = int(issue["number"])
+        if variable:  # remember it, so the next lookup is one request, not a search
+            try:
+                self.set_variable(repo, variable, str(number))
+            except ForgeError:
+                pass
+        return number
 
     def update_issue(self, repo: str, number: int, *, title: Optional[str] = None, body: Optional[str] = None) -> None:
         payload = {}
@@ -407,6 +462,18 @@ class GitHubForge(Forge):
             if deployment_outcome(statuses) == "success":
                 return deployment_record(deployment)
         return {}
+
+
+def next_link(headers) -> str:
+    """The ``rel="next"`` URL of a ``Link`` response header ("" when there is none)."""
+    for name, value in (headers or {}).items():
+        if str(name).lower() != "link":
+            continue
+        for part in str(value).split(","):
+            match = re.match(r'\s*<([^>]+)>\s*;.*\brel="?next"?', part)
+            if match:
+                return match.group(1)
+    return ""
 
 
 def _b64(text: str) -> str:
@@ -575,14 +642,16 @@ class InMemoryForge(Forge):
     def secret_exists(self, repo: str, name: str) -> Optional[bool]:
         return (repo, name) in self.secrets
 
-    def get_issue(self, repo: str, marker: str) -> Optional[int]:
+    def get_issue(self, repo: str, marker: str, *, variable: str = "") -> Optional[int]:
         for number, issue in self.issues.items():
             if issue["repo"] == repo and marker in issue["body"]:
                 return number
         return None
 
-    def create_issue(self, repo: str, *, title: str, body: str, pinned: bool = False) -> int:
+    def create_issue(self, repo: str, *, title: str, body: str, pinned: bool = False, variable: str = "") -> int:
         number = self._id()
+        if variable:
+            self.variables[(repo, variable)] = str(number)
         self.issues[number] = {"repo": repo, "number": number, "title": title, "body": body, "pinned": pinned}
         return number
 
