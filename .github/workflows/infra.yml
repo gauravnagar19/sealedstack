@@ -94,6 +94,8 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_REF: ${{ github.ref }}
           GITHUB_SHA: ${{ github.sha }}
+          # D-050: secrets.source: ci reads the caller's secrets from this one variable.
+          SEALEDSTACK_CI_SECRETS: ${{ toJSON(secrets) }}
         run: |
           set -euo pipefail
           if [ ! -f sealedstack.version ]; then
@@ -106,6 +108,7 @@ jobs:
             -e SEALEDSTACK_CONFIG=/infra/config -e GITHUB_EVENT_PATH=/event.json \
             -e GH_TOKEN -e SEALEDSTACK_COMMAND -e SEALEDSTACK_ARGS -e SEALEDSTACK_DEFAULT_BRANCH -e SEALEDSTACK_DRIFT_ENABLED \
             -e GITHUB_ACTOR -e GITHUB_REPOSITORY -e GITHUB_EVENT_NAME -e GITHUB_REF -e GITHUB_SHA \
+            -e SEALEDSTACK_CI_SECRETS \
             "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
             ci resolve --output /ghout
 
@@ -140,6 +143,29 @@ jobs:
         env:
           REGISTRY_TOKEN: ${{ github.token }}
         run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Mask the forwarded secrets
+        # D-050: the caller's secrets reach the engine as one JSON variable. GitHub
+        # masks each secret value it knows, but the JSON-escaped form of a value with
+        # quotes or newlines is a different string, so register every value (and each
+        # of its lines) as a mask before anything can print it. Nothing is echoed.
+        env:
+          SEALEDSTACK_CI_SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          try:
+              values = json.loads(os.environ.get("SEALEDSTACK_CI_SECRETS") or "{}").values()
+          except ValueError:
+              values = []
+          for value in values:
+              if isinstance(value, str):
+                  for line in value.splitlines():
+                      if line.strip():
+                          print("::add-mask::" + line)
+          PY
 
       - name: Version-pin parity (sealedstack.version == workflow ref)
         run: |
@@ -240,6 +266,7 @@ jobs:
           SEALEDSTACK_RESOLVED_ARGS: ${{ needs.resolve.outputs.args }}
           SEALEDSTACK_RESOLVED_PR: ${{ needs.resolve.outputs.pr }}
           SEALEDSTACK_RESOLVED_FOLLOW: ${{ needs.resolve.outputs.follow }}
+          SEALEDSTACK_CI_SECRETS: ${{ toJSON(secrets) }}
         run: |
           set -euo pipefail
           docker run --rm -i --network host \
@@ -253,7 +280,7 @@ jobs:
             -e GITHUB_SERVER_URL -e GITHUB_RUN_ID \
             -e SEALEDSTACK_DEFAULT_BRANCH -e SEALEDSTACK_PR \
             -e SEALEDSTACK_RESOLVED_COMMAND -e SEALEDSTACK_RESOLVED_ARGS -e SEALEDSTACK_RESOLVED_PR \
-            -e SEALEDSTACK_RESOLVED_FOLLOW \
+            -e SEALEDSTACK_RESOLVED_FOLLOW -e SEALEDSTACK_CI_SECRETS \
             "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
             ci exec
 

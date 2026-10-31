@@ -100,7 +100,21 @@ D-044).
 | `<app>.<NAME>` | apps with secrets | For example `shop.CLERK_SECRET_KEY`. |
 
 Any key may also be supplied as an environment variable of the same name instead
-of using Bitwarden (`secrets: env` or `ci`).
+of using Bitwarden (`secrets: env`).
+
+**`secrets.source: ci` (your repository's own secrets).** Add each key above as a
+**repository secret** of the infra repo (Settings, Secrets and variables, Actions)
+and set `slots.secrets: ci`. GitHub only hands a workflow the secrets it names, so
+the caller workflow must pass **`secrets: inherit`** (the generated one does). The
+reusable workflow then forwards all of them to the engine as one masked JSON
+environment variable, `SEALEDSTACK_CI_SECRETS` (`toJSON(secrets)`), which the
+engine reads before any plain environment variable. Two limits to know:
+
+- Only **repository** secrets arrive. Environment secrets are not forwarded, and
+  private repositories on GitHub Free have no environments at all.
+- Anything the workflow can read is readable by every workflow in the repo that
+  can run with those secrets; Bitwarden keeps the infrastructure credentials out
+  of GitHub entirely, which is why it is the default.
 
 ## Cloudflare API token permissions
 

@@ -60,10 +60,58 @@ class EnvSource(SecretSource):
         return SecretResult(name, "missing", detail=f"{name} is not set in the environment")
 
 
+CI_SECRETS_VAR = "SEALEDSTACK_CI_SECRETS"
+
+
+def parse_ci_secrets(raw: Optional[str]) -> "tuple[dict[str, str], str]":
+    """``(secrets, problem)`` from the workflow's ``toJSON(secrets)`` value.
+
+    Missing or empty is fine (``{}``, no problem: plain environment variables are
+    used). Anything that is not a JSON object is reported as a problem, never
+    echoed. Non-string and empty values are dropped.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return {}, ""
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return {}, f"{CI_SECRETS_VAR} is not valid JSON"
+    if not isinstance(data, dict):
+        return {}, f"{CI_SECRETS_VAR} is not a JSON object"
+    return {str(k): v for k, v in data.items() if isinstance(v, str) and v}, ""
+
+
 class CiSource(EnvSource):
-    """CI platform secrets, delivered to the engine as environment variables."""
+    """CI platform secrets (D-050 ``secrets.source: ci``).
+
+    The reusable workflow forwards the caller's repository secrets to the engine
+    container as ONE environment variable, ``SEALEDSTACK_CI_SECRETS``, holding
+    ``toJSON(secrets)`` (GitHub only exposes the secrets a step names, so a source
+    that is not named would otherwise never arrive). A lookup reads that JSON first
+    and falls back to a plain environment variable of the same name. The value is
+    masked in the job log and never printed by the engine.
+    """
 
     kind = "ci"
+
+    def __init__(self, env: Optional[Mapping[str, str]] = None) -> None:
+        super().__init__(env)
+        self.forwarded, self.problem = parse_ci_secrets(self.env.get(CI_SECRETS_VAR))
+
+    def get(self, name: str) -> SecretResult:
+        if name in self.forwarded:
+            return SecretResult(name, "found", self.forwarded[name])
+        value = self.env.get(name)
+        if value:
+            return SecretResult(name, "found", value)
+        hint = (
+            f"{self.problem}; the caller workflow must pass `secrets: inherit`"
+            if self.problem
+            else f"{name} is not among the secrets the workflow forwarded; the caller workflow must pass `secrets: inherit`, "
+                 "and the value must be a repository secret (environment secrets are not forwarded)"
+        )
+        return SecretResult(name, "missing", detail=hint)
 
 
 def default_process_runner(argv: Sequence[str]) -> tuple[int, str, str]:
