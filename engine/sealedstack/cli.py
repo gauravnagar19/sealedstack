@@ -217,6 +217,16 @@ def _script(code_root: Path, name: str) -> str:
     return str(code_root / "scripts" / name)
 
 
+def r2_endpoint(account: str) -> str:
+    """The R2 S3 endpoint (a function so tests can point it at a local fake)."""
+    return f"https://{account}.r2.cloudflarestorage.com"
+
+
+def state_bucket(config) -> str:
+    """The R2 state bucket (same default as ``tofu.backend_config``)."""
+    return str((config.stack.get("state") or {}).get("bucket") or "sealedstack-state")
+
+
 def _r2_client(config, env, http=None, *, purpose: str = "remote state lock"):
     """An S3 client for the R2 state bucket, or None when R2 credentials are absent."""
     if config is None:
@@ -238,7 +248,10 @@ def _r2_client(config, env, http=None, *, purpose: str = "remote state lock"):
             return None
         if creds is None:
             return None
-        return s3_mod.S3Client(f"https://{account}.r2.cloudflarestorage.com", creds.access_key_id, creds.secret_access_key)
+        bucket = state_bucket(config)
+        return s3_mod.S3Client(
+            r2_endpoint(account), bucket, creds.access_key_id, creds.secret_access_key
+        )
     except Exception:  # noqa: BLE001 - fall back to the local lock / local progress
         return None
 
@@ -250,7 +263,8 @@ def _state_lock(config, env, http=None):
         return None
     from . import lock as lock_mod
 
-    return lock_mod.StateLock(lock_mod.S3LockBackend(client), owner=config.name or "sealedstack")
+    key = lock_mod.lock_key(config.name)
+    return lock_mod.StateLock(lock_mod.S3LockBackend(client, key), owner=config.name or "sealedstack", key=key)
 
 
 def _progress(config, env, command: str, workdir: str, *, client=None):

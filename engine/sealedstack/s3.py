@@ -1,9 +1,11 @@
 """Minimal S3 client with SigV4 signing (D-047 / fixes round 3 C1).
 
-Only what the state lock needs: a *conditional* ``put`` (``If-None-Match: *``),
-``get`` and ``delete``. Path-style addressing, so it works against Cloudflare R2
-(region ``auto``) at ``https://<account>.r2.cloudflarestorage.com``. Pure stdlib
-(no boto3); the network call is injectable for tests.
+Only what the state lock and the progress record need: a *conditional* ``put``
+(``If-None-Match: *``), ``put``, ``get`` and ``delete``. Path-style addressing,
+so it works against Cloudflare R2 (region ``auto``): every request goes to
+``<endpoint>/<bucket>/<key>`` and the signed canonical URI is ``/<bucket>/<key>``
+(DR-1: without the bucket the first key segment is read as the bucket name).
+Pure stdlib (no boto3); the network call is injectable for tests.
 """
 from __future__ import annotations
 
@@ -44,53 +46,93 @@ def default_sender(method: str, url: str, headers: Mapping[str, str], body: byte
         return Response(status=exc.code, headers=dict(exc.headers.items()) if exc.headers else {}, body=exc.read(), url=url)
 
 
+def sign_v4(
+    method: str,
+    host: str,
+    canonical_uri: str,
+    payload_hash: str,
+    extra: Mapping[str, str],
+    *,
+    access_key: str,
+    secret_key: str,
+    region: str,
+    now: datetime,
+    query: str = "",
+) -> "tuple[str, dict]":
+    """Sign one request with SigV4; return ``(canonical_request, headers_to_send)``.
+
+    ``canonical_uri`` is already percent-encoded (S3 does not double-encode).
+    Verified against the published AWS SigV4 S3 examples in the tests.
+    """
+    amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = now.strftime("%Y%m%d")
+    signed = {"host": host, "x-amz-content-sha256": payload_hash, "x-amz-date": amz_date}
+    for name, value in extra.items():
+        signed[name.lower()] = value
+    signed_headers = ";".join(sorted(signed))
+    canonical_headers = "".join(f"{name}:{signed[name]}\n" for name in sorted(signed))
+    canonical_request = "\n".join([method, canonical_uri, query, canonical_headers, signed_headers, payload_hash])
+    scope = f"{date_stamp}/{region}/s3/aws4_request"
+    string_to_sign = "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, _sha256_hex(canonical_request.encode("utf-8"))])
+    signing_key = _hmac(_hmac(_hmac(_hmac(f"AWS4{secret_key}".encode(), date_stamp), region), "s3"), "aws4_request")
+    signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+    out = dict(extra)
+    out.update(
+        {
+            "x-amz-content-sha256": payload_hash,
+            "x-amz-date": amz_date,
+            "Authorization": (
+                f"AWS4-HMAC-SHA256 Credential={access_key}/{scope}, "
+                f"SignedHeaders={signed_headers}, Signature={signature}"
+            ),
+        }
+    )
+    return canonical_request, out
+
+
 class S3Client:
     def __init__(
         self,
         endpoint: str,
+        bucket: str,
         access_key: str,
         secret_key: str,
         *,
         region: str = "auto",
         sender=None,
+        clock=None,
     ):
+        if not bucket or "/" in bucket:
+            raise ValueError(f"S3Client needs a bucket name (got {bucket!r})")
         self.endpoint = endpoint.rstrip("/")
+        self.bucket = bucket
         self.host = urllib.parse.urlparse(self.endpoint).netloc
         self.access_key = access_key
         self.secret_key = secret_key
         self.region = region
         self._send = sender or default_sender
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
-    def _headers(self, method: str, key: str, payload_hash: str, extra: Mapping[str, str], now: datetime) -> dict:
-        amz_date = now.strftime("%Y%m%dT%H%M%SZ")
-        date_stamp = now.strftime("%Y%m%d")
-        canonical_uri = "/" + urllib.parse.quote(key, safe="/")
-        signed = {"host": self.host, "x-amz-content-sha256": payload_hash, "x-amz-date": amz_date}
-        for name, value in extra.items():
-            signed[name.lower()] = value
-        signed_headers = ";".join(sorted(signed))
-        canonical_headers = "".join(f"{name}:{signed[name]}\n" for name in sorted(signed))
-        canonical_request = "\n".join([method, canonical_uri, "", canonical_headers, signed_headers, payload_hash])
-        scope = f"{date_stamp}/{self.region}/s3/aws4_request"
-        string_to_sign = "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, _sha256_hex(canonical_request.encode("utf-8"))])
-        signing_key = _hmac(_hmac(_hmac(_hmac(f"AWS4{self.secret_key}".encode(), date_stamp), self.region), "s3"), "aws4_request")
-        signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
-        out = dict(extra)
-        out.update(
-            {
-                "x-amz-content-sha256": payload_hash,
-                "x-amz-date": amz_date,
-                "Authorization": (
-                    f"AWS4-HMAC-SHA256 Credential={self.access_key}/{scope}, "
-                    f"SignedHeaders={signed_headers}, Signature={signature}"
-                ),
-            }
-        )
-        return out
+    def path(self, key: str) -> str:
+        """The percent-encoded request path (and canonical URI): ``/<bucket>/<key>``."""
+        return "/" + urllib.parse.quote(f"{self.bucket}/{key.lstrip('/')}", safe="/")
+
+    def url(self, key: str) -> str:
+        return f"{self.endpoint}{self.path(key)}"
 
     def _request(self, method: str, key: str, *, body: bytes = b"", extra: Optional[Mapping[str, str]] = None) -> Response:
-        headers = self._headers(method, key, _sha256_hex(body), dict(extra or {}), datetime.now(timezone.utc))
-        return self._send(method, f"{self.endpoint}/{key}", headers, body)
+        _, headers = sign_v4(
+            method,
+            self.host,
+            self.path(key),
+            _sha256_hex(body),
+            dict(extra or {}),
+            access_key=self.access_key,
+            secret_key=self.secret_key,
+            region=self.region,
+            now=self._clock(),
+        )
+        return self._send(method, self.url(key), headers, body)
 
     def put(self, key: str, body: bytes) -> None:
         """Create or replace ``key``."""

@@ -13,7 +13,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Mapping, Optional
 
-LOCK_KEY = "sealedstack-state.lock"
+LOCK_KEY = "sealedstack/sealedstack/state.lock"  # fallback; real keys come from lock_key()
+
+
+def lock_key(infra_name: str) -> str:
+    """The lock object, namespaced per infra repo inside the state bucket (D-062)."""
+    return f"sealedstack/{infra_name or 'sealedstack'}/state.lock"
 
 
 class LockHeld(RuntimeError):

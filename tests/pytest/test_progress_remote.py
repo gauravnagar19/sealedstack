@@ -102,6 +102,6 @@ def test_s3_client_can_put_an_object_unconditionally():
 
         return Response(200, {}, b"", url)
 
-    client = s3.S3Client("https://acct.r2.cloudflarestorage.com", "id", "secret", sender=sender)
+    client = s3.S3Client("https://acct.r2.cloudflarestorage.com", "sealedstack-state", "id", "secret", sender=sender)
     client.put("sealedstack/x/progress-up.json", b"{}")
     assert seen[0][0] == "PUT" and "If-None-Match" not in seen[0][2]

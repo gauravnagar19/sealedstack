@@ -56,7 +56,7 @@ class _FakeSender:
 
 def test_s3_conditional_put_get_delete():
     sender = _FakeSender()
-    client = s3.S3Client("https://acct.r2.cloudflarestorage.com", "ak", "sk", sender=sender)
+    client = s3.S3Client("https://acct.r2.cloudflarestorage.com", "sealedstack-state", "ak", "sk", sender=sender)
 
     assert client.put_if_absent("k", b"one") is True
     assert client.get("k") == b"one"
@@ -74,7 +74,7 @@ def test_s3_requests_are_signed():
         captured.update(headers)
         return Response(status=200, body=b"", url=url)
 
-    client = s3.S3Client("https://acct.r2.cloudflarestorage.com", "AKIA", "secret", sender=sender)
+    client = s3.S3Client("https://acct.r2.cloudflarestorage.com", "sealedstack-state", "AKIA", "secret", sender=sender)
     client.put_if_absent("k", b"x")
     assert captured["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=AKIA/")
     assert "x-amz-date" in captured
