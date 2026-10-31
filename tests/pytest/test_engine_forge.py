@@ -93,8 +93,9 @@ def test_forge_open_pr_and_variables():
     assert number and f.files[("me/repo", "sealedstack/setup", "config/stack.yaml")] == "x"
     f.set_variable("you/shop", "SEALEDSTACK_REGISTRY", "ghcr.io/you")
     assert f.get_variable("you/shop", "SEALEDSTACK_REGISTRY") == "ghcr.io/you"
-    f.set_secret("you/shop", "DOKPLOY_APP_ID", "abc", environment="production")
-    assert f.secrets[("you/shop", "production", "DOKPLOY_APP_ID")] == "abc"
+    f.set_secret("you/shop", "DOKPLOY_APP_ID", "abc")
+    assert f.secrets[("you/shop", "DOKPLOY_APP_ID")] == "abc"
+    assert f.secret_exists("you/shop", "DOKPLOY_APP_ID") is True and f.secret_exists("you/shop", "X") is False
 
 
 # --------------------------------------------------------------------------- #

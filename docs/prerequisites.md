@@ -143,14 +143,14 @@ links the form with the name, owner, expiry and permissions pre-filled):
 | Issues | Read and write | The pinned Status issue, the living checklist and plan comments (PR comments go through the Issues API). |
 | Variables | Read and write | Publish the deploy settings (compose ids, Dokploy URL, release trust ids, registry) to each app repo. |
 | Deployments | Read | Read each app repo's latest successful `production` deployment, the released version recorded by the app release workflow (D-060), to redeploy it after a server rebuild. |
-| Environments | Read and write | Store the Dokploy API key as an environment secret (`production`) in each app repo. GitHub files environment secrets under Environments, not Secrets. |
+| Secrets | Read and write | Store the Dokploy API key as a repository secret in each app repo (the release job reads it; environment secrets are not available to private repos on GitHub Free). |
 | Workflows | Read and write | PRs that add or change `.github/workflows/*` files (the app release workflow, version-bump PRs) are refused without it. |
 | Administration (optional) | Read and write | Only to let sealedstack create the `production` environment itself. Skip it and create that environment by hand in each app repo. |
 
 Add it as the **repository secret `GH_TOKEN`** in the infra repo. `check` probes
 that the token can reach the infra repo and every app repo in `apps.yaml` with
 harmless reads, names the permission that is missing, and warns about a classic
-token or a missing `production` environment. GitHub does not let a token read back
+token or a missing `SEALEDSTACK_DOKPLOY_API_KEY` repository secret in an app repo. GitHub does not let a token read back
 its own write levels, so write access is confirmed the first time it is used.
 
 ## Tailscale OAuth client

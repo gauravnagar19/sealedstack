@@ -1,7 +1,7 @@
 """``publish-app-settings`` (spec 6.5, D-047).
 
 Write the deploy settings app CI needs into each app repo's GitHub variables and
-the ``production`` environment secret, through the ``forge`` abstraction (M7).
+the Dokploy API key as a repository secret, through the ``forge`` abstraction (M7).
 Replaces ``scripts/publish-app-settings``; no longer shells out to ``gh``.
 
 The app repo's CI never names the infra repo: it reads only these values (D-023).
@@ -81,9 +81,17 @@ def run(
         _set_variable(forge, repo, "SEALEDSTACK_TS_RELEASE_AUDIENCE", ts_audience, out)
         _set_variable(forge, repo, "SEALEDSTACK_REGISTRY", registry, out)
 
-        forge.ensure_environment(repo, "production")
-        forge.set_secret(repo, "SEALEDSTACK_DOKPLOY_API_KEY", api_key, environment="production")
-        print("    secret SEALEDSTACK_DOKPLOY_API_KEY (env production)", file=out)
+        # FR-2: always a repository secret. The release job declares no
+        # `environment:`, so an environment secret would be invisible to it, and
+        # private repos on GitHub Free have no environments at all.
+        has_environments = forge.ensure_environment(repo, "production")
+        forge.set_secret(repo, "SEALEDSTACK_DOKPLOY_API_KEY", api_key)
+        note = (
+            "environments are available, but the release job reads a repository secret"
+            if has_environments
+            else "environments are not available for this repository (private repo on GitHub Free, or the token cannot create them)"
+        )
+        print(f"    secret SEALEDSTACK_DOKPLOY_API_KEY (mode: repository secret; {note})", file=out)
 
     print("publish-app-settings: done", file=out)
 

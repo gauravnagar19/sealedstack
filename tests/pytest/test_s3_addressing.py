@@ -21,7 +21,7 @@ from sealedstack.http import Response
 
 REPO = Path(__file__).resolve().parents[2]
 NOW = datetime(2013, 5, 24, 0, 0, 0, tzinfo=timezone.utc)
-EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 AWS_ACCESS = "AKIAIOSFODNN7EXAMPLE"
 AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 
@@ -31,21 +31,21 @@ AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 def test_sigv4_matches_the_aws_get_object_example():
     """AWS docs, "Example: GET Object" (Signature Version 4, Authorization header)."""
     canonical, headers = s3.sign_v4(
-        "GET", "examplebucket.s3.amazonaws.com", "/test.txt", EMPTY_SHA, {"Range": "bytes=0-9"},
+        "GET", "examplebucket.s3.amazonaws.com", "/test.txt", EMPTY_SHA256, {"Range": "bytes=0-9"},
         access_key=AWS_ACCESS, secret_key=AWS_SECRET, region="us-east-1", now=NOW,
     )
     assert canonical == (
         "GET\n/test.txt\n\n"
         "host:examplebucket.s3.amazonaws.com\n"
         "range:bytes=0-9\n"
-        f"x-amz-content-sha256:{EMPTY_SHA}\n"
+        f"x-amz-content-sha256:{EMPTY_SHA256}\n"
         "x-amz-date:20130524T000000Z\n\n"
-        f"host;range;x-amz-content-sha256;x-amz-date\n{EMPTY_SHA}"
+        f"host;range;x-amz-content-sha256;x-amz-date\n{EMPTY_SHA256}"
     )
     auth = headers["Authorization"]
     assert "Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request" in auth
     assert "SignedHeaders=host;range;x-amz-content-sha256;x-amz-date" in auth
-    assert auth.endswith("Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41")
+    assert auth.endswith("Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41")  # AWS-published signature digest
 
 
 def test_sigv4_matches_the_aws_put_object_example():
@@ -58,7 +58,7 @@ def test_sigv4_matches_the_aws_put_object_example():
     )
     assert canonical.splitlines()[:2] == ["PUT", "/test%24file.text"]
     assert "x-amz-content-sha256:44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072" in canonical
-    assert headers["Authorization"].endswith("Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd")
+    assert headers["Authorization"].endswith("Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd")  # AWS-published signature digest
 
 
 # -- exact URL, host and canonical request (path-style, bucket included) -----------
@@ -107,7 +107,7 @@ def test_canonical_request_signs_the_bucket_path_and_the_host():
     assert lines[-2] == "content-type;host;if-none-match;x-amz-content-sha256;x-amz-date"
 
 
-GOLDEN_SIGNATURE = "8f1316faa945aea9e83916afeb9d8415def125a11110d68fb19ca2dd443ae43b"
+GOLDEN_SIGNATURE = "8f1316faa945aea9e83916afeb9d8415def125a11110d68fb19ca2dd443ae43b"  # signature digest of the fixed request
 
 
 def test_the_signature_for_a_fixed_request_is_stable():

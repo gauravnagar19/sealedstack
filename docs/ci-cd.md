@@ -252,8 +252,10 @@ long-lived Tailscale secret.
 > app repo for you, through the forge adapter: the variables
 > `SEALEDSTACK_COMPOSE_IDS`, `SEALEDSTACK_DOKPLOY_URL`,
 > `SEALEDSTACK_TS_RELEASE_CLIENT_ID`, `SEALEDSTACK_TS_RELEASE_AUDIENCE` and
-> `SEALEDSTACK_REGISTRY`, and the secret `SEALEDSTACK_DOKPLOY_API_KEY` in the
-> `production` environment (`sealedstack debug publish` re-runs it). The manual
+> `SEALEDSTACK_REGISTRY`, and the repository secret `SEALEDSTACK_DOKPLOY_API_KEY`
+> (a repository secret, not an environment secret: it works on private repos on
+> GitHub Free, and the release job can read it; `sealedstack debug publish`
+> re-runs it). The manual
 > steps below are for CI systems the adapter does not cover yet.
 
 The platform stack creates the app's compose service and exposes its id. After

@@ -128,7 +128,7 @@ def test_setup_opens_the_pr_and_posts_the_living_checklist(tmp_path):
     # D-058: the bot identity is a fine-grained token, not an App
     assert "fine-grained token `GH_TOKEN`" in comment and "github.com/settings/personal-access-tokens/new?" in comment
     assert "Contents: read and write" in comment and "Pull requests: read and write" in comment
-    assert "Variables: read and write" in comment and "Environments: read and write" in comment
+    assert "Variables: read and write" in comment and "Secrets: read and write" in comment
     assert "github.com/settings/apps/new" not in comment and "GitHub App" not in comment
     assert "Optional: Clerk keys" in comment and "not needed yet" in comment
     ready, total = map(int, re.search(r"Progress: (\d+) of (\d+) ready", comment).groups())

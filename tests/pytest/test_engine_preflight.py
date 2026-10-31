@@ -283,7 +283,7 @@ FINE_GRAINED = "github_pat_example"
 RELEASE_VARS = {"SEALEDSTACK_TS_RELEASE_CLIENT_ID": "release-client", "SEALEDSTACK_TS_RELEASE_AUDIENCE": "release-audience"}
 
 
-def github_stub(*, denied=(), env_status=200, repo_status=200, role=None, release_vars=None, release_status=None) -> StubClient:
+def github_stub(*, denied=(), secrets_status=200, key_secret_status=200, repo_status=200, role=None, release_vars=None, release_status=None) -> StubClient:
     """A GitHub API stub: every read answers 200 except the permissions in ``denied``.
 
     ``release_vars`` is the app repo's published ``tag:release`` variables (default: both set);
@@ -308,7 +308,8 @@ def github_stub(*, denied=(), env_status=200, repo_status=200, role=None, releas
     }
     for permission, needle in probes.items():
         http.add(needle, Route(status=403 if permission in denied else 200, json_body=[]))
-    http.add("/environments/production/secrets/public-key", Route(status=env_status, json_body={}))
+    http.add("/actions/secrets/SEALEDSTACK_DOKPLOY_API_KEY", Route(status=key_secret_status, json_body={"name": "SEALEDSTACK_DOKPLOY_API_KEY"}))
+    http.add("/actions/secrets/public-key", Route(status=secrets_status, json_body={}))
     http.add("api.github.com/repos/", Route(status=repo_status, json_body={"permissions": role} if role else {}))
     return http
 
@@ -339,8 +340,8 @@ def test_check_forge_probes_the_infra_repo_and_each_app_repo_with_reads_only(tmp
     results = by_id(preflight.check_forge(ctx))
     assert results["forge.repo.you/my-infra"].status == "ok"
     assert results["forge.repo.owner/app"].status == "ok"
-    assert "Environments" in results["forge.repo.owner/app"].detail  # app repos also need the environment secret
-    assert "Environments" not in results["forge.repo.you/my-infra"].detail
+    assert "Secrets" in results["forge.repo.owner/app"].detail  # app repos also need the repository secret
+    assert "Secrets" not in results["forge.repo.you/my-infra"].detail
     # nothing was written: harmless reads only
     assert {r["method"] for r in http.requests} == {"GET"}
     # the infra repo is not asked for variables (it never needs them)
@@ -371,14 +372,23 @@ def test_check_forge_flags_a_user_without_push_access(tmp_path):
     assert repo.status == "fail" and "no push access" in repo.detail
 
 
-def test_check_forge_warns_when_the_production_environment_is_missing(tmp_path):
+def test_check_forge_fails_when_the_token_cannot_reach_repository_secrets(tmp_path):
     config = make_config(tmp_path, apps=FORGE_APPS)
-    ctx = make_ctx(tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(env_status=404))
-    repo = by_id(preflight.check_forge(ctx))["forge.repo.owner/app"]
-    assert repo.status == "warn" and "`production` environment does not exist" in repo.detail
     denied = by_id(preflight.check_forge(make_ctx(
-        tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(env_status=403))))["forge.repo.owner/app"]
-    assert denied.status == "fail" and "Environments" in denied.detail
+        tmp_path, config, env={"GH_TOKEN": FINE_GRAINED}, http=github_stub(secrets_status=403))))["forge.repo.owner/app"]
+    assert denied.status == "fail" and "Secrets" in denied.detail and "Secrets: read and write" in denied.fix
+
+
+def test_check_reports_the_dokploy_key_mode_per_app_repo(tmp_path):
+    """FR-2: the key is a repository secret in every mode; `check` says so per app repo."""
+    config = make_config(tmp_path, apps=FORGE_APPS)
+    env = {"GH_TOKEN": FINE_GRAINED}
+    ok = by_id(preflight.check_forge(make_ctx(tmp_path, config, env=env, http=github_stub())))["forge.dokploy_key.owner/app"]
+    assert ok.status == "ok" and "repository secret" in ok.detail and "SEALEDSTACK_DOKPLOY_API_KEY" in ok.detail
+    missing = by_id(preflight.check_forge(make_ctx(tmp_path, config, env=env, http=github_stub(key_secret_status=404))))["forge.dokploy_key.owner/app"]
+    assert missing.status == "warn" and "run apply" in missing.fix and "GitHub Free" in missing.fix
+    unreadable = by_id(preflight.check_forge(make_ctx(tmp_path, config, env=env, http=github_stub(key_secret_status=403))))["forge.dokploy_key.owner/app"]
+    assert unreadable.status == "warn" and "Secrets: read" in unreadable.fix
 
 
 def test_check_forge_warns_about_a_classic_token(tmp_path):

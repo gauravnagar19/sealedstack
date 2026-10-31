@@ -35,7 +35,9 @@ def repo_from_git(code_root) -> str:
 
 
 class ForgeError(RuntimeError):
-    pass
+    def __init__(self, message: str = "", *, status: int = 0):
+        super().__init__(message)
+        self.status = status
 
 
 class Forge:
@@ -81,7 +83,12 @@ class Forge:
     def get_variable(self, repo: str, name: str) -> str:  # pragma: no cover
         raise NotImplementedError
 
-    def set_secret(self, repo: str, name: str, value: str, *, environment: str = "") -> None:  # pragma: no cover
+    def set_secret(self, repo: str, name: str, value: str) -> None:  # pragma: no cover
+        """Write a **repository** secret (visible to every job of the repo)."""
+        raise NotImplementedError
+
+    def secret_exists(self, repo: str, name: str) -> Optional[bool]:  # pragma: no cover
+        """True/False for a repository secret; None when the forge will not say."""
         raise NotImplementedError
 
     def get_issue(self, repo: str, marker: str) -> Optional[int]:  # pragma: no cover
@@ -93,8 +100,11 @@ class Forge:
     def update_issue(self, repo: str, number: int, *, title: Optional[str] = None, body: Optional[str] = None) -> None:  # pragma: no cover
         raise NotImplementedError
 
-    def ensure_environment(self, repo: str, environment: str) -> None:  # pragma: no cover
-        """Create the environment (so a required reviewer can gate releases)."""
+    def ensure_environment(self, repo: str, environment: str) -> bool:  # pragma: no cover
+        """Create the environment (so a required reviewer can gate releases).
+
+        True when it exists afterwards; False when the plan does not offer
+        environments (private repos on GitHub Free) or the token may not create it."""
         raise NotImplementedError
 
     def permission(self, repo: str, user: str) -> str:  # pragma: no cover
@@ -198,7 +208,7 @@ class GitHubForge(Forge):
             headers["Accept"] = "application/vnd.github.raw"
         response = self.http.request(method, f"{self.api}{path}", headers=headers, json_body=json_body)
         if response.status >= 400:
-            raise ForgeError(f"{method} {path} failed (HTTP {response.status})")
+            raise ForgeError(f"{method} {path} failed (HTTP {response.status})", status=response.status)
         if text:
             return response.text
         if not response.body:
@@ -334,15 +344,26 @@ class GitHubForge(Forge):
         data = self._request("GET", f"/repos/{repo}/actions/variables/{name}")
         return str((data or {}).get("value") or "")
 
-    def set_secret(self, repo: str, name: str, value: str, *, environment: str = "") -> None:
+    def set_secret(self, repo: str, name: str, value: str) -> None:
         # GitHub requires a libsodium sealed box; inject a sealer (e.g. pynacl) or
-        # fall back to `gh secret set`, which encrypts for you.
+        # fall back to `gh secret set`, which encrypts for you. Always a
+        # repository secret: a job that declares no `environment:` (the release
+        # job) cannot read an environment secret, and environments are not
+        # available to private repos on GitHub Free at all (FR-2).
         if self._seal is None:
             raise ForgeError("set_secret needs a libsodium sealer (or use `gh secret set`)")
-        base = f"/repos/{repo}/actions/secrets" if not environment else f"/repos/{repo}/environments/{environment}/secrets"
-        key = self._request("GET", f"{base}/public-key")
+        key = self._request("GET", f"/repos/{repo}/actions/secrets/public-key")
         sealed = self._seal(key["key"], value)
-        self._request("PUT", f"{base}/{name}", json_body={"encrypted_value": sealed, "key_id": key["key_id"]})
+        self._request("PUT", f"/repos/{repo}/actions/secrets/{name}", json_body={"encrypted_value": sealed, "key_id": key["key_id"]})
+
+    def secret_exists(self, repo: str, name: str) -> Optional[bool]:
+        try:
+            self._request("GET", f"/repos/{repo}/actions/secrets/{name}")
+            return True
+        except ForgeError as exc:
+            if getattr(exc, "status", 0) == 404:
+                return False
+            return None
 
     def get_issue(self, repo: str, marker: str) -> Optional[int]:
         issues = self._request("GET", f"/repos/{repo}/issues?state=all&per_page=100") or []
@@ -365,11 +386,12 @@ class GitHubForge(Forge):
             payload["body"] = body
         self._request("PATCH", f"/repos/{repo}/issues/{number}", json_body=payload)
 
-    def ensure_environment(self, repo: str, environment: str) -> None:
+    def ensure_environment(self, repo: str, environment: str) -> bool:
         try:
             self._request("PUT", f"/repos/{repo}/environments/{environment}")
+            return True
         except ForgeError:
-            pass
+            return False
 
     def permission(self, repo: str, user: str) -> str:
         try:
@@ -435,6 +457,7 @@ class InMemoryForge(Forge):
     issues: dict = field(default_factory=dict)
     permissions: dict = field(default_factory=dict)
     environments: set = field(default_factory=set)
+    no_environments: set = field(default_factory=set)  # repos whose plan has no environments
     commit_prs: dict = field(default_factory=dict)
     branch_heads: dict = field(default_factory=dict)
     pull_requests: dict = field(default_factory=dict)
@@ -546,8 +569,11 @@ class InMemoryForge(Forge):
     def get_variable(self, repo: str, name: str) -> str:
         return self.variables.get((repo, name), "")
 
-    def set_secret(self, repo: str, name: str, value: str, *, environment: str = "") -> None:
-        self.secrets[(repo, environment, name)] = value
+    def set_secret(self, repo: str, name: str, value: str) -> None:
+        self.secrets[(repo, name)] = value
+
+    def secret_exists(self, repo: str, name: str) -> Optional[bool]:
+        return (repo, name) in self.secrets
 
     def get_issue(self, repo: str, marker: str) -> Optional[int]:
         for number, issue in self.issues.items():
@@ -567,8 +593,11 @@ class InMemoryForge(Forge):
         if body is not None:
             issue["body"] = body
 
-    def ensure_environment(self, repo: str, environment: str) -> None:
+    def ensure_environment(self, repo: str, environment: str) -> bool:
+        if repo in self.no_environments:  # a private repo on GitHub Free
+            return False
         self.environments.add((repo, environment))
+        return True
 
     def permission(self, repo: str, user: str) -> str:
         return self.permissions.get((repo, user), "none")

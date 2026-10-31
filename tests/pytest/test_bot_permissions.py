@@ -62,11 +62,13 @@ def test_the_checked_workflow_paths_really_need_the_workflows_permission():
     assert "sealedstack.yml" in versionpin
 
 
-def test_secrets_is_not_requested_because_no_call_writes_a_repository_secret():
-    assert "Secrets" not in {p.name for p in botpermissions.PERMISSIONS}
-    assert all(permission != "Secrets" for permission, _access in botpermissions.CALLS.values())
-    environment_secret_calls = [k for k in botpermissions.CALLS if k[1] in ("{}/public-key", "{}/{}")]
-    assert environment_secret_calls and all(botpermissions.CALLS[k][0] == "Environments" for k in environment_secret_calls)
+def test_repository_secrets_are_requested_because_the_dokploy_key_is_a_repository_secret():
+    """FR-2: environment secrets are unavailable on private Free repos and invisible to a job
+    without `environment:`, so the key is a repository secret (Secrets, not Environments)."""
+    assert "Secrets" in {p.name for p in botpermissions.PERMISSIONS}
+    assert "Environments" not in {p.name for p in botpermissions.PERMISSIONS}
+    secret_calls = [k for k in botpermissions.CALLS if "/actions/secrets" in k[1]]
+    assert len(secret_calls) == 3 and all(botpermissions.CALLS[k][0] == "Secrets" for k in secret_calls)
 
 
 def test_table_and_short_list_render_the_same_permissions():

@@ -964,6 +964,7 @@ _GITHUB_READ_PROBES = (
     ("Issues", "/repos/{repo}/issues?per_page=1", ("infra", "app")),
     ("Variables", "/repos/{repo}/actions/variables?per_page=1", ("app",)),
     ("Deployments", "/repos/{repo}/deployments?environment=production&per_page=1", ("app",)),
+    ("Secrets", "/repos/{repo}/actions/secrets/public-key", ("app",)),
 )
 
 
@@ -1027,7 +1028,39 @@ def _check_github(ctx: CheckContext) -> list[Result]:
             if repo not in seen:
                 seen.add(repo)
                 results.append(_check_release_variables(ctx, headers, name, repo))
+    seen_keys: set[str] = set()
+    for name, repo in _app_repos(ctx.config.apps):
+        if repo not in seen_keys:
+            seen_keys.add(repo)
+            results.append(_check_dokploy_key_secret(ctx, headers, name, repo))
     return results
+
+
+def _check_dokploy_key_secret(ctx: CheckContext, headers: Mapping[str, str], app: str, repo: str) -> Result:
+    """The Dokploy API key reaches the app repo as a repository secret (FR-2)."""
+    rid = f"forge.dokploy_key.{repo}"
+    try:
+        response = ctx.http.request("GET", f"{GITHUB_API}/repos/{repo}/actions/secrets/{DOKPLOY_KEY_SECRET}", headers=headers)
+    except Exception as exc:  # noqa: BLE001
+        return Result(rid, "forge", "fail", detail=f"{repo}: {exc}", fix="check network access", docs=DOCS_FORGE)
+    if response.status == 200:
+        return Result(rid, "forge", "ok", detail=f"{repo}: {DOKPLOY_KEY_SECRET} is published (mode: repository secret)")
+    if response.status == 404:
+        return Result(
+            rid, "forge", "warn",
+            detail=f"{repo} ({app}) has no {DOKPLOY_KEY_SECRET} repository secret yet: its release job cannot deploy",
+            fix="run apply: it publishes the secret as a repository secret (environment secrets are not used, so this also works on private repos on GitHub Free)",
+            docs=DOCS_FORGE,
+        )
+    return Result(
+        rid, "forge", "warn",
+        detail=f"could not read the repository secrets of {repo} (HTTP {response.status})",
+        fix="grant the token Secrets: read and write on that repository",
+        docs=DOCS_FORGE,
+    )
+
+
+DOKPLOY_KEY_SECRET = "SEALEDSTACK_DOKPLOY_API_KEY"
 
 
 def _check_release_variables(ctx: CheckContext, headers: Mapping[str, str], app: str, repo: str) -> Result:
@@ -1095,20 +1128,6 @@ def _check_github_repo(ctx: CheckContext, headers: Mapping[str, str], repo: str,
                 proven.append(permission)
             else:
                 missing.append(permission)
-        warn = ""
-        if repo_kind == "app":
-            env_response = ctx.http.request(
-                "GET", f"{GITHUB_API}/repos/{repo}/environments/production/secrets/public-key", headers=headers
-            )
-            if env_response.status == 200:
-                proven.append("Environments")
-            elif env_response.status == 404:
-                warn = (
-                    "the `production` environment does not exist yet: create it in the repo's Settings, Environments "
-                    "(or grant the token Administration: write so sealedstack can)"
-                )
-            else:
-                missing.append("Environments")
     except Exception as exc:  # noqa: BLE001
         return Result(rid, "forge", "fail", detail=str(exc), fix="check network access", docs=DOCS_FORGE)
     if missing:
@@ -1121,8 +1140,6 @@ def _check_github_repo(ctx: CheckContext, headers: Mapping[str, str], repo: str,
             docs=DOCS_FORGE,
         )
     detail = f"{repo}: read access verified ({', '.join(proven)}); write levels are confirmed on first use"
-    if warn:
-        return Result(rid, "forge", "warn", detail=f"{detail}; {warn}", fix=warn, docs=DOCS_FORGE)
     return Result(rid, "forge", "ok", detail=detail)
 
 

@@ -37,7 +37,7 @@ PERMISSIONS: tuple[Permission, ...] = (
     Permission("Issues", "issues", "write", "The pinned Status issue, the living checklist and plan comments (PR comments go through the Issues API)."),
     Permission("Variables", "actions_variables", "write", "Publish the deploy settings (compose ids, Dokploy URL, release trust ids, registry) to each app repo."),
     Permission("Deployments", "deployments", "read", "Read each app repo's latest successful `production` deployment, the released version recorded by the app release workflow (D-060), to redeploy it after a server rebuild."),
-    Permission("Environments", "environments", "write", "Store the Dokploy API key as an environment secret (`production`) in each app repo. GitHub files environment secrets under Environments, not Secrets."),
+    Permission("Secrets", "secrets", "write", "Store the Dokploy API key as a repository secret in each app repo (the release job reads it; environment secrets are not available to private repos on GitHub Free)."),
     Permission("Workflows", "workflows", "write", "PRs that add or change `.github/workflows/*` files (the app release workflow, version-bump PRs) are refused without it."),
     Permission(
         "Administration", "administration", "write",
@@ -48,9 +48,7 @@ PERMISSIONS: tuple[Permission, ...] = (
 
 # Every endpoint GitHubForge requests -> (permission name, access). Paths are
 # normalised: each ``{...}`` is ``{}`` and the query string is dropped.
-# ``{}/public-key`` and ``{}/{}`` are the secret calls, whose base path is the
-# environment's (the only form the engine uses; a repository-level secret would
-# need ``Secrets`` instead).
+# The secret calls are repository-level (FR-2), hence ``Secrets``.
 CALLS: dict[tuple[str, str], tuple[str, str]] = {
     ("GET", "/repos/{}/contents/{}"): ("Contents", "read"),
     ("PUT", "/repos/{}/contents/{}"): ("Contents", "write"),
@@ -72,8 +70,9 @@ CALLS: dict[tuple[str, str], tuple[str, str]] = {
     ("PATCH", "/repos/{}/actions/variables/{}"): ("Variables", "write"),
     ("GET", "/repos/{}/actions/variables/{}"): ("Variables", "read"),
     ("PUT", "/repos/{}/environments/{}"): ("Administration", "write"),
-    ("GET", "{}/public-key"): ("Environments", "read"),
-    ("PUT", "{}/{}"): ("Environments", "write"),
+    ("GET", "/repos/{}/actions/secrets/public-key"): ("Secrets", "write"),
+    ("PUT", "/repos/{}/actions/secrets/{}"): ("Secrets", "write"),
+    ("GET", "/repos/{}/actions/secrets/{}"): ("Secrets", "read"),
     ("GET", "/repos/{}/collaborators/{}/permission"): ("Metadata", "read"),
     ("GET", "/repos/{}/deployments"): ("Deployments", "read"),
     ("GET", "/repos/{}/deployments/{}/statuses"): ("Deployments", "read"),

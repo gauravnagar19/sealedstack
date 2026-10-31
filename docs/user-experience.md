@@ -150,7 +150,7 @@ Progress: 3 of 9 ready. Fix the ❌ items below, then comment `/sealedstack chec
 | — | Tailscale OIDC trust credential for app releases (`tag:release`) | not needed until an app has its own repository. → manual step in the Tailscale console, Settings → Trust credentials → Credential → OpenID Connect: Issuer GitHub; Subject `repo:you/<app>:environment:production`; Scope `auth_keys` write; Tag `tag:release`. Then put its Client ID and Audience in `config/stack.yaml` (D-057 amendment) |
 | ❌ | **STATE_PASSPHRASE** (≥ 16 chars) | not found. → generate one in Bitwarden |
 | ❌ | **Server server-1**: `ip_secret` → `SERVER_IP_SERVER_1`, `password_secret` → `ROOT_PASSWORD_SERVER_1` (from `servers.yaml`) + port 22 open | not found in Bitwarden. → add both keys; [Netcup: open TCP 22 temporarily](…) |
-| ❌ | **Bot identity** (fine-grained token `GH_TOKEN`) | not set. → **[Create the token (pre-filled)](…)**: only this repo and your app repos; Contents, Pull requests, Issues, Variables, Environments, Workflows (read and write), Deployments, Metadata (read). Add it as the repository secret `GH_TOKEN`. *(D-058 amendment: the GitHub App, "Create sealedstack-bot (1 click)", comes later.)* |
+| ❌ | **Bot identity** (fine-grained token `GH_TOKEN`) | not set. → **[Create the token (pre-filled)](…)**: only this repo and your app repos; Contents, Pull requests, Issues, Variables, Secrets, Workflows (read and write), Deployments, Metadata (read). Add it as the repository secret `GH_TOKEN`. *(D-058 amendment: the GitHub App, "Create sealedstack-bot (1 click)", comes later.)* |
 | — | Optional: Clerk keys | not needed yet (no app uses Clerk) |
 
 Merge this PR when everything above is ✅. Nothing has been changed outside this repo yet.
