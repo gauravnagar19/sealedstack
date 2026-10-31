@@ -120,7 +120,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - run: echo "Approved ${{ needs.resolve.outputs.command }}"
+      - name: Approved
+        env:
+          COMMAND: ${{ needs.resolve.outputs.command }}
+        run: echo "Approved ${COMMAND}"
 
   run:
     needs: [resolve, approve]
@@ -181,29 +184,33 @@ jobs:
       # reaches a server or the Dokploy API (SSH 22, panel 3000). Servers are
       # addressed by their MagicDNS name (<server>.<mesh.tailnet>), so the engine
       # container runs with host networking to resolve it.
+      - name: Read the Tailscale trust settings from config
+        # The OIDC client id and audience are not secret and live in config/stack.yaml.
+        # They are read by the engine image, never parsed on the runner (PyYAML is not
+        # guaranteed there, and a failing parse would stop the job from joining the tailnet).
+        id: ts_cfg
+        if: needs.resolve.outputs.mesh == 'true'
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/infra" -w /infra -v "$GITHUB_OUTPUT:/ghout" \
+            -e SEALEDSTACK_CONFIG=/infra/config \
+            "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
+            debug ci-export --tailscale-oidc --output /ghout
+
       - name: Tailscale trust (OIDC workload identity, else the OAuth client)
         id: ts
         if: needs.resolve.outputs.mesh == 'true'
         env:
           VAR_CLIENT_ID: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
           VAR_AUDIENCE: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}
+          CFG_CLIENT_ID: ${{ steps.ts_cfg.outputs.client_id }}
+          CFG_AUDIENCE: ${{ steps.ts_cfg.outputs.audience }}
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           # OIDC settings are not secret: repository variables, else config/stack.yaml.
-          cfg="$(python3 - <<'PY'
-          import yaml
-          try:
-              stack = yaml.safe_load(open("config/stack.yaml", encoding="utf-8")) or {}
-          except OSError:
-              stack = {}
-          mesh = (stack.get("providers") or {}).get("mesh_tailscale") or {}
-          print(mesh.get("oauth_client_id") or "", mesh.get("audience") or "")
-          PY
-          )"
-          cfg_id="${cfg%% *}"; cfg_aud="${cfg#* }"
-          client_id="${VAR_CLIENT_ID:-$cfg_id}"
-          audience="${VAR_AUDIENCE:-$cfg_aud}"
+          client_id="${VAR_CLIENT_ID:-$CFG_CLIENT_ID}"
+          audience="${VAR_AUDIENCE:-$CFG_AUDIENCE}"
           if [ -n "$client_id" ] && [ -n "$audience" ]; then
             echo "mode=oidc" >> "$GITHUB_OUTPUT"
             echo "client_id=$client_id" >> "$GITHUB_OUTPUT"
@@ -286,4 +293,7 @@ jobs:
 
       - name: Job summary
         if: always()
-        run: echo "sealedstack ${{ needs.resolve.outputs.command }} finished (${{ job.status }})" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          COMMAND: ${{ needs.resolve.outputs.command }}
+          JOB_STATUS: ${{ job.status }}
+        run: echo "sealedstack ${COMMAND} finished (${JOB_STATUS})" >> "$GITHUB_STEP_SUMMARY"

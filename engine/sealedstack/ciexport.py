@@ -23,6 +23,25 @@ from . import secrets as secrets_mod
 ALLOWED = ("tailscale_oauth_client_id", "tailscale_oauth_client_secret")
 
 
+def export_tailscale_oidc(config: config_mod.Config, output: Path) -> int:
+    """Write the (non-secret) OIDC trust settings from ``stack.yaml`` as step outputs (FR-5).
+
+    The runner joins the tailnet before the engine does anything else, and it must not
+    parse ``stack.yaml`` itself (PyYAML is not guaranteed on a runner image), so the
+    workflow asks the engine image: ``client_id=`` and ``audience=`` (empty when unset)."""
+    mesh = (config.stack.get("providers") or {}).get("mesh_tailscale") or {}
+    lines = []
+    for name, key in (("client_id", "oauth_client_id"), ("audience", "audience")):
+        value = str(mesh.get(key) or "")
+        if "\n" in value or "\r" in value:
+            print(f"sealedstack: providers.mesh_tailscale.{key} must be a single line", file=sys.stderr)
+            return 1
+        lines.append(f"{name}={value}\n")
+    with open(output, "a", encoding="utf-8") as handle:
+        handle.writelines(lines)
+    return 0
+
+
 def export(
     config: config_mod.Config,
     env: Mapping[str, str],
@@ -60,12 +79,18 @@ def export(
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="sealedstack debug ci-export")
-    parser.add_argument("logical", help="logical secret name: " + ", ".join(ALLOWED))
-    parser.add_argument("--name", required=True, help="step output name")
+    parser.add_argument("logical", nargs="?", help="logical secret name: " + ", ".join(ALLOWED))
+    parser.add_argument("--name", help="step output name")
     parser.add_argument("--output", required=True, help="the GITHUB_OUTPUT file")
+    parser.add_argument("--tailscale-oidc", action="store_true",
+                        help="write the non-secret providers.mesh_tailscale oauth_client_id / audience as client_id= and audience=")
     args = parser.parse_args(argv)
     env = dict(os.environ)
     config = config_mod.load_config(env=env)
+    if args.tailscale_oidc:
+        return export_tailscale_oidc(config, Path(args.output))
+    if not args.logical or not args.name:
+        parser.error("a logical secret name and --name are required (or use --tailscale-oidc)")
     return export(config, env, args.logical, args.name, Path(args.output))
 
 

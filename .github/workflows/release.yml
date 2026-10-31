@@ -81,15 +81,24 @@ jobs:
 
       - name: Resolve version
         id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            v="${{ github.event.inputs.version }}"
+          if [ -n "${INPUT_VERSION}" ]; then
+            v="${INPUT_VERSION}"
           elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             v="${GITHUB_REF_NAME}"
           else
             v="$(cat VERSION)"
           fi
           v="${v#v}"
+          # The version is used in later scripts and image tags: only a plain version is allowed.
+          case "${v}" in
+            '' | *[!0-9A-Za-z.+-]*)
+              echo "::error::'${v}' is not a plain version (letters, digits, dots, plus and minus only)"
+              exit 1
+              ;;
+          esac
           echo "version=${v}" >> "$GITHUB_OUTPUT"
           echo "Resolved version: ${v}"
 

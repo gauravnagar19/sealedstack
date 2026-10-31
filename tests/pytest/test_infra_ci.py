@@ -34,6 +34,8 @@ def make_forge():
     f.permissions[(SLUG, "writer")] = "write"
     f.permissions[(SLUG, "reader")] = "read"
     f.branch_heads[(SLUG, "main")] = SHA
+    # PR #7 lives in this repository (FR-3: comment commands refuse pull requests from forks)
+    f.pull_requests[(SLUG, 7)] = {"number": 7, "state": "open", "merged": False, "head_repo": SLUG, "head_ref": "feature/x"}
     return f
 
 

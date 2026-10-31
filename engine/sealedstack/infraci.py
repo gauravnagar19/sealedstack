@@ -166,6 +166,17 @@ def _touches_relevant_files(payload: dict) -> Optional[bool]:
     return False if saw_files or len(commits) < 20 else None
 
 
+# Commands a workflow_dispatch may start: the comment-command set without `approve`
+# (dispatching an approver's write command is itself the approval, D-052).
+DISPATCH_COMMANDS = frozenset(commands_mod.COMMANDS) - {"approve"}
+
+
+def _printable(text: str, limit: int = 40) -> str:
+    """A command name safe to put in a log line or a comment."""
+    clean = "".join(ch if ch.isprintable() and ch not in "`\n\r" else "?" for ch in str(text))
+    return clean[:limit]
+
+
 def drift_enabled(env: Mapping[str, str]) -> bool:
     """The scheduled drift switch (D-059): the repository variable ``SEALEDSTACK_DRIFT_ENABLED``."""
     return str(env.get("SEALEDSTACK_DRIFT_ENABLED", "")).strip().lower() == "true"
@@ -191,6 +202,10 @@ def resolve(
         command = event.input_command
         if not command:
             return _skip("workflow_dispatch without a command")
+        if command not in DISPATCH_COMMANDS:
+            # FR-4: the caller's choice list is not trusted to be the allow-list; the same
+            # commands as the comment path (minus approve) are the only ones that run.
+            return _skip(f"'{_printable(command)}' is not a sealedstack command (allowed: {', '.join(sorted(DISPATCH_COMMANDS))})")
         return Resolution(command=command, args=event.input_args, note=f"dispatched: {command}")
 
     if name == "pull_request":
@@ -262,6 +277,20 @@ def _resolve_comment(
             forge, event, number,
             f"@{actor} thanks! Only users with write access can run `/sealedstack {command}`.",
         )
+
+    if is_pr and command != "approve":
+        # FR-3: `check`, `plan` and `status` on a PR check out its merge ref, with the job's
+        # secrets in reach. A fork's tree (its config/, its sealedstack.version) must never
+        # run with them, so nothing is run for a pull request from another repository.
+        pr_info = forge.get_pull_request(event.repo, number)
+        head_repo = str(pr_info.get("head_repo") or "")
+        if not pr_info or head_repo != event.repo:
+            return _refuse(
+                forge, event, number,
+                f"@{actor} `/sealedstack {command}` is not run on a pull request from a fork "
+                f"({head_repo or 'unknown repository'}): the job would check out code from outside this repository "
+                "while it holds your secrets. Copy the branch into this repository (a branch here, not a fork) and comment again.",
+            )
 
     if command == "approve":
         if actor not in approvers:
