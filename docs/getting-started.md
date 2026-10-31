@@ -99,6 +99,9 @@ differ, and the upgrade bot always bumps both in one pull request.
 --server server-1 --provider netcup --secrets bitwarden
 ```
 
+Using Doppler instead of Bitwarden? Pass `--secrets doppler`
+([how to set it up](prerequisites.md#using-doppler-instead-of-bitwarden)).
+
 Setup asks for nothing else. It opens **PR #1 "sealedstack setup"** with
 `config/stack.yaml`, `config/servers.yaml`, `config/apps.yaml` (containing a
 `hello` app), `.devcontainer/devcontainer.json` and a README, and posts the living
@@ -230,7 +233,8 @@ The common ones:
 - **A checklist item is red because a secret is "not found".** The message names
   both the logical secret and its key in the secret source. Add that key to the
   Bitwarden project, or change the mapping in `config/stack.yaml: secrets.keys`.
-- **`BWS_ACCESS_TOKEN` is not set.** Add it as a repository secret (see step 4).
+- **`BWS_ACCESS_TOKEN` is not set.** Add it as a repository secret (see step 4). With
+  Doppler the secret is `DOPPLER_TOKEN` (a read-only service token).
 - **The version pins do not match.** Make `sealedstack.version` and the workflow
   `@v<version>` ref equal in one pull request.
 - **The server is unreachable over Tailscale.** Check that the node joined with

@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="a server name; repeat for more (the first is the control server)")
     parser.add_argument("--provider", default="any-ssh",
                         help="provider of the server(s): any-ssh, netcup, hetzner, ... (default: any-ssh)")
-    parser.add_argument("--secrets", default="bitwarden", help="secret source: bitwarden (default), env, ci, sops")
+    parser.add_argument("--secrets", default="bitwarden", help="secret source: bitwarden (default), doppler, env, ci, sops")
     parser.add_argument("--name", default="", help="infra name (default: the repository name)")
     parser.add_argument("--owner", default="", help="owner of the engine image and the approver (default: the repository owner)")
     parser.add_argument("--os", default="ubuntu-24.04", help="server OS (default: ubuntu-24.04)")
@@ -133,7 +133,7 @@ def build_files(args: SetupArgs, *, repo: str, version: str, owner: str) -> dict
         ),
         "config/servers.yaml": dump(servers),
         "config/apps.yaml": dump(apps),
-        ".devcontainer/devcontainer.json": scaffold.devcontainer_json(image),
+        ".devcontainer/devcontainer.json": scaffold.devcontainer_json(image, args.secrets),
         ".gitignore": scaffold.gitignore(),
         "README.md": scaffold.setup_readme(name, image, version),
     }
@@ -387,7 +387,7 @@ def checklist_items(
     items: list[checklist.Item] = []
     sk = config.secret_key
     source_label = (config.stack.get("slots") or {}).get("secrets") or "bitwarden"
-    project = config.source_project()
+    where = secrets_mod.where(config)
 
     def link(text: str, anchor: str) -> str:
         return f"[{text}]({docs_link(owner, version, anchor)})"
@@ -433,7 +433,7 @@ def checklist_items(
     # 5. the Cloudflare token
     cf = by_id.get("secrets.cloudflare_api_token")
     perms = [r for r in results if r.id.startswith("cloudflare.perm.") and r.status == "fail"]
-    cf_label = f"{sk('cloudflare_api_token')} (in {source_label.capitalize()}, project `{project}`)"
+    cf_label = f"{sk('cloudflare_api_token')} (in {where})"
     if cf is not None and cf.status in ("ok", "warn") and not perms:
         r2 = by_id.get("cloudflare.r2_derived")
         if r2 is not None and r2.status == "fail":
@@ -563,7 +563,7 @@ def checklist_items(
                 server = result.id.split(".")[1]
                 label = f"Recommended: pin the SSH host key of {server}" if result.status == "info" else f"SSH host key fingerprint of {server}"
             if result.id.startswith("secrets."):
-                label = f"{secrets_mod.describe(config, result.id.split('.', 1)[1])} (in {source_label.capitalize()}, project `{project}`)"
+                label = f"{secrets_mod.describe(config, result.id.split('.', 1)[1])} (in {where})"
             add(result.status, label, result.detail, result.fix)
 
     # 11. optional keys

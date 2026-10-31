@@ -61,7 +61,7 @@ catalogued in `registry/` and dispatched by config (spec §4). See
 
 **Zero installs.** You need a browser, a GitHub account and the accounts listed in
 [prerequisites](docs/prerequisites.md) (a domain on Cloudflare, Tailscale,
-Bitwarden Secrets Manager and a server you can SSH into). Everything runs in
+a secrets manager (Bitwarden Secrets Manager, or Doppler) and a server you can SSH into). Everything runs in
 GitHub Actions. The full walkthrough, with every screen, is in
 [getting started](docs/getting-started.md) and the
 [user experience](docs/user-experience.md).

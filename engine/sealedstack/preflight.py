@@ -348,7 +348,7 @@ def _secret_result(ctx: "CheckContext", logical: str, why: str, *, min_length: i
     key = ctx.config.secret_key(logical)
     result_id = f"secrets.{logical}"
     result = secrets_mod.lookup(ctx.secrets, ctx.config, logical)
-    project = ctx.config.source_project()
+    project = secrets_mod.scope(ctx.config)
     if result.errored:
         return Result(
             result_id, "secrets", "fail",
@@ -360,8 +360,8 @@ def _secret_result(ctx: "CheckContext", logical: str, why: str, *, min_length: i
         extra = f" (at least {min_length} characters)" if min_length else ""
         return Result(
             result_id, "secrets", "fail",
-            detail=f"{why}: {label} not found in the {ctx.secrets.kind} source (project '{project}')",
-            fix=f"add {key}{extra} to the {ctx.secrets.kind} secret source, project '{project}'",
+            detail=f"{why}: {label} not found in the {ctx.secrets.kind} source ({project})",
+            fix=f"add {key}{extra} to the {ctx.secrets.kind} secret source ({project})",
             docs=DOCS_SECRETS,
         )
     if min_length and len(result.value) < min_length:
@@ -383,6 +383,8 @@ def _secret_result(ctx: "CheckContext", logical: str, why: str, *, min_length: i
 
 def _check_secret_source(ctx: CheckContext) -> Result:
     """Can the engine read the secret source at all (a missing token, a bad token)?"""
+    from . import secrets as secrets_mod
+
     kind = ctx.secrets.kind
     label = f"secret source: {kind}"
     if kind == "bitwarden" and not ctx.env.get("BWS_ACCESS_TOKEN"):
@@ -393,14 +395,22 @@ def _check_secret_source(ctx: CheckContext) -> Result:
                 "secret BWS_ACCESS_TOKEN (the only secret kept in GitHub)",
             docs=DOCS_SECRETS,
         )
+    if kind == "doppler" and not any(ctx.env.get(var) for var in ctx.secrets.token_vars):
+        return Result(
+            "secrets.source", "secrets", "fail",
+            detail="DOPPLER_TOKEN is not set for this repository",
+            fix="create a read-only Doppler service token for the config that holds your sealedstack secrets and add it "
+                "as the repository secret DOPPLER_TOKEN (the only secret kept in GitHub)",
+            docs=DOCS_SECRETS,
+        )
     probe = ctx.secrets.get(ctx.config.secret_key("state_passphrase"))
     if probe.errored:
         return Result(
             "secrets.source", "secrets", "fail", detail=f"{label}: {probe.detail}",
-            fix=f"fix access to the {kind} secret source (token, project '{ctx.config.source_project()}')",
+            fix=f"fix access to the {kind} secret source (token, {secrets_mod.scope(ctx.config)})",
             docs=DOCS_SECRETS,
         )
-    return Result("secrets.source", "secrets", "ok", detail=f"{label} reachable (project '{ctx.config.source_project()}')")
+    return Result("secrets.source", "secrets", "ok", detail=f"{label} reachable ({secrets_mod.scope(ctx.config)})")
 
 
 def check_secrets(ctx: CheckContext) -> list[Result]:

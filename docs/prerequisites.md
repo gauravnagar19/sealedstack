@@ -12,7 +12,7 @@ machine: the engine runs in your GitHub Actions.
 | A domain on Cloudflare nameservers | yes | Tunnel hostnames and Access require a Cloudflare zone. |
 | Cloudflare account (Free plan) with Zero Trust enabled | yes | Zero Trust and R2 may ask for a payment method even on free plans. |
 | Tailscale account with MagicDNS on | yes | Admin access and server-to-CI access run over the tailnet. |
-| Bitwarden account with a free organisation and Secrets Manager | yes | The default secret source. sealedstack only reads from it. |
+| A secret source: Bitwarden (a free organisation with Secrets Manager) or Doppler | yes | Bitwarden is the default; for [Doppler](#using-doppler-instead-of-bitwarden) set `slots.secrets: doppler`. sealedstack only reads from it. |
 | GitHub account and a **private** infra repository | yes | Runs the engine in GitHub Actions. See [the first steps](getting-started.md#1-create-the-infra-repo). |
 | A server: Ubuntu 24.04 or Debian 12 | yes | Control: at least 2 vCPU / 4 GB / 40 GB. Worker: at least 1 vCPU / 2 GB. An existing machine (Netcup, any SSH host) or one a supported provider creates for you. |
 | Clerk account | only for apps with `user_auth: clerk` | |
@@ -28,7 +28,7 @@ in the encrypted OpenTofu state.
 
 | What | Goes into | Notes |
 |---|---|---|
-| Bitwarden machine-account token | GitHub repository secret `BWS_ACCESS_TOKEN` | The only secret in GitHub. Give the machine account **read-only** access to the secrets project (default `infra`). See [limitations](limitations.md#approvals-on-github-free-private-repositories-what-they-do-and-dont-protect). |
+| Bitwarden machine-account token (Doppler: a service token, `DOPPLER_TOKEN`, see [below](#using-doppler-instead-of-bitwarden)) | GitHub repository secret `BWS_ACCESS_TOKEN` | The only secret in GitHub. Give the machine account **read-only** access to the secrets project (default `infra`). See [limitations](limitations.md#approvals-on-github-free-private-repositories-what-they-do-and-dont-protect). |
 | Cloudflare API token | Bitwarden: `CLOUDFLARE_API_TOKEN` | [Permissions below](#cloudflare-api-token-permissions). |
 | Tailscale OAuth client | Bitwarden: `TAILSCALE_OAUTH_CLIENT_ID`, `TAILSCALE_OAUTH_CLIENT_SECRET` | Scopes `policy_file`, `auth_keys`, `devices:core`. Server auth keys are minted from it, so no long-lived API key is needed; `devices:core` also lets `up` ask the tailnet whether a server is already bootstrapped (without it `up` falls back to whether the bootstrap secrets are still present). |
 | State passphrase | Bitwarden: `STATE_PASSPHRASE` | At least 16 random characters. Encrypts the OpenTofu state. |
@@ -57,6 +57,9 @@ secrets:
 
 Rename any value to match an entry you already have (for example
 `cloudflare_api_token: MY_CF_TOKEN`).
+
+`project` and `app_project` are Bitwarden concepts. With Doppler they are ignored:
+the service token itself picks the config ([below](#using-doppler-instead-of-bitwarden)).
 
 ```yaml
 # config/servers.yaml (an existing machine)
@@ -110,8 +113,9 @@ reusable workflow then forwards all of them to the engine as one masked JSON
 environment variable, `SEALEDSTACK_CI_SECRETS` (`toJSON(secrets)`), which the
 engine reads before any plain environment variable. The workflow does this
 **only when `slots.secrets` is `ci`** (its first job reads that setting and outputs
-`ci_secrets=true|false`); with Bitwarden or any other source the engine receives only
-`BWS_ACCESS_TOKEN` and `GH_TOKEN`, never the rest of your repository secrets. Two limits to know:
+`ci_secrets=true|false`); with Bitwarden, Doppler or any other source the engine receives only
+that source's access token (`BWS_ACCESS_TOKEN`, or `DOPPLER_TOKEN` and `DOPPLER_TOKEN_APPS`) and
+`GH_TOKEN`, never the rest of your repository secrets. Two limits to know:
 
 - Only **repository** secrets arrive. Environment secrets are not forwarded, and
   private repositories on GitHub Free have no environments at all.
@@ -188,6 +192,59 @@ is changed ([D-026](decisions.md)).
 
 The free plan allows three projects and three machine accounts. Give each machine
 account the least access it needs: CI reads `infra` and `prod`, read-only.
+
+## Using Doppler instead of Bitwarden
+
+Set `slots.secrets: doppler` (or run Setup with `--secrets doppler`, [D-066](decisions.md)).
+sealedstack reads your secrets from **one Doppler config** over Doppler's API with a
+**service token**; it never writes to Doppler, and no `doppler` program is needed.
+
+**Create it once:**
+
+1. In Doppler, create a project (for example `sealedstack`) and a config in it (for
+   example `prd`).
+2. Add every secret from the tables above to that config, using the names in
+   [the naming rule](#doppler-secret-names) below. Everything those tables say goes
+   "into Bitwarden" goes into this Doppler config instead.
+3. Open the config, **Access**, **Generate**, name it `sealedstack-ci`, and leave
+   **write access off**. Copy the token (it starts with `dp.st.` and is shown once).
+4. In your infra repo add it as the GitHub repository secret **`DOPPLER_TOKEN`**. It
+   is the only secret kept in GitHub (the Doppler equivalent of `BWS_ACCESS_TOKEN`).
+
+**Why a service token:** Doppler scopes it to exactly one config and makes it
+read-only by default, so the one secret CI holds can read that config and nothing
+else. Personal, CLI and service-account tokens are refused on purpose, because they are
+not scoped to one config.
+
+**Optional: a second config for app secrets.** To keep app secrets (the `<app>.<NAME>`
+keys) apart from the infra secrets, put them in another config of the same project,
+generate a read-only service token for it, and add that as the repository secret
+`DOPPLER_TOKEN_APPS`. When it is not set, app secrets are read from the same config as
+the infra secrets.
+
+### Doppler secret names
+
+Doppler's default naming mode allows only upper-case letters, digits and underscores
+(no dots) and no leading digit. sealedstack therefore looks a key up under the name as
+written, then under the normalised name: upper-case, every other character replaced by
+`_`.
+
+| Key sealedstack asks for | Name to create in Doppler |
+|---|---|
+| `CLOUDFLARE_API_TOKEN`, `STATE_PASSPHRASE`, `SERVER_IP_SERVER_1` | the same |
+| `shop.CLERK_SECRET_KEY` | `SHOP_CLERK_SECRET_KEY` |
+| `my-app.DB_URL` | `MY_APP_DB_URL` |
+
+If your workspace uses Doppler's permissive naming mode, the dotted name works as
+written. A secret that exists but is empty is reported as missing.
+
+**Limits to know:**
+
+- One request per run fetches the whole config, so the Developer plan's limit of 120
+  secret reads a minute is never close. sealedstack retries a rate-limit answer.
+- Service-account tokens (which can span projects) are not supported yet.
+- Not run against a live Doppler account yet, like every provider here
+  ([limitations](limitations.md)).
 
 ## Server credentials
 

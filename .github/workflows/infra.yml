@@ -29,6 +29,12 @@ on:
     secrets:
       BWS_ACCESS_TOKEN:
         required: false
+      # Doppler (slots.secrets: doppler): a read-only service token for the config that
+      # holds the infra secrets, and an optional second one for the app secrets (D-066).
+      DOPPLER_TOKEN:
+        required: false
+      DOPPLER_TOKEN_APPS:
+        required: false
       GH_TOKEN:
         required: false
 
@@ -210,6 +216,7 @@ jobs:
           CFG_CLIENT_ID: ${{ steps.ts_cfg.outputs.client_id }}
           CFG_AUDIENCE: ${{ steps.ts_cfg.outputs.audience }}
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
           set -euo pipefail
           # OIDC settings are not secret: repository variables, else config/stack.yaml.
@@ -220,7 +227,7 @@ jobs:
             echo "client_id=$client_id" >> "$GITHUB_OUTPUT"
             echo "audience=$audience" >> "$GITHUB_OUTPUT"
             echo "Tailscale: joining with workload identity federation (OIDC)."
-          elif [ -n "$BWS_ACCESS_TOKEN" ]; then
+          elif [ -n "$BWS_ACCESS_TOKEN" ] || [ -n "$DOPPLER_TOKEN" ]; then
             echo "mode=secret" >> "$GITHUB_OUTPUT"
             echo "::notice::Tailscale OIDC trust is not configured (providers.mesh_tailscale.oauth_client_id/audience); falling back to the OAuth client secret from the secret source."
           else
@@ -233,13 +240,15 @@ jobs:
         if: steps.ts.outputs.mode == 'secret'
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_TOKEN_APPS: ${{ secrets.DOPPLER_TOKEN_APPS }}
         run: |
           set -euo pipefail
           # Masked in the log, written to this step's outputs only.
           for pair in "tailscale_oauth_client_id client_id" "tailscale_oauth_client_secret client_secret"; do
             set -- $pair
             docker run --rm -v "$PWD:/infra" -w /infra -v "$GITHUB_OUTPUT:/ghout" \
-              -e SEALEDSTACK_CONFIG=/infra/config -e BWS_ACCESS_TOKEN \
+              -e SEALEDSTACK_CONFIG=/infra/config -e BWS_ACCESS_TOKEN -e DOPPLER_TOKEN -e DOPPLER_TOKEN_APPS \
               "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
               debug ci-export "$1" --name "$2" --output /ghout
           done
@@ -261,13 +270,16 @@ jobs:
           tags: tag:ci
 
       - name: sealedstack ${{ needs.resolve.outputs.command }}
-        # Secret sources other than `ci` (bitwarden by default): only BWS_ACCESS_TOKEN and
-        # GH_TOKEN reach the engine, never the whole repository secrets bundle.
+        # Secret sources other than `ci` (bitwarden by default, or doppler): only that source's
+        # access token (BWS_ACCESS_TOKEN, or DOPPLER_TOKEN / DOPPLER_TOKEN_APPS) and GH_TOKEN
+        # reach the engine, never the whole repository secrets bundle.
         if: needs.resolve.outputs.ci_secrets != 'true'
         # `ci exec` runs the resolved command behind the D-052 approval gate for
         # writes and reports the result (plan comment, checklist, Status issue).
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_TOKEN_APPS: ${{ secrets.DOPPLER_TOKEN_APPS }}
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -288,7 +300,7 @@ jobs:
             -e SEALEDSTACK_CONFIG=/infra/config \
             -e SEALEDSTACK_WORKDIR=/infra/.sealedstack \
             -e GITHUB_EVENT_PATH=/event.json \
-            -e BWS_ACCESS_TOKEN -e GH_TOKEN -e GITHUB_ACTOR -e GITHUB_REPOSITORY -e GITHUB_ACTIONS \
+            -e BWS_ACCESS_TOKEN -e DOPPLER_TOKEN -e DOPPLER_TOKEN_APPS -e GH_TOKEN -e GITHUB_ACTOR -e GITHUB_REPOSITORY -e GITHUB_ACTIONS \
             -e GITHUB_EVENT_NAME -e GITHUB_REF -e GITHUB_SHA \
             -e GITHUB_SERVER_URL -e GITHUB_RUN_ID \
             -e SEALEDSTACK_DEFAULT_BRANCH -e SEALEDSTACK_PR \

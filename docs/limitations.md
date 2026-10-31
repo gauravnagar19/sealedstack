@@ -185,7 +185,8 @@ implements both directions. `engine/sealedstack/secrets.py` is the read path:
 | `sops` | `sops --decrypt config/secrets/<project>.enc.yaml` |
 | `aws_ssm` | `aws ssm get-parameter --with-decryption` |
 | `vault` / `openbao` | `vault kv get` (KV v2) |
-| `infisical`, `doppler`, `onepassword`, `pass` | the provider's own CLI |
+| `doppler` | Doppler's REST API with a read-only service token ([D-066](decisions.md)); no CLI needed |
+| `infisical`, `onepassword`, `pass` | the provider's own CLI |
 
 **`gcp` and `azure_kv` are write-only.** They have no read path in the toolbox
 image, so `secrets_get` fails with a clear message (no CLI in the image; use the
@@ -193,7 +194,7 @@ provider console or export the value) instead of silently returning empty. If
 you select one of them you must export those values as environment variables for
 anything that reads secrets back.
 
-The CLI adapters (`infisical`, `doppler`, `onepassword`, `pass`) require **their
+The CLI adapters (`infisical`, `onepassword`, `pass`) require **their
 CLI on `PATH`**; they are **not bundled in the toolbox image**, so they only
 work where the CLI is installed. The same applies to `vault` against a real
 Vault/OpenBao if the CLI is absent.

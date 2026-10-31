@@ -33,7 +33,7 @@ Everything is `experimental` until it passes the live acceptance suite (D-027); 
 | mesh | tailscale, zerotier (native); headscale, netbird, nebula, netmaker, innernet, firezone, wireguard, tailscale-ssh (Ansible) | — |
 | ingress | cloudflare, ngrok (native); caddy, traefik, nginx, frp, pangolin, tailscale-funnel, zrok, bore (Ansible) | — |
 | gate | cloudflare_access (native); authentik, authelia, oauth2-proxy, pomerium, keycloak, zitadel, logto (Ansible); okta, auth0 (OIDC adapter) | — |
-| secrets | bitwarden, aws_ssm, gcp, azure_kv, openbao, vault (native); sops, infisical, doppler, pass, onepassword (adapters) | — |
+| secrets | bitwarden, doppler (REST, read-only service token), aws_ssm, gcp, azure_kv, openbao, vault (native); sops, infisical, pass, onepassword (adapters) | — |
 | backup | r2 + 14 S3-compatible stores, gcs, azure_blob (native); hetzner_storage_box (Ansible) | — |
 | platform | dokploy (native); coolify, caprover, portainer (Ansible) | kamal, kubernetes, nomad, fly, render, railway (out of scope — spec §1) |
 | user_auth | clerk, oidc, better_auth, zitadel, logto, authentik, keycloak, supabase, firebase, workos, auth0 (config/adapter) | — |

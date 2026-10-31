@@ -137,7 +137,7 @@ def test_the_resolve_job_never_receives_the_bundle():
     assert workflow()["jobs"]["resolve"]["outputs"]["ci_secrets"] == "${{ steps.resolve.outputs.ci_secrets || 'false' }}"
 
 
-def test_the_bitwarden_path_exec_step_passes_only_the_bitwarden_token_and_gh_token():
+def test_the_non_ci_path_exec_step_passes_only_the_source_token_and_gh_token():
     steps = workflow()["jobs"]["run"]["steps"]
     plain = next(s for s in steps if str(s.get("name", "")).startswith("sealedstack ") and "(secret source ci)" not in s["name"])
     assert plain["if"] == "needs.resolve.outputs.ci_secrets != 'true'"
@@ -146,7 +146,14 @@ def test_the_bitwarden_path_exec_step_passes_only_the_bitwarden_token_and_gh_tok
     assert plain["env"]["BWS_ACCESS_TOKEN"] == "${{ secrets.BWS_ACCESS_TOKEN }}"
     assert plain["env"]["GH_TOKEN"] == "${{ secrets.GH_TOKEN || github.token }}"
     others = {v for v in plain["env"].values() if "secrets." in str(v)}
-    assert others == {"${{ secrets.BWS_ACCESS_TOKEN }}", "${{ secrets.GH_TOKEN || github.token }}"}
+    # the secret source's access token (Bitwarden's, or Doppler's service tokens, D-066) and
+    # GH_TOKEN; never the whole repository secrets bundle
+    assert others == {
+        "${{ secrets.BWS_ACCESS_TOKEN }}",
+        "${{ secrets.DOPPLER_TOKEN }}",
+        "${{ secrets.DOPPLER_TOKEN_APPS }}",
+        "${{ secrets.GH_TOKEN || github.token }}",
+    }
 
 
 def test_exactly_one_exec_step_runs_for_any_ci_secrets_value():
@@ -154,8 +161,9 @@ def test_exactly_one_exec_step_runs_for_any_ci_secrets_value():
     execs = [s for s in steps if "ci exec" in s.get("run", "")]
     assert len(execs) == 2
     assert {s["if"] for s in execs} == {"needs.resolve.outputs.ci_secrets == 'true'", "needs.resolve.outputs.ci_secrets != 'true'"}
-    # the two copies differ only in the bundle
-    strip = lambda s: s["run"].replace(" -e SEALEDSTACK_CI_SECRETS", "")
+    # the two copies differ only in how the secrets arrive: the bundle (ci) or the source's own
+    # token (Doppler's service tokens, D-066; Bitwarden's is passed by both)
+    strip = lambda s: s["run"].replace(" -e SEALEDSTACK_CI_SECRETS", "").replace(" -e DOPPLER_TOKEN -e DOPPLER_TOKEN_APPS", "")
     assert strip(execs[0]) == strip(execs[1])
 
 

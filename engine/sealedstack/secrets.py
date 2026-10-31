@@ -14,6 +14,8 @@ from typing import Callable, Mapping, Optional, Sequence
 
 import yaml
 
+DEFAULT_INFRA_PROJECT = "infra"
+
 # A process runner returns ``(returncode, stdout, stderr)``.
 ProcessRunner = Callable[[Sequence[str]], "tuple[int, str, str]"]
 
@@ -233,12 +235,13 @@ class SopsSource(SecretSource):
         return SecretResult(name, "missing", detail=f"{name} not found in {self.path.name}")
 
 
-CLI_BACKENDS = ("aws_ssm", "vault", "openbao", "infisical", "doppler", "onepassword", "pass", "gcp", "azure_kv")
+CLI_BACKENDS = ("aws_ssm", "vault", "openbao", "infisical", "onepassword", "pass", "gcp", "azure_kv")
 
 
 class CliSource(SecretSource):
     """Read secrets through a provider CLI (aws_ssm, vault/openbao, infisical,
-    doppler, onepassword, pass). gcp/azure_kv have no CLI here and error."""
+    onepassword, pass). gcp/azure_kv have no CLI here and error. (Doppler is read
+    natively over its API, ``doppler.DopplerSource``.)"""
 
     kind = "cli"
 
@@ -313,13 +316,6 @@ class CliSource(SecretSource):
                 {"INFISICAL_TOKEN": self.env.get("INFISICAL_TOKEN", "")},
             )
             return ("found", out, "") if rc == 0 and out else ("missing", "", "")
-        if backend == "doppler":
-            rc, out, _ = self._run(
-                ["doppler", "secrets", "get", name, "--project", self._cfg("project"),
-                 "--config", self._cfg("config"), "--plain"],
-                {"DOPPLER_TOKEN": self.env.get("DOPPLER_TOKEN", "")},
-            )
-            return ("found", out, "") if rc == 0 and out else ("missing", "", "")
         if backend == "onepassword":
             rc, out, _ = self._run(
                 ["op", "read", f"op://{self._cfg('vault')}/{name}/password"],
@@ -353,12 +349,15 @@ def build_source(
     bw_runner: Optional[ProcessRunner] = None,
     sops_runner: Optional[ProcessRunner] = None,
     cli_runner: Optional[ProcessRunner] = None,
+    http=None,
 ) -> SecretSource:
     """Pick the source named by ``slots.secrets`` (default ``env``).
 
     The project is, in order: the ``project`` argument (app secrets pass
     ``secrets.app_project``), ``stack.yaml: secrets.project`` (D-050, default
-    ``infra``), the legacy ``providers.secrets_bitwarden.project_name``.
+    ``infra``), the legacy ``providers.secrets_bitwarden.project_name``. Doppler has no
+    such project: its service token is scoped to one config, and a second config for the
+    app secrets uses ``DOPPLER_TOKEN_APPS``.
     """
     env = dict(env or {})
     kind = (stack.get("slots") or {}).get("secrets") or "env"
@@ -369,6 +368,13 @@ def build_source(
     if kind == "sops":
         cfg = (stack.get("providers") or {}).get("secrets_sops") or {}
         return SopsSource(config_dir, env, file=cfg.get("file", "secrets/infra.enc.yaml"), runner=sops_runner)
+    if kind == "doppler":
+        # App secrets (the `project` argument is the app project) may live in a second
+        # config with its own service token; infra secrets use DOPPLER_TOKEN.
+        from .doppler import DopplerSource
+
+        infra = str((stack.get("secrets") or {}).get("project") or DEFAULT_INFRA_PROJECT)
+        return DopplerSource(env, apps=project is not None and str(project) != infra, http=http)
     if kind in CLI_BACKENDS:
         return CliSource(kind, stack, config_dir, env, runner=cli_runner, project=project)
     if kind == "ci":
@@ -406,6 +412,25 @@ def lookup(source: SecretSource, config, logical: str) -> SecretResult:
                 )
             return SecretResult(legacy, "found", old.value, detail=f"deprecated key '{legacy}'")
     return result
+
+
+def scope(config) -> str:
+    """Where in the source the infra secrets live, for messages.
+
+    Most sources have a named project; a Doppler service token is scoped to one config
+    by Doppler itself, so there is nothing to name."""
+    kind = str((config.stack.get("slots") or {}).get("secrets") or "")
+    if kind == "doppler":
+        return "the config of the Doppler service token"
+    return f"project '{config.source_project()}'"
+
+
+def where(config) -> str:
+    """``Bitwarden, project `infra``` / ``Doppler, the config of the service token``."""
+    kind = str((config.stack.get("slots") or {}).get("secrets") or "bitwarden")
+    if kind == "doppler":
+        return "Doppler, the config of your service token"
+    return f"{kind.capitalize()}, project `{config.source_project()}`"
 
 
 def describe(config, logical: str) -> str:

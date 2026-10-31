@@ -51,11 +51,6 @@ def tf_vars(
     variables["TF_VAR_tailscale_oauth_client_id"] = tofu_mod.require(source, config, "TAILSCALE_OAUTH_CLIENT_ID")
     variables["TF_VAR_tailscale_oauth_client_secret"] = tofu_mod.require(source, config, "TAILSCALE_OAUTH_CLIENT_SECRET")
 
-    bws = env.get("BWS_ACCESS_TOKEN", "")
-    if not bws:
-        raise config_mod.ConfigError("BWS_ACCESS_TOKEN must be set")
-    variables["TF_VAR_bws_access_token"] = bws
-
     variables["TF_VAR_backup_endpoint"] = (
         env.get("BACKUP_ENDPOINT")
         or str(backup.get("endpoint") or "")

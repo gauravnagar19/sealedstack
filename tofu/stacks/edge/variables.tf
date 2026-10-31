@@ -16,12 +16,6 @@ variable "tailscale_oauth_client_secret" {
   sensitive   = true
 }
 
-variable "bws_access_token" {
-  description = "Bitwarden machine-account token (BWS_ACCESS_TOKEN)."
-  type        = string
-  sensitive   = true
-}
-
 variable "state_passphrase" {
   description = "Passphrase for OpenTofu state encryption (infra.state_passphrase). Non-sensitive on purpose: OpenTofu 1.9+ rejects sensitive variables in the encryption block. Provide it via TF_VAR_state_passphrase; a dummy value is fine for `init -backend=false`/validate."
   type        = string

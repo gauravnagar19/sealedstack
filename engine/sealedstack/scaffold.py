@@ -110,14 +110,20 @@ def gitignore() -> str:
     return ".sealedstack/\n*.tfstate*\n"
 
 
-def devcontainer_json(image: str) -> str:
+def devcontainer_json(image: str, secrets_source: str = "bitwarden") -> str:
     """A devcontainer that runs the pinned engine image (D-046).
 
     ``image`` includes the tag (``ghcr.io/<owner>/sealedstack:<version>``). Local
     use is optional and read-mostly; this gives a browser Codespace, or a local VS
     Code with a container runtime, a terminal with `sealedstack` ready and no
     toolchain installed on the host.
+
+    The remote environment passes through the token of the chosen secret source (the
+    only secret the source needs); Bitwarden's unless ``secrets_source`` is ``doppler``.
     """
+    token_vars = ["DOPPLER_TOKEN", "DOPPLER_TOKEN_APPS"] if secrets_source == "doppler" else ["BWS_ACCESS_TOKEN"]
+    remote_env = {name: "${localEnv:" + name + "}" for name in token_vars}
+    remote_env["GH_TOKEN"] = "${localEnv:GH_TOKEN}"
     return json.dumps(
         {
             "name": "sealedstack",
@@ -128,10 +134,7 @@ def devcontainer_json(image: str) -> str:
                 "SEALEDSTACK_CONFIG": "/infra/config",
                 "SEALEDSTACK_WORKDIR": "/infra/.sealedstack",
             },
-            "remoteEnv": {
-                "BWS_ACCESS_TOKEN": "${localEnv:BWS_ACCESS_TOKEN}",
-                "GH_TOKEN": "${localEnv:GH_TOKEN}",
-            },
+            "remoteEnv": remote_env,
             "customizations": {"vscode": {"extensions": []}},
         },
         indent=2,
