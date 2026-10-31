@@ -19,17 +19,37 @@
       when: platform_coolify_root_username | length > 0
       no_log: true
 
+    - name: Require a pinned installer checksum
+      ansible.builtin.assert:
+        that: platform_coolify_install_sha256 | length == 64
+        fail_msg: >-
+          Set platform_coolify_install_sha256 to the SHA-256 of the installer you
+          reviewed (curl -fsSL {{ platform_coolify_install_url }} | sha256sum).
+          sealedstack does not run a live installer script as root.
+      when: not platform_coolify_installed.stat.exists
+
+    - name: Download the pinned Coolify installer
+      ansible.builtin.get_url:
+        url: "{{ platform_coolify_install_url }}"
+        dest: "{{ platform_coolify_installer_path }}"
+        checksum: "sha256:{{ platform_coolify_install_sha256 }}"
+        owner: root
+        group: root
+        mode: "0700"
+      when: not platform_coolify_installed.stat.exists
+
     - name: Install Coolify
-      ansible.builtin.shell: |
-        set -o pipefail
-        curl -fsSL {{ platform_coolify_install_url }} | bash
-      args:
-        executable: /bin/bash
+      ansible.builtin.command: /bin/bash {{ platform_coolify_installer_path }}
       environment: "{{ platform_coolify_env | default({}) }}"
       when: not platform_coolify_installed.stat.exists
       changed_when: true
       no_log: true
       notify: Restart platform_coolify
+
+    - name: Remove the installer
+      ansible.builtin.file:
+        path: "{{ platform_coolify_installer_path }}"
+        state: absent
 
     - name: Wait for the Coolify panel to answer
       ansible.builtin.uri:

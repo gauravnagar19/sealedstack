@@ -1,0 +1,20 @@
+---
+# mesh_tailscale role (D-016, DR-8).
+#
+# Tailscale is installed from its signed apt repository, never from a live
+# `curl ... | sh` installer. The repository's signing key is downloaded, its
+# fingerprint is checked against the pin below, and only then is it trusted as the
+# apt keyring (tasks/install.yml).
+#
+# Maintainers: Tailscale publishes one signing key for every supported distribution
+# (the same file for ubuntu/noble, jammy and debian/bookworm, trixie). The pin only
+# changes if Tailscale rotates it. To re-verify or bump it:
+#   curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o /tmp/ts.gpg
+#   gpg --show-keys --with-colons --with-fingerprint /tmp/ts.gpg | grep '^fpr' | head -1
+# and compare with the fingerprint Tailscale documents; update the value below in one reviewed PR.
+mesh_tailscale_apt_key_fingerprint: "2596A99EAAB33821893C0A79458CA832957F5868"
+mesh_tailscale_apt_distributions: [ubuntu, debian]
+mesh_tailscale_apt_base_url: "https://pkgs.tailscale.com/stable"
+mesh_tailscale_apt_keyring: /usr/share/keyrings/tailscale-archive-keyring.gpg
+mesh_tailscale_apt_source_file: /etc/apt/sources.list.d/tailscale.list
+mesh_tailscale_apt_key_download: /root/.sealedstack-tailscale-key.gpg

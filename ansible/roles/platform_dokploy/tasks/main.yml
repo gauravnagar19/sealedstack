@@ -10,16 +10,27 @@
         path: /etc/dokploy
       register: dokploy_installed
 
+    - name: Download the pinned Dokploy installer
+      ansible.builtin.get_url:
+        url: "{{ dokploy_install_url }}"
+        dest: "{{ dokploy_installer_path }}"
+        checksum: "sha256:{{ dokploy_installer_sha256 }}"
+        owner: root
+        group: root
+        mode: "0700"
+      when: not dokploy_installed.stat.exists
+
     - name: Install Dokploy
-      ansible.builtin.shell: |
-        set -o pipefail
-        curl -fsSL {{ dokploy_install_url }} | sh
-      args:
-        executable: /bin/bash
+      ansible.builtin.command: /bin/bash {{ dokploy_installer_path }}
       environment:
         DOKPLOY_VERSION: "{{ dokploy_version }}"
       when: not dokploy_installed.stat.exists
       changed_when: true
+
+    - name: Remove the installer
+      ansible.builtin.file:
+        path: "{{ dokploy_installer_path }}"
+        state: absent
 
     - name: Wait for the dokploy-network to appear
       ansible.builtin.command: docker network inspect dokploy-network

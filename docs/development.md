@@ -74,3 +74,25 @@ just validate
 `SEALEDSTACK_CONFIG` wins when set; otherwise scripts fall back to
 `<repo>/config`. See [config-repo.md](config-repo.md) and
 [limitations.md](limitations.md).
+
+## Pinned installers on the servers (DR-8)
+
+Root on a new server never runs a live installer script. Two pins live in the
+Ansible roles and are bumped by a maintainer in a reviewed PR:
+
+- **Tailscale** comes from its signed apt repository. The repository key's
+  fingerprint is pinned in `ansible/roles/mesh_tailscale/defaults/main.yml`
+  (`mesh_tailscale_apt_key_fingerprint`); the install tasks refuse any other key.
+  It only changes if Tailscale rotates its signing key; the file lists the
+  commands to re-verify it.
+- **Dokploy** is installed by its `install.sh`, fetched from an immutable git
+  commit of the Dokploy website repository (the script is not part of the panel's
+  release tags) and checked against `dokploy_installer_sha256` before it runs.
+  Renovate bumps `dokploy_version` in `ansible/roles/platform_dokploy/defaults/main.yml`;
+  when it does, pick the installer commit that was current at that release,
+  record its SHA-256 and read the diff against the old installer (the three
+  steps are in the defaults file). `tests/pytest/test_ansible_installers.py`
+  fails if any `curl | sh` appears under `ansible/`.
+
+The Coolify role (not on the golden path) refuses to run without a recorded
+`platform_coolify_install_sha256`.

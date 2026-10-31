@@ -66,6 +66,12 @@
       "matchStrings": ["ARG CHECK_JSONSCHEMA_VERSION=(?<currentValue>\\S+)"],
       "depNameTemplate": "check-jsonschema",
       "datasourceTemplate": "pypi"
+    },
+    {
+      "fileMatch": ["^ansible/roles/platform_dokploy/defaults/main\\.yml$"],
+      "matchStrings": ["dokploy_version: \"(?<currentValue>v[0-9.]+)\""],
+      "depNameTemplate": "Dokploy/dokploy",
+      "datasourceTemplate": "github-releases"
     }
   ]
 }

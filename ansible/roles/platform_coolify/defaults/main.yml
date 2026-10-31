@@ -3,6 +3,10 @@
 # Coolify PaaS on a control host. Coolify's installer manages its own Docker
 # Compose stack under /data/coolify; the panel listens on :8000.
 platform_coolify_install_url: "https://cdn.coollabs.io/coolify/install.sh"
+# DR-8: never piped into a shell. Download the installer, read it, and record its
+# SHA-256 here (`curl -fsSL <url> | sha256sum`); the role refuses to run without it.
+platform_coolify_install_sha256: ""
+platform_coolify_installer_path: /root/.sealedstack-coolify-install.sh
 platform_coolify_data_dir: /data/coolify
 platform_coolify_source_dir: /data/coolify/source
 platform_coolify_panel_port: 8000

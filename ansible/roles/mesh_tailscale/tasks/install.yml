@@ -1,0 +1,91 @@
+---
+# Install Tailscale from its signed apt repository (DR-8). Included by the
+# bootstrap play (`include_role ... tasks_from: install`); the pinned key
+# fingerprint lives in defaults/main.yml.
+
+- name: Assert the distribution has a Tailscale apt repository
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] | lower in mesh_tailscale_apt_distributions
+      - ansible_facts['distribution_release'] | length > 0
+    fail_msg: >-
+      No Tailscale apt repository is configured for {{ ansible_facts['distribution'] }}
+      {{ ansible_facts['distribution_release'] }}. Use Ubuntu or Debian.
+
+- name: Install the packages apt needs to verify the repository
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - gnupg
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check whether the Tailscale keyring is already installed
+  ansible.builtin.stat:
+    path: "{{ mesh_tailscale_apt_keyring }}"
+  register: mesh_tailscale_keyring_stat
+
+- name: Download the Tailscale repository signing key
+  ansible.builtin.get_url:
+    url: "{{ mesh_tailscale_apt_base_url }}/{{ ansible_facts['distribution'] | lower }}/{{ ansible_facts['distribution_release'] }}.noarmor.gpg"
+    dest: "{{ mesh_tailscale_apt_key_download }}"
+    owner: root
+    group: root
+    mode: "0600"
+    force: true
+  when: not mesh_tailscale_keyring_stat.stat.exists
+
+- name: Read the fingerprints in the downloaded key
+  ansible.builtin.command: gpg --show-keys --with-colons --with-fingerprint {{ mesh_tailscale_apt_key_download }}
+  register: mesh_tailscale_key_info
+  changed_when: false
+  when: not mesh_tailscale_keyring_stat.stat.exists
+
+- name: Assert the signing key is the pinned one
+  ansible.builtin.assert:
+    that:
+      - >-
+        (mesh_tailscale_key_info.stdout_lines
+         | select('match', '^fpr:')
+         | select('search', ':' ~ mesh_tailscale_apt_key_fingerprint ~ ':$')
+         | list) | length > 0
+    fail_msg: >-
+      The Tailscale repository signing key does not carry the pinned fingerprint
+      {{ mesh_tailscale_apt_key_fingerprint }}. Refusing to trust it. If Tailscale
+      rotated its key, verify the new fingerprint and update
+      mesh_tailscale_apt_key_fingerprint in ansible/roles/mesh_tailscale/defaults/main.yml.
+  when: not mesh_tailscale_keyring_stat.stat.exists
+
+- name: Install the verified key as the apt keyring
+  ansible.builtin.copy:
+    src: "{{ mesh_tailscale_apt_key_download }}"
+    dest: "{{ mesh_tailscale_apt_keyring }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  when: not mesh_tailscale_keyring_stat.stat.exists
+
+- name: Remove the downloaded key
+  ansible.builtin.file:
+    path: "{{ mesh_tailscale_apt_key_download }}"
+    state: absent
+
+- name: Add the Tailscale apt source
+  ansible.builtin.copy:
+    dest: "{{ mesh_tailscale_apt_source_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: >
+      deb [signed-by={{ mesh_tailscale_apt_keyring }}]
+      {{ mesh_tailscale_apt_base_url }}/{{ ansible_facts['distribution'] | lower }}
+      {{ ansible_facts['distribution_release'] }} main
+  register: mesh_tailscale_source
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: "{{ mesh_tailscale_source is changed }}"

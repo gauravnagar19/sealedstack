@@ -154,12 +154,12 @@
           sshd -T does not report the hardened settings; a cloud-init drop-in
           may be overriding 00-sealedstack.conf.
 
-    - name: Install Tailscale
-      ansible.builtin.shell: |
-        set -o pipefail
-        curl -fsSL https://tailscale.com/install.sh | sh
-      args:
-        creates: /usr/bin/tailscale
+    # DR-8: from Tailscale's signed apt repository with a pinned key fingerprint,
+    # never from a live installer script run as root.
+    - name: Install Tailscale from its signed apt repository
+      ansible.builtin.include_role:
+        name: mesh_tailscale
+        tasks_from: install
 
     - name: Join the mesh using a 0600 key file
       block:
