@@ -32,7 +32,7 @@ do the steps that create trust.
 
 Writes are approval-gated by design: `apply`, `up`, `server add` and `db restore` run
 only in CI, only for an approver listed in `stack.yaml: approvers` (D-052), and a local
-session refuses them without `--break-glass`. An agent that is told to "just apply it"
+session refuses them without `--break-glass`. An agent that is told to push the change straight through
 cannot.
 
 ## What to give the agent, and what not
