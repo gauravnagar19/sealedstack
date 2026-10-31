@@ -11,10 +11,12 @@ nav:
   - Home: README.md
   - Getting started:
       - Getting started: getting-started.md
+      - Run it with an agent: run-with-an-agent.md
       - User experience: user-experience.md
       - Prerequisites: prerequisites.md
       - Known limitations: limitations.md
   - Configuration:
+      - Choosing a stack: choosing-a-stack.md
       - Providers: providers.md
       - Config repository: config-repo.md
       - Infra repo and the tool image: infra-repo.md
