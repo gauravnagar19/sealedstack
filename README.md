@@ -6,7 +6,7 @@ a private mesh, public traffic only through an outbound tunnel with a gate in
 front, and the whole stack rebuildable from git, a secrets manager and object
 storage.
 
-> **Pre-release (0.5).** The engine, the Terraform/Ansible code and the CI
+> **Pre-release.** The engine, the Terraform/Ansible code and the CI
 > workflows validate offline (unit tests, `tofu validate`, `ansible-lint`) and
 > against mocked APIs. **Nothing has run against live accounts yet, so no provider
 > is marked `supported`.** Providers become `supported` only after the first live
@@ -108,7 +108,7 @@ You swap providers with one line in `config/stack.yaml`, or per server in
 | mesh | tailscale | experimental |
 | ingress | cloudflare (Tunnel) | experimental |
 | gate | cloudflare_access | experimental |
-| secrets | bitwarden (read-only) | experimental |
+| secrets | bitwarden, doppler or infisical (read-only) | experimental |
 | backup / state | r2 | experimental |
 | platform | dokploy | experimental |
 | registry | ghcr | experimental |
@@ -137,7 +137,7 @@ Implemented behind the same contracts and tested offline only. Expect rough edge
 | registry | (planned: dockerhub, quay, oci) |
 
 Adding a provider is a registry entry plus a module, role or adapter. See
-[docs/providers.md](docs/providers.md) and [AGENTS.md](AGENTS.md).
+[adding a provider](docs/maintainers/adding-a-provider.md) (for maintainers).
 
 ## Commands
 
@@ -155,11 +155,12 @@ pull request comment (writers only) and, optionally, in a Codespace terminal as
 | `up` | Run workflow | yes | Converges everything from an empty server to a running app; re-running resumes |
 | `add-server` (`server add`) | Run workflow | yes | Bootstraps an existing machine and opens a PR recording it |
 | `add-app` (`app add`) | Run workflow | none | Opens the infra PR and the app-repo onboarding PR |
+| `reinstall` | Run workflow | yes + typed name | Wipes and reinstalls a Netcup server from CI ([how](docs/netcup-reinstall.md)) |
 | `status` | Hourly and after every apply | none | Updates the pinned Status issue |
 | `restore` (`db restore`) | Run workflow | yes + typed name | Restores a database backup |
 | `drill` (`db drill`) | Weekly and Run workflow | none | Restores a backup into a throwaway database and checks it |
 
-Write commands (`apply`, `up`, `add-server`, `restore`, `server sync`) run only
+Write commands (`apply`, `up`, `add-server`, `restore`, `server sync`, `reinstall`) run only
 from a merged pull request on `main` and only after an approver in
 `stack.yaml: approvers` has agreed. sealedstack enforces this itself, so it also
 holds on private GitHub Free repositories.
@@ -170,7 +171,7 @@ Start with [docs/README.md](docs/README.md):
 
 - **Get started:** [getting-started](docs/getting-started.md), [prerequisites](docs/prerequisites.md), [config repository](docs/config-repo.md)
 - **Known limitations:** [limitations and caveats](docs/limitations.md) — what does not work yet, and the requirements behind it
-- **Configure & operate:** [providers](docs/providers.md), [CI/CD](docs/ci-cd.md), [netcup firewall](docs/netcup-firewall.md)
+- **Configure & operate:** [providers](docs/providers.md), [CI/CD](docs/ci-cd.md), [netcup firewall](docs/netcup-firewall.md), [netcup reinstall](docs/netcup-reinstall.md)
 - **Choosing a stack:** [choosing a stack](docs/choosing-a-stack.md)
 - **With an AI agent:** [run it with an agent](docs/run-with-an-agent.md)
 - **Every journey:** [user experience](docs/user-experience.md)

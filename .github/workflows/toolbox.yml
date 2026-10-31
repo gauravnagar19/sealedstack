@@ -3,12 +3,27 @@ name: toolbox
 # Publish the toolbox image so users don't need to build it. Pin by digest in
 # production. D-053: pushed only to the owner's own GHCR namespace, which
 # inherits the repository's (private) visibility; this workflow never changes
-# package visibility. Pushed on main; on a version tag the release workflow builds it
-# (via `workflow_call`) so the tag does not trigger two concurrent pushes.
+# package visibility. Pushed on main when the toolbox changes; on a release the
+# release workflow calls it (via `workflow_call`) so a tag does not trigger two
+# concurrent pushes.
+#
+# The image is content-addressed: it is also tagged `tree-<git tree hash of
+# toolbox/>`. If that tag already exists the build is skipped and its digest is
+# reused, so a release (or any docs-only or code-only commit) does not rebuild
+# an unchanged toolbox. When the toolbox did change, the arm64 half runs under
+# emulation, so layers are cached between runs.
 on:
   push:
     branches: [main]
+    paths:
+      - toolbox/**
+      - .github/workflows/toolbox.yml
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild even if an image for this toolbox content already exists"
+        type: boolean
+        default: false
   workflow_call:
     outputs:
       digest:
@@ -23,7 +38,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     outputs:
-      digest: ${{ steps.build.outputs.digest }}
+      digest: ${{ steps.existing.outputs.digest || steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -32,7 +47,25 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: existing
+        name: Reuse the image for this toolbox content if it exists
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/sealedstack-toolbox
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          tree="$(git rev-parse HEAD:toolbox)"
+          echo "tree=${tree}" >> "$GITHUB_OUTPUT"
+          if [ "${FORCE}" != "true" ] \
+             && digest="$(docker buildx imagetools inspect "${IMAGE}:tree-${tree}" --format '{{.Manifest.Digest}}' 2>/dev/null)" \
+             && [ -n "${digest}" ]; then
+            echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+            echo "Reusing ${IMAGE}:tree-${tree} (${digest})"
+          else
+            echo "No image for toolbox content ${tree}: building"
+          fi
       - id: meta
+        if: ${{ steps.existing.outputs.digest == '' }}
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/sealedstack-toolbox
@@ -40,8 +73,10 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=sha
+            type=raw,value=tree-${{ steps.existing.outputs.tree }}
             type=raw,value=latest,enable={{is_default_branch}}
       - id: build
+        if: ${{ steps.existing.outputs.digest == '' }}
         uses: docker/build-push-action@v6
         with:
           context: toolbox
@@ -49,12 +84,24 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=toolbox-publish
+          cache-to: type=gha,scope=toolbox-publish,mode=max
       - name: Summary
+        env:
+          DIGEST: ${{ steps.existing.outputs.digest || steps.build.outputs.digest }}
+          REUSED: ${{ steps.existing.outputs.digest != '' }}
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           {
-            echo "### toolbox published"
+            if [ "${REUSED}" = "true" ]; then
+              echo "### toolbox reused (unchanged content)"
+            else
+              echo "### toolbox published"
+            fi
             echo
-            echo "- digest: \`${{ steps.build.outputs.digest }}\`"
-            echo "- tags:"
-            echo '${{ steps.meta.outputs.tags }}' | sed 's/^/  - /'
+            echo "- digest: \`${DIGEST}\`"
+            if [ -n "${TAGS}" ]; then
+              echo "- tags:"
+              echo "${TAGS}" | sed 's/^/  - /'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

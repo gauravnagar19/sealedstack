@@ -14,12 +14,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # the publication-hygiene step checks history identities
+      - uses: docker/setup-buildx-action@v3
       - name: Build the toolbox
-        run: docker build -t sealedstack-toolbox:ci toolbox
+        # Layer-cached: the toolbox rarely changes, so most runs reuse every layer.
+        uses: docker/build-push-action@v6
+        with:
+          context: toolbox
+          load: true
+          tags: sealedstack-toolbox:ci
+          cache-from: type=gha,scope=toolbox-ci
+          cache-to: type=gha,scope=toolbox-ci,mode=max
       - name: Build the tool image
         # F2: the root Dockerfile is never otherwise built in CI, so a broken
         # FROM/COPY would only surface at release time.
-        run: docker build -f Dockerfile --build-arg TOOLBOX_IMAGE=sealedstack-toolbox:ci .
+        # `buildx use default`: the container builder cannot see the image loaded above.
+        run: |
+          docker buildx use default
+          docker build -f Dockerfile --build-arg TOOLBOX_IMAGE=sealedstack-toolbox:ci .
       - name: config from examples
         # The repo ships no real config (D-022/F4); validate against the samples.
         run: |
@@ -113,8 +124,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # scan the whole history
+      - uses: docker/setup-buildx-action@v3
       - name: Build the toolbox
-        run: docker build -t sealedstack-toolbox:ci toolbox
+        # Layer-cached: the toolbox rarely changes, so most runs reuse every layer.
+        uses: docker/build-push-action@v6
+        with:
+          context: toolbox
+          load: true
+          tags: sealedstack-toolbox:ci
+          cache-from: type=gha,scope=toolbox-ci
+          cache-to: type=gha,scope=toolbox-ci,mode=max
       - name: gitleaks (full history)
         # A direct full-history scan (no push-range logic, which breaks on a
         # rewritten root commit). publish-check --strict also scans the archive.

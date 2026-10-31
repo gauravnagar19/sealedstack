@@ -23,6 +23,7 @@ with an AI agent while you do. The way sealedstack is built, and why, is kept ap
 - [Infra repo and the tool image](infra-repo.md): the three-repo model, `bin/sealedstack`, upgrades.
 - [CI/CD](ci-cd.md): releases from GitHub, GitLab, Gitea and others.
 - [Netcup firewall](netcup-firewall.md): the manual rule table for the Netcup SCP adapter.
+- [Netcup reinstall](netcup-reinstall.md): wipe and reinstall a Netcup server from CI.
 
 ## Reference
 
