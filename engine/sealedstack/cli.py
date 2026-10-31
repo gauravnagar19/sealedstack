@@ -440,7 +440,16 @@ def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
 
 
 def default_runner(argv: Sequence[str], code_root: Path) -> int:
-    proc = subprocess.run(list(argv), cwd=str(code_root))
+    """Run a command in the CALLER's working directory.
+
+    In the engine image that is the mounted infra repo (``WORKDIR /infra``). Commands that
+    work on the repo they were started in (``setup`` reads ``sealedstack.version`` there,
+    ``debug onboard`` defaults to "the current directory") would otherwise look inside the
+    engine's own tree. Nothing needs ``code_root`` as its working directory: the engine is
+    importable through ``PYTHONPATH`` and the scripts find their siblings by their own path.
+    ``code_root`` stays in the signature because every runner shares it.
+    """
+    proc = subprocess.run(list(argv))
     return proc.returncode
 
 
