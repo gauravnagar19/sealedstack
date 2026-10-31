@@ -342,7 +342,7 @@ for line in raw_tags.splitlines():
     fields = line.split(sep)
     name = fields[0]
     tagger = fields[1] if len(fields) > 1 else ""
-    tagger_email = fields[2] if len(fields) > 2 else ""
+    tagger_email = (fields[2] if len(fields) > 2 else "").strip().strip("<>")  # %(taggeremail) keeps the angle brackets
     contents = sep.join(fields[3:]) if len(fields) > 3 else ""
     if tagger and not neutral(tagger, tagger_email):
         bad_identity.setdefault(("tagger", tagger, tagger_email), set()).add(name)
