@@ -22,6 +22,7 @@ COMMANDS = {
     "up",
     "add-server",
     "add-app",
+    "reinstall",
     "status",
     "restore",
     "drill",

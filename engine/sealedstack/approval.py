@@ -3,7 +3,7 @@
 On GitHub Free private repos, environment required-reviewers and branch
 protection are unavailable, so the write commands must enforce approval
 themselves. A write command (``apply``/``up``/``restore``/``add-server``/
-``server sync``) runs in CI only when **both** hold:
+``server sync``/``reinstall``) runs in CI only when **both** hold:
 
 1. the commit is on ``main`` **and** the forge reports it merged through a PR
    (a direct push to ``main`` is refused); and
@@ -21,7 +21,7 @@ from typing import Mapping, Optional, Sequence
 
 from . import forge as forge_mod
 
-WRITE_COMMANDS = ("apply", "up", "restore", "add-server", "server sync")
+WRITE_COMMANDS = ("apply", "up", "restore", "add-server", "server sync", "reinstall")
 APPROVE_PREFIX = "/sealedstack approve"
 PLAN_MARKER = "<!-- sealedstack:plan -->"
 

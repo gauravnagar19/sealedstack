@@ -28,6 +28,7 @@ ALIASES = {
     "add-app": "app add",
     "restore": "db restore",
     "drill": "db drill",
+    "reinstall": "server reinstall",
 }
 
 
@@ -77,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  ci resolve|exec       what the infra repo's CI does for an event (infra.yml)\n"
             "  server add <name>     bootstrap/register a server\n"
             "  server sync [name]    re-assert the host baseline\n"
+            "  server reinstall      wipe a Netcup server and install a fresh OS (guarded, CI only)\n"
             "  app add               onboard an app\n"
             "  db restore <app>      restore a database backup\n"
             "  db drill <app>        restore into a throwaway database and check it\n"
@@ -110,6 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     server_add.add_argument("name")
     server_sync = _leaf(server_sub, "sync", "re-assert the host baseline")
     server_sync.add_argument("name", nargs="?")
+    _leaf(server_sub, "reinstall", "wipe a Netcup server and install a fresh OS").add_argument("extras", nargs="*")
 
     app = _leaf(sub, "app", "apps")
     app_sub = app.add_subparsers(dest="verb", title="app commands")
@@ -136,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_server = _leaf(sub, "add-server", "alias for `server add`")
     add_server.add_argument("name")
     _leaf(sub, "add-app", "alias for `app add`").add_argument("extras", nargs="*")
+    _leaf(sub, "reinstall", "alias for `server reinstall`").add_argument("extras", nargs="*")
     for verb, help in (("restore", "alias for `db restore`"), ("drill", "alias for `db drill`")):
         leaf = _leaf(sub, verb, help)
         leaf.add_argument("app")
@@ -158,6 +162,8 @@ PASSTHROUGH = {
     "debug init": 0,
     "ci resolve": 0,
     "ci exec": 0,
+    "reinstall": 0,
+    "server reinstall": 0,
     "restore": 1,
     "drill": 1,
     "db restore": 1,
@@ -348,6 +354,24 @@ def _show_admin_handler(break_glass: bool) -> Callable:
     return handler
 
 
+def _reinstall_handler(extras: list) -> Callable:
+    """Wipe and reinstall a Netcup server (D-070); forgets the saved `up` progress afterwards."""
+
+    def handler(config, env, code_root, json_output, runner):
+        from . import reinstall as reinstall_mod
+
+        if config is None:
+            print(f"{PROG}: no config found", file=sys.stderr)
+            return 2
+        workdir = env.get("SEALEDSTACK_WORKDIR") or str(code_root / ".sealedstack")
+        return reinstall_mod.run(
+            config, env, extras,
+            forget_progress=lambda: _progress(config, env, "up", workdir).clear(),
+        )
+
+    return handler
+
+
 def _approve_handler(write_command: str) -> Callable:
     """Enforce the D-052 approval gate for a write command (used by CI)."""
 
@@ -418,6 +442,8 @@ def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
         if getattr(args, "name", None):
             argv.append(args.name)
         return Action(command, argv=[argv])
+    if command == "server reinstall":
+        return Action(command, handler=_reinstall_handler(extras))
     if command == "app add":
         return Action(command, argv=[[python, "-m", "sealedstack.appadd", *extras]])
     if command == "db restore":

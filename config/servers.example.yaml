@@ -25,7 +25,7 @@ servers:
   #   provider: netcup
   #   role: control
   #   os: ubuntu-24.04
-  #   external_id: v2202xxxxxxxxxxxxx
+  #   external_id: v2202xxxxxxxxxxxxx   # the id or v22… name in the Server Control Panel; `reinstall` needs it
   #   bootstrap:
   #     ip_secret: SERVER_IP_BOX_1
   #     password_secret: ROOT_PASSWORD_BOX_1

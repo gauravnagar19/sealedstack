@@ -4,7 +4,7 @@
 |---|---|
 | Status | **Final (v1 UX): signed off by the owner on 2026-10-11.** This document is authoritative for everything a user sees and does. [design spec, for maintainers](maintainers/spec.md) §6 defers to it. Changes need a new decision in [decisions.md](maintainers/decisions.md). |
 | Date | 2026-10-11 |
-| Decisions | D-034 to D-047 ([decisions.md](maintainers/decisions.md)). Amended on 2026-10-12 by D-056: the caller workflow in §4 step 2 also grants `packages: read`. Amended on 2026-10-13 by D-057: app release jobs join the tailnet as `tag:release` (Dokploy API only), not `tag:ci`; by D-058: the bot identity for now is a fine-grained personal access token (§4 step 4 checklist); by D-059: `drift` is also a manual command, and scheduled drift (the hourly run after `status` and the `drift.yml` workflow) is off unless the repository variable `SEALEDSTACK_DRIFT_ENABLED` is `true` (§8 table, §13); by D-060: the app release caller written by the onboarding PR (§5, §7) also grants `deployments: write`, and each release is recorded as a GitHub Deployment of `production` in the app repo; and the Setup checklist (§4 step 4) has a row for the `tag:release` OIDC trust credential, which `check` also verifies for the infra repo and each app repo. Amended on 2026-10-31 by D-066: `slots.secrets: doppler` is an alternative secret source, where a read-only Doppler service token (`DOPPLER_TOKEN`) replaces `BWS_ACCESS_TOKEN` as the one secret kept in GitHub; by D-067: `slots.secrets: infisical` is another, where a read-only Infisical machine identity (`INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET`) is kept in GitHub and `providers.secrets_infisical.project_id` names the project. |
+| Decisions | D-034 to D-047 ([decisions.md](maintainers/decisions.md)). Amended on 2026-10-12 by D-056: the caller workflow in §4 step 2 also grants `packages: read`. Amended on 2026-10-13 by D-057: app release jobs join the tailnet as `tag:release` (Dokploy API only), not `tag:ci`; by D-058: the bot identity for now is a fine-grained personal access token (§4 step 4 checklist); by D-059: `drift` is also a manual command, and scheduled drift (the hourly run after `status` and the `drift.yml` workflow) is off unless the repository variable `SEALEDSTACK_DRIFT_ENABLED` is `true` (§8 table, §13); by D-060: the app release caller written by the onboarding PR (§5, §7) also grants `deployments: write`, and each release is recorded as a GitHub Deployment of `production` in the app repo; and the Setup checklist (§4 step 4) has a row for the `tag:release` OIDC trust credential, which `check` also verifies for the infra repo and each app repo. Amended on 2026-10-31 by D-066: `slots.secrets: doppler` is an alternative secret source, where a read-only Doppler service token (`DOPPLER_TOKEN`) replaces `BWS_ACCESS_TOKEN` as the one secret kept in GitHub; by D-067: `slots.secrets: infisical` is another, where a read-only Infisical machine identity (`INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET`) is kept in GitHub and `providers.secrets_infisical.project_id` names the project; by D-070: `reinstall` wipes and reinstalls a Netcup server from CI ([Netcup reinstall](netcup-reinstall.md)). |
 
 Mockups use GitHub wording; GitLab equivalents are in §11. `<v>` means the pinned sealedstack version (e.g. `0.6.0`), and `<owner>` the sealedstack publisher.
 
@@ -62,7 +62,7 @@ on:
     inputs:
       command:
         type: choice
-        options: [setup, check, plan, apply, up, add-server, add-app, status, restore, drill, drift]
+        options: [setup, check, plan, apply, up, add-server, add-app, reinstall, status, restore, drill, drift]
       args:
         description: "e.g. --name server-1 (IP and root password come from the secret source)"
         required: false
@@ -355,6 +355,7 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 | `up` | Run workflow / `/sealedstack up` on a merged PR | `production` | Yes |
 | `add-server` | Run workflow | `production` | Yes + PR |
 | `add-app` | Run workflow | — | Opens PRs only |
+| `reinstall` | Run workflow only | `production` + typed name | Yes: erases the server's disk (Netcup only, [how](netcup-reinstall.md)) |
 | `status` | Hourly + after every apply | — | Updates the Status issue |
 | `drift` | Run workflow / `/sealedstack drift` any time; hourly right after `status` only when the repository variable `SEALEDSTACK_DRIFT_ENABLED` is `true` (D-059) | — | No: a problem becomes a Status-issue comment |
 | `restore` | Run workflow | `production` + typed name | Yes |
@@ -362,7 +363,7 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 
 **Comment commands** run only for users with **write** access to the repo; others get a polite refusal.
 
-**Approval (D-052).** Write commands (`apply`, `up`, `restore`, `add-server`, `server sync`) run only when the commit is merged through a PR (a direct push to `main` is refused) **and** an approver has agreed — either the run was dispatched by a user in `stack.yaml: approvers`, or an approver commented **`/sealedstack approve`** on the PR after the latest plan comment. This is enforced by the engine, so it works on private GitHub Free repos where the `production` environment has no required reviewers; the environment is still used as a second gate where your plan supports it.
+**Approval (D-052).** Write commands (`apply`, `up`, `restore`, `add-server`, `server sync`, `reinstall`) run only when the commit is merged through a PR (a direct push to `main` is refused) **and** an approver has agreed — either the run was dispatched by a user in `stack.yaml: approvers`, or an approver commented **`/sealedstack approve`** on the PR after the latest plan comment. This is enforced by the engine, so it works on private GitHub Free repos where the `production` environment has no required reviewers; the environment is still used as a second gate where your plan supports it.
 
 ### 12.2 What lives where (user view)
 

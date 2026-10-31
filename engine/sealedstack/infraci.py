@@ -45,7 +45,7 @@ COMMENT_READ = ("check", "plan", "status", "drill", "drift")
 COMMENT_WRITE = ("up", "apply")
 
 # Commands that never touch a server or Dokploy, so the runner needs no tailnet.
-NO_MESH = frozenset({"setup", "add-app", "app add"})
+NO_MESH = frozenset({"setup", "add-app", "app add", "reinstall"})
 
 SETUP_BRANCH_PREFIX = "sealedstack/setup"
 WAITING_MARKER = "<!-- sealedstack:waiting -->"

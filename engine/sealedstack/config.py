@@ -38,6 +38,7 @@ WRITE_COMMANDS = frozenset(
         "up",
         "server add",
         "server sync",
+        "server reinstall",
         "db restore",
     }
 )

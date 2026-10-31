@@ -57,3 +57,51 @@ def node_registered(
         if name in (hostname, fqdn.split(".", 1)[0]) and TAG in (device.get("tags") or []):
             return True
     return False
+
+
+def remove_node(
+    name: str,
+    client_id: str,
+    client_secret: str,
+    *,
+    tailnet: str = "-",
+    http: Optional[HttpClient] = None,
+) -> Optional[int]:
+    """Delete every ``tag:server`` node called ``name``; returns how many, or None when it cannot.
+
+    Used by ``reinstall`` (D-070): the wiped machine rejoins under the same name, and while the old
+    node stays, ``up`` would take the new install for an already bootstrapped one. Needs the
+    ``devices:core`` scope (read and write). Only tagged server nodes are touched.
+    """
+    if not (name and client_id and client_secret):
+        return None
+    http = http or UrllibClient()
+    try:
+        basic = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("ascii")
+        token_response = http.request(
+            "POST", f"{API}/oauth/token",
+            headers={"Authorization": f"Basic {basic}"}, form_body={"grant_type": "client_credentials"},
+        )
+        if token_response.status != 200:
+            return None
+        token = str((token_response.json() or {}).get("access_token") or "")
+        if not token:
+            return None
+        auth = {"Authorization": f"Bearer {token}"}
+        devices = http.request("GET", f"{API}/tailnet/{tailnet}/devices", headers=auth)
+        if devices.status != 200:
+            return None
+        rows = (devices.json() or {}).get("devices")
+        if not isinstance(rows, list):
+            return None
+        removed = 0
+        for device in rows:
+            hostname = str(device.get("hostname") or "")
+            fqdn = str(device.get("name") or "")
+            if name in (hostname, fqdn.split(".", 1)[0]) and TAG in (device.get("tags") or []):
+                if http.request("DELETE", f"{API}/device/{device.get('id')}", headers=auth).status not in (200, 204):
+                    return None
+                removed += 1
+        return removed
+    except Exception:  # noqa: BLE001 - the caller prints what to do by hand
+        return None

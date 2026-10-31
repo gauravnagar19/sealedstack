@@ -32,7 +32,7 @@ def test_check_plan_and_status_on_a_fork_pr_are_refused_and_nothing_runs(tmp_pat
 def test_every_other_command_on_a_fork_pr_is_refused_too(tmp_path):
     f, c = make_forge(), make_config(tmp_path)
     number = fork_pr(f)
-    for command in ("drift", "apply", "up", "restore", "drill", "add-app", "add-server"):
+    for command in ("drift", "apply", "up", "restore", "drill", "add-app", "add-server", "reinstall"):
         assert not infraci.resolve(comment_event(f"/sealedstack {command}", actor="you", number=number), f, c).proceed
 
 
@@ -82,7 +82,7 @@ def test_every_listed_command_still_dispatches(tmp_path):
     f, c = make_forge(), make_config(tmp_path)
     for command in sorted(infraci.DISPATCH_COMMANDS):
         assert infraci.resolve(ev("workflow_dispatch", actor="you", command=command), f, c).command == command
-    assert infraci.DISPATCH_COMMANDS == {"setup", "check", "plan", "apply", "up", "add-server", "add-app", "status", "restore", "drill", "drift"}
+    assert infraci.DISPATCH_COMMANDS == {"setup", "check", "plan", "apply", "up", "add-server", "add-app", "reinstall", "status", "restore", "drill", "drift"}
 
 
 def test_the_outputs_file_only_ever_carries_a_known_command(tmp_path):

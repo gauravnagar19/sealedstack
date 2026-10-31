@@ -287,6 +287,17 @@ through sealedstack at all. No check inside sealedstack can prevent that.
   token to the exact permissions in [prerequisites](prerequisites.md).
 - **Rotate** the CI-held secrets when someone leaves the repo.
 
+## Netcup reinstall has not run live (D-070)
+
+`reinstall` was built from Netcup's published API description and has only been exercised against a
+test double. Unverified until the first live run: that the `scp` device-flow client accepts a
+refresh-token exchange from CI, that the install task finishes in the stated states, and that
+Netcup runs the first-boot script as root before SSH is first used (the script sets the root
+password and allows password login for the bootstrap only). The root password travels once, in the
+install request, to Netcup over TLS; the bootstrap turns root and password logins off afterwards
+(D-061). The refresh token lapses after about 30 days unused, and sealedstack cannot rotate it
+for you because the secret source is read-only ([renewing it](netcup-reinstall.md#renewing-the-token)).
+
 ## Other open caveats
 
 These are tracked in status (private) and verification log (private):

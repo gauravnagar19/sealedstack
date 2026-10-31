@@ -102,6 +102,7 @@ D-044).
 | `DOKPLOY_API_KEY` | optional override | Not needed. `up` creates the Dokploy admin account and an API key through Dokploy's API and keeps them in the encrypted state. Set it only to use a key you made by hand. |
 | `HCLOUD_TOKEN` | compute `hetzner` | Read and write API token. Only when Hetzner creates the server. |
 | `NETCUP_API_USERNAME`, `NETCUP_API_PASSWORD` | compute `netcup` | Required **only** when the firewall adapter is enabled (`config/providers/netcup.yaml` exists). Without it, apply the [rule table](netcup-firewall.md) by hand and no API credentials are needed. |
+| `NETCUP_REFRESH_TOKEN` | compute `netcup` | Required **only** for `reinstall`, which wipes and reinstalls a Netcup server from CI. Create it with a one-time browser approval: [Netcup reinstall](netcup-reinstall.md#create-the-netcup-refresh-token). |
 | `<app>.<NAME>` | apps with secrets | For example `shop.CLERK_SECRET_KEY`. |
 
 Any key may also be supplied as an environment variable of the same name instead
