@@ -21,7 +21,7 @@ dokploy_version: "v0.30.8"
 #   3. read the diff against the previous installer, then update the two values below.
 # Renovate bumps dokploy_version (renovate.json); the installer pin is bumped by hand
 # because it is a commit, not a release.
-dokploy_installer_commit: "a9aae180c2b01d16053da25054c000252926f38f"
+dokploy_installer_commit: "a9aae180c2b01d16053da25054c000252926f38f"  # git commit digest of the pinned installer
 dokploy_installer_sha256: "92749e5fe1678d1a2dc1e5bad193a1e113fcdbee3cf24193fc14ab85765b6b8a"
 dokploy_install_url: "https://raw.githubusercontent.com/Dokploy/website/{{ dokploy_installer_commit }}/apps/website/public/install.sh"
 dokploy_installer_path: /root/.sealedstack-dokploy-install.sh

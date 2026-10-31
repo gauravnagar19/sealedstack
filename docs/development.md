@@ -82,7 +82,7 @@ Ansible roles and are bumped by a maintainer in a reviewed PR:
 
 - **Tailscale** comes from its signed apt repository. The repository key's
   fingerprint is pinned in `ansible/roles/mesh_tailscale/defaults/main.yml`
-  (`mesh_tailscale_apt_key_fingerprint`); the install tasks refuse any other key.
+  (`mesh_tailscale_apt_signer_fingerprint`); the install tasks refuse any other key.
   It only changes if Tailscale rotates its signing key; the file lists the
   commands to re-verify it.
 - **Dokploy** is installed by its `install.sh`, fetched from an immutable git

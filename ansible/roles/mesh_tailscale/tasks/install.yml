@@ -48,13 +48,13 @@
       - >-
         (mesh_tailscale_key_info.stdout_lines
          | select('match', '^fpr:')
-         | select('search', ':' ~ mesh_tailscale_apt_key_fingerprint ~ ':$')
+         | select('search', ':' ~ mesh_tailscale_apt_signer_fingerprint ~ ':$')
          | list) | length > 0
     fail_msg: >-
       The Tailscale repository signing key does not carry the pinned fingerprint
-      {{ mesh_tailscale_apt_key_fingerprint }}. Refusing to trust it. If Tailscale
+      {{ mesh_tailscale_apt_signer_fingerprint }}. Refusing to trust it. If Tailscale
       rotated its key, verify the new fingerprint and update
-      mesh_tailscale_apt_key_fingerprint in ansible/roles/mesh_tailscale/defaults/main.yml.
+      mesh_tailscale_apt_signer_fingerprint in ansible/roles/mesh_tailscale/defaults/main.yml.
   when: not mesh_tailscale_keyring_stat.stat.exists
 
 - name: Install the verified key as the apt keyring

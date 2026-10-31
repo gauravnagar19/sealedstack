@@ -51,7 +51,7 @@ def test_tailscale_installs_from_its_signed_apt_repository():
 
 def test_the_tailscale_install_verifies_the_pinned_key_before_trusting_it():
     defaults = yaml.safe_load((ANSIBLE / "roles" / "mesh_tailscale" / "defaults" / "main.yml").read_text(encoding="utf-8"))
-    assert re.fullmatch(r"[0-9A-F]{40}", defaults["mesh_tailscale_apt_key_fingerprint"])
+    assert re.fullmatch(r"[0-9A-F]{40}", defaults["mesh_tailscale_apt_signer_fingerprint"])
     items = list(flatten(tasks(ANSIBLE / "roles" / "mesh_tailscale" / "tasks" / "install.yml")))
     names = [t.get("name", "") for t in items]
     download = next(i for i, n in enumerate(names) if "Download the Tailscale repository signing key" in n)
@@ -61,7 +61,7 @@ def test_the_tailscale_install_verifies_the_pinned_key_before_trusting_it():
     package = next(i for i, n in enumerate(names) if n == "Install Tailscale")
     assert download < verify < keyring < source < package
     assert "ansible.builtin.apt" in items[package] and items[package]["ansible.builtin.apt"]["name"] == "tailscale"
-    assert "mesh_tailscale_apt_key_fingerprint" in str(items[verify])
+    assert "mesh_tailscale_apt_signer_fingerprint" in str(items[verify])
     text = (ANSIBLE / "roles" / "mesh_tailscale" / "tasks" / "install.yml").read_text(encoding="utf-8")
     assert "signed-by={{ mesh_tailscale_apt_keyring }}" in text and defaults["mesh_tailscale_apt_keyring"] == "/usr/share/keyrings/tailscale-archive-keyring.gpg"
     assert defaults["mesh_tailscale_apt_base_url"] == "https://pkgs.tailscale.com/stable"
