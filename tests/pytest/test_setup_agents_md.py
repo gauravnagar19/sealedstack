@@ -90,7 +90,7 @@ def test_it_links_the_owners_sealedstack_repo_and_never_a_placeholder_owner():
 def test_it_holds_no_ip_address_secret_or_personal_value():
     text = files_for()["AGENTS.md"] + files_for("--secrets", "infisical")["AGENTS.md"]
     assert not re.search(r"\b\d{1,3}(\.\d{1,3}){3}\b", text)
-    assert "gaurav" not in text.lower() and "you@example.com" not in text
+    assert "you@example.com" not in text and not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", text)  # no e-mail address
     assert not re.search(r"(dp\.st\.|ghp_|github_pat_|sk-)", text)
 
 
