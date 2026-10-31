@@ -246,7 +246,8 @@ def check_event(number):
     return infraci.Event(name="issue_comment", actor="you", repo=SLUG, ref="refs/heads/main", sha="a" * 40, default_branch="main")
 
 
-def test_the_full_journey_setup_then_credentials_then_check_then_merge(tmp_path):
+@pytest.mark.parametrize("pin_host_key", [False, True])
+def test_the_full_journey_setup_then_credentials_then_check_then_merge(tmp_path, pin_host_key):
     f = new_forge()
     rc, root = run_setup(tmp_path, f)
     assert rc == 0
@@ -268,12 +269,13 @@ def test_the_full_journey_setup_then_credentials_then_check_then_merge(tmp_path)
     ready, total = map(int, re.search(r"Progress: (\d+) of (\d+) ready", first).groups())
     assert ready < total
 
-    # 2) the user adds the credentials and pins the host key from the provider console
-    # (the checklist row says where), then comments /sealedstack check
-    servers_file = config_dir / "servers.yaml"
-    servers_doc = yaml.safe_load(servers_file.read_text())
-    servers_doc["servers"]["server-1"]["bootstrap"] = {"host_key_fingerprint": "SHA256:" + "A" * 43}
-    servers_file.write_text(yaml.safe_dump(servers_doc))
+    # 2) the user adds the credentials, then comments /sealedstack check. Pinning the host key is
+    # only recommended (D-064): all-ready is reachable without it, and still reachable with it.
+    if pin_host_key:
+        servers_file = config_dir / "servers.yaml"
+        servers_doc = yaml.safe_load(servers_file.read_text())
+        servers_doc["servers"]["server-1"]["bootstrap"] = {"host_key_fingerprint": "SHA256:" + "A" * 43}
+        servers_file.write_text(yaml.safe_dump(servers_doc))
     config = cfg.load_config(config_dir, REPO, {})
     source = EnvSource(SECRETS_ALL)
     env2 = {**env1, **SECRETS_ALL, "GH_TOKEN": "github_pat_example"}
@@ -286,6 +288,11 @@ def test_the_full_journey_setup_then_credentials_then_check_then_merge(tmp_path)
     ready, total = map(int, re.search(r"Progress: (\d+) of (\d+) ready", body).groups())
     assert ready == total, body
     assert "| ❌ |" not in body and "| ⏳ |" not in body
+    if pin_host_key:
+        assert "Recommended: pin the SSH host key" not in body
+    else:
+        assert "| ◻ | Recommended: pin the SSH host key of server-1 |" in body
+        assert "do not block the merge" in body
     failing = [r for r in json.loads(check_runner(config_dir, env2, http, source, probe)([])[1])["results"] if r["status"] == "fail"]
     assert failing == [] and rc == 0
 

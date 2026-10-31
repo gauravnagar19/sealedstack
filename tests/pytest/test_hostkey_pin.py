@@ -174,11 +174,61 @@ def check_rows(tmp_path, fingerprint):
     return {r.id: r for r in preflight.check_servers(ctx)}
 
 
-def test_check_warns_when_the_fingerprint_is_absent_and_says_where_to_find_it(tmp_path):
+def test_check_recommends_the_fingerprint_when_it_is_absent_and_says_where_to_find_it(tmp_path):
     row = check_rows(tmp_path, "")["servers.web-1.host_key"]
-    assert row.status == "warn"
+    assert row.status == "info"  # a recommendation, not a warning (D-064 amendment)
+    assert "recommended, not required" in row.detail
     assert "root password" in row.detail and "host_key_fingerprint" in row.fix
     assert "Server Control Panel" in row.fix and "ssh-keygen" in row.fix
+
+
+def _ctx_for_servers(tmp_path, monkeypatch, fingerprint):
+    stack = {"name": "x", "slots": {"compute": "any-ssh"}, "mesh": {"tailnet": "tail1234.ts.net"}}
+    server_spec = {"provider": "netcup", "role": "control"}
+    if fingerprint:
+        server_spec["bootstrap"] = {"host_key_fingerprint": fingerprint}
+    cdir = tmp_path / "config"
+    cdir.mkdir(parents=True, exist_ok=True)
+    for name, doc in (("stack", stack), ("servers", {"servers": {"web-1": server_spec}}), ("apps", {"apps": {}})):
+        (cdir / f"{name}.yaml").write_text(yaml.safe_dump(doc))
+    config = config_mod.load_config(config_dir=cdir, code_root=REPO, env={})
+    from sealedstack.secrets import EnvSource
+
+    env = {"SERVER_IP_WEB_1": IP, "ROOT_PASSWORD_WEB_1": "pw"}
+    ctx = make_ctx(tmp_path, config, env=env, secrets=EnvSource(env), tcp_probe=lambda host, port, timeout: host == IP)
+    monkeypatch.setattr(preflight, "run_checks", lambda c: preflight.check_servers(c))  # servers area only
+    return ctx
+
+
+def test_a_missing_fingerprint_does_not_count_toward_the_ready_total(tmp_path, monkeypatch):
+    ctx = _ctx_for_servers(tmp_path, monkeypatch, "")
+    results = preflight.run_checks(ctx)
+    assert {r.status for r in results} == {"ok", "info"}
+    text = preflight.render_markdown(results)
+    assert "Progress: 1 of 1 ready." in text  # the recommendation is outside both numbers
+    assert "1 recommended (not required)" in text
+    assert "| ◻ | servers | `servers.web-1.host_key` |" in text
+
+
+def test_check_exits_zero_and_json_marks_the_recommendation(tmp_path, monkeypatch, capsys):
+    from sealedstack import cli
+
+    ctx = _ctx_for_servers(tmp_path, monkeypatch, "")
+    rc = cli.execute(cli.Action("check", native=True), code_root=REPO, ctx=ctx, json_output=True, version="0.6.0")
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0 and payload["ok"] is True
+    assert payload["counts"]["info"] == 1 and payload["counts"]["fail"] == 0
+    row = next(r for r in payload["results"] if r["id"] == "servers.web-1.host_key")
+    assert row["status"] == "info" and "recommended" in row["detail"]
+    rc = cli.execute(cli.Action("check", native=True), code_root=REPO, ctx=ctx, json_output=False)
+    assert rc == 0 and "recommended, not required" in capsys.readouterr().out
+
+
+def test_a_pinned_fingerprint_is_green_and_counts(tmp_path, monkeypatch):
+    ctx = _ctx_for_servers(tmp_path, monkeypatch, FP_A)
+    results = preflight.run_checks(ctx)
+    assert {r.status for r in results} == {"ok"}
+    assert "Progress: 2 of 2 ready." in preflight.render_markdown(results)
 
 
 def test_check_is_green_when_it_is_pinned_and_fails_when_malformed(tmp_path):
@@ -224,3 +274,23 @@ def test_the_bootstrap_play_turns_host_key_checking_on_only_with_a_pinned_file()
     # the keyed-SSH check to the admin user uses the same pinned file when there is one
     assert "'UserKnownHostsFile=' ~ bootstrap_known_hosts" in text and "accept-new" in text  # unpinned path unchanged
     assert not re.search(r"ansible_host_key_checking:\s*false", text)
+
+
+# -- the Setup checklist ------------------------------------------------------------------------
+def test_checklist_renders_a_recommendation_as_a_non_blocking_row():
+    from sealedstack import checklist
+
+    items = [checklist.Item("ok", "Config files", "valid"), checklist.Item("info", "Recommended: pin the SSH host key of web-1", "x", "y")]
+    body = checklist.render(items)
+    assert "Progress: 1 of 1 ready." in body
+    assert "| ◻ | Recommended: pin the SSH host key of web-1 |" in body
+    assert "**Recommended" not in body  # not emphasised like a blocker
+    assert "do not block the merge" in body
+    assert "do not block the merge" not in checklist.render(items[:1])
+
+
+def test_from_results_keeps_the_info_state():
+    from sealedstack import checklist
+
+    items = checklist.from_results([preflight.Result("servers.web-1.host_key", "servers", "info", detail="d", fix="f")])
+    assert items[0].status == "info"

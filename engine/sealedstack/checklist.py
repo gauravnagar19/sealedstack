@@ -12,12 +12,12 @@ from typing import Iterable, Sequence
 
 MARKER = "<!-- sealedstack:setup-checklist -->"
 
-_ICON = {"ok": "✅", "fail": "❌", "pend": "⏳", "skip": "—", "warn": "❌"}
+_ICON = {"ok": "✅", "fail": "❌", "pend": "⏳", "skip": "—", "warn": "❌", "info": "◻"}
 
 
 @dataclass
 class Item:
-    status: str  # ok | fail | pend | skip | warn
+    status: str  # ok | fail | pend | skip | warn | info (recommended, non-blocking)
     label: str
     detail: str = ""
     fix: str = ""
@@ -26,7 +26,7 @@ class Item:
 def render(items: Sequence[Item], *, updated: datetime | None = None) -> str:
     when = (updated or datetime.now(timezone.utc)).strftime("%H:%M UTC")
     ready = sum(1 for item in items if item.status == "ok")
-    total = sum(1 for item in items if item.status != "skip")
+    total = sum(1 for item in items if item.status not in ("skip", "info"))
     lines = [
         MARKER,
         f"## sealedstack setup checklist{' ' * 35}(updated {when})",
@@ -42,13 +42,15 @@ def render(items: Sequence[Item], *, updated: datetime | None = None) -> str:
         if item.fix:
             detail = f"{detail} → {item.fix}" if detail else item.fix
         lines.append(f"| {_ICON.get(item.status, '—')} | {label} | {detail} |")
+    if any(item.status == "info" for item in items):
+        lines += ["", "◻ rows are recommendations: they do not block the merge and are not counted above."]
     lines += ["", "Merge this PR when everything above is ✅. Nothing has been changed outside this repo yet."]
     return "\n".join(lines)
 
 
 def from_results(results: Iterable) -> list[Item]:
-    """Adapt preflight ``Result`` objects (status ok|warn|fail|skip) to items."""
-    mapping = {"ok": "ok", "warn": "warn", "fail": "fail", "skip": "skip"}
+    """Adapt preflight ``Result`` objects (status ok|warn|info|fail|skip) to items."""
+    mapping = {"ok": "ok", "warn": "warn", "info": "info", "fail": "fail", "skip": "skip"}
     items: list[Item] = []
     for result in results:
         items.append(

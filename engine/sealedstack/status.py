@@ -41,7 +41,7 @@ def render_markdown(config: cfg.Config, engine_version: str, health: list) -> st
     lines.append("")
     lines.append("| | Area | Check | Detail |")
     lines.append("|---|---|---|---|")
-    icon = {"ok": "✅", "warn": "🟡", "fail": "❌", "skip": "⏳"}
+    icon = {"ok": "✅", "warn": "🟡", "info": "◻", "fail": "❌", "skip": "⏳"}
     for result in health:
         lines.append(
             f"| {icon.get(result.status, '?')} | {result.area} | `{result.id}` | {result.detail} |"

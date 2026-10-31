@@ -58,7 +58,7 @@ def render(
     return "\n".join(lines)
 
 
-_ICON = {"ok": "🟢", "warn": "🟡", "fail": "🔴", "skip": "⏳"}
+_ICON = {"ok": "🟢", "warn": "🟡", "info": "◻", "fail": "🔴", "skip": "⏳"}
 
 
 def render_from_health(config, version: str, health: list) -> str:

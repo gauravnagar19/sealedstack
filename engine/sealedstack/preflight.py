@@ -24,8 +24,9 @@ from . import r2 as r2_mod
 from .http import HttpClient, UrllibClient
 from .secrets import SecretSource, build_source
 
-STATUS_ICON = {"ok": "✅", "fail": "❌", "warn": "⚠️", "skip": "⏳"}
-STATUS_ORDER = ("fail", "warn", "ok", "skip")
+# "info" is a recommendation: shown, never blocking, never counted toward "N of M ready" (D-064 amendment).
+STATUS_ICON = {"ok": "✅", "fail": "❌", "warn": "⚠️", "info": "◻", "skip": "⏳"}
+STATUS_ORDER = ("fail", "warn", "info", "ok", "skip")
 
 DOCS_CF = "docs/prerequisites.md#cloudflare"
 DOCS_TS = "docs/prerequisites.md#tailscale"
@@ -1319,8 +1320,8 @@ def _host_key_row(ctx: CheckContext, name: str) -> Result:
             return Result(rid, "servers", "fail", detail=str(exc), fix="copy the SHA256 fingerprint from the provider console", docs="docs/netcup-firewall.md")
         return Result(rid, "servers", "ok", detail=f"the first login to {name} is pinned to {wanted}")
     return Result(
-        rid, "servers", "warn",
-        detail=f"bootstrap.host_key_fingerprint is not set for {name}: the first login sends the root password to the public IP without verifying the server's SSH host key",
+        rid, "servers", "info",
+        detail=f"recommended, not required: bootstrap.host_key_fingerprint is not set for {name}, so the first login sends the root password to the public IP without verifying the server's SSH host key",
         fix=f"add `bootstrap: {{host_key_fingerprint: SHA256:...}}` for {name} in servers.yaml; {hostkey.WHERE}",
         docs="docs/netcup-firewall.md",
     )
@@ -1389,7 +1390,7 @@ def check_payload(results: list[Result], *, version: str = "") -> dict:
         "command": "check",
         "engine_version": version,
         "ok": counts.get("fail", 0) == 0,
-        "counts": {status: counts.get(status, 0) for status in ("ok", "warn", "fail", "skip")},
+        "counts": {status: counts.get(status, 0) for status in ("ok", "warn", "info", "fail", "skip")},
         "results": [result.as_dict() for result in results],
     }
 
@@ -1401,12 +1402,14 @@ def render_json(results: list[Result], *, version: str = "") -> str:
 def render_markdown(results: list[Result], *, title: str = "sealedstack check") -> str:
     counts = Counter(result.status for result in results)
     ready = counts.get("ok", 0) + counts.get("skip", 0)
-    total = len(results)
+    total = len(results) - counts.get("info", 0)  # recommendations never count toward "ready"
     header = f"Progress: {ready} of {total} ready."
     if counts.get("fail"):
         header += f" {counts['fail']} to fix."
     if counts.get("warn"):
         header += f" {counts['warn']} warning(s)."
+    if counts.get("info"):
+        header += f" {counts['info']} recommended (not required)."
 
     lines = [f"## {title}", "", header, "", "| | Area | Check | Detail |", "|---|---|---|---|"]
     for result in results:

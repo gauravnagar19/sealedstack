@@ -557,11 +557,14 @@ def checklist_items(
     for result in results:
         if result.id in covered or result.id.startswith(("config.", "cloudflare.perm.")):
             continue
-        if result.status in ("fail", "warn"):
+        if result.status in ("fail", "warn", "info"):
             label = result.id
+            if result.id.endswith(".host_key"):
+                server = result.id.split(".")[1]
+                label = f"Recommended: pin the SSH host key of {server}" if result.status == "info" else f"SSH host key fingerprint of {server}"
             if result.id.startswith("secrets."):
                 label = f"{secrets_mod.describe(config, result.id.split('.', 1)[1])} (in {source_label.capitalize()}, project `{project}`)"
-            add("fail" if result.status == "fail" else "warn", label, result.detail, result.fix)
+            add(result.status, label, result.detail, result.fix)
 
     # 11. optional keys
     uses_clerk = any(((a or {}).get("user_auth") == "clerk") for a in (config.apps.get("apps") or {}).values()) or (

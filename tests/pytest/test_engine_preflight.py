@@ -430,7 +430,7 @@ def test_json_payload_shape():
     assert set(payload) == {"tool", "command", "engine_version", "ok", "counts", "results"}
     assert payload["command"] == "check"
     assert payload["ok"] is False
-    assert payload["counts"] == {"ok": 1, "warn": 0, "fail": 1, "skip": 0}
+    assert payload["counts"] == {"ok": 1, "warn": 0, "info": 0, "fail": 1, "skip": 0}
     assert payload["results"][1]["fix"] == "do x"
 
 

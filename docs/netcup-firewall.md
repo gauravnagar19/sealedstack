@@ -53,8 +53,8 @@ server presents exactly that key (D-064):
 
 With it, `up` scans the server, refuses to continue if the key differs (before
 any password is sent) and runs the bootstrap with strict host-key checking against
-only the matching key. Without it nothing changes, and `check` warns once per
-server that still needs its first login.
+only the matching key. Without it nothing changes, and `check` shows a non-blocking
+recommendation (◻) once per server that still needs its first login.
 
 ## Verify the origin is sealed
 
