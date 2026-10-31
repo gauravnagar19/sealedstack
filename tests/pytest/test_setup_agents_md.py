@@ -40,6 +40,8 @@ def test_the_rules_an_agent_must_follow_are_all_there():
         "merges PR #1 and approves `up`",
         "Do not create accounts, tokens or API keys",
         "One change at a time",
+        "Read only the user documentation",
+        "Ignore `docs/maintainers/`",
         "/sealedstack check",
         "/sealedstack drift",
         "gh workflow run sealedstack.yml -f command=up",
@@ -87,6 +89,14 @@ def test_it_links_the_owners_sealedstack_repo_and_never_a_placeholder_owner():
     assert "<https://github.com/" not in bare  # ... and the docs line makes no link
 
 
+def test_every_document_it_tells_the_agent_to_read_exists_and_is_a_user_document():
+    text = files_for()["AGENTS.md"]
+    named = set(re.findall(r"`docs/([a-z-]+\.md)`", text))
+    assert {"run-with-an-agent.md", "getting-started.md", "prerequisites.md", "choosing-a-stack.md", "limitations.md"} <= named
+    for name in named:
+        assert (REPO / "docs" / name).is_file(), name  # directly in docs/, never in docs/maintainers/
+
+
 def test_it_holds_no_ip_address_secret_or_personal_value():
     text = files_for()["AGENTS.md"] + files_for("--secrets", "infisical")["AGENTS.md"]
     assert not re.search(r"\b\d{1,3}(\.\d{1,3}){3}\b", text)
@@ -109,5 +119,5 @@ def test_the_documented_file_list_matches_what_setup_writes():
 
 
 def test_d068_is_recorded():
-    text = (REPO / "docs" / "decisions.md").read_text(encoding="utf-8")
+    text = (REPO / "docs" / "maintainers" / "decisions.md").read_text(encoding="utf-8")
     assert "### D-068" in text and "AGENTS.md" in text.split("### D-068", 1)[1]

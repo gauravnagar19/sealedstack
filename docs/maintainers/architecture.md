@@ -1,5 +1,10 @@
 # Architecture
 
+> **Maintainers.** This page explains how sealedstack is built and why. It is **not** instructions for
+> setting up or running a sealedstack infrastructure, and parts of it describe designs that were later
+> changed (the decision log says which). To use sealedstack, start at [docs/](../README.md).
+
+
 This is the detailed design. [spec.md](spec.md) is the original design document;
 this page is the implementation-level view of how the pieces fit together.
 
@@ -87,7 +92,7 @@ Dispatch:
 
 Because `validate` fails when a selected implementation is missing or `planned`,
 you never get a silent wrong deploy. Adding a provider is a registry entry plus
-a module/role/adapter (see [AGENTS.md](../AGENTS.md)).
+a module/role/adapter (see [AGENTS.md](../../AGENTS.md)).
 
 ## State, secrets, backups
 
@@ -144,5 +149,5 @@ docs/               user + design docs (see docs/README.md)
 
 ## Extending
 
-See [AGENTS.md](../AGENTS.md) for the provider recipes, conventions and the
+See [AGENTS.md](../../AGENTS.md) for the provider recipes, conventions and the
 validation gate. Detailed build planning lives outside this repository.

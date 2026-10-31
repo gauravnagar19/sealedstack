@@ -35,7 +35,7 @@ def test_docs_snippets_grant_packages_read():
 def test_ux_status_table_records_the_d056_amendment():
     text = (REPO / "docs" / "user-experience.md").read_text(encoding="utf-8")
     assert "D-056" in text.split("\n---\n", 1)[0]
-    assert "### D-056" in (REPO / "docs" / "decisions.md").read_text(encoding="utf-8")
+    assert "### D-056" in (REPO / "docs" / "maintainers" / "decisions.md").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------- Task 8

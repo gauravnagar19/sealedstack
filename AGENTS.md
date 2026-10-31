@@ -1,5 +1,10 @@
 # AGENTS.md
 
+> **For people and agents changing sealedstack itself.** If you are setting up or operating an infra
+> repository that *uses* sealedstack, this file is not for you: read the `AGENTS.md` in your infra repo and
+> [run it with an agent](docs/run-with-an-agent.md). Commands here (`just ...`) are for contributors.
+
+
 Guidance for AI agents (and humans) working **on** or **with** sealedstack.
 
 ## What this project is
@@ -19,7 +24,7 @@ Four layers, one tool each:
 | Release | building/deploying an app version | the app repo's CI (`ci` slot) |
 
 Everything the user runs goes through `just`, which executes inside the toolbox
-Docker image (`toolbox/Dockerfile`). Read `docs/spec.md` for the design and
+Docker image (`toolbox/Dockerfile`). Read `docs/maintainers/spec.md` for the design and
 `README.md` for usage.
 
 ## Repository layout

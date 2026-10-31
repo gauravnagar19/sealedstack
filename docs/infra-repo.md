@@ -7,7 +7,7 @@ sealedstack source is never copied in. The engine runs in **your own CI** from a
 pinned image, so you install nothing (D-034).
 
 This page describes that model. For the design, see
-[spec.md](spec.md); for the
+[design spec, for maintainers](maintainers/spec.md); for the
 commands, see [getting-started.md](getting-started.md).
 
 ## Three repositories
@@ -149,4 +149,4 @@ upgrade bot bumps both in one PR.
 
 - [Getting started](getting-started.md): the first setup, from an empty repo.
 - [Config repository](config-repo.md) — the `SEALEDSTACK_CONFIG` contract.
-- [Design spec](spec.md) — the architecture and contracts.
+- [Design spec (for maintainers)](maintainers/spec.md) — the architecture and contracts.

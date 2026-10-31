@@ -7,12 +7,12 @@
 > [examples/app-template/.github/workflows/release.yml](../examples/app-template/.github/workflows/release.yml)
 > and the `build` block in `sealedstack.yaml`. `build.mode: server` (Dokploy builds
 > on the host) is the opt-in alternative. Ownership of Dokploy fields is one-writer
-> per field (spec §5, D-032). Full detail: [spec.md](spec.md).
+> per field (spec §5, D-032). Full detail: [design spec, for maintainers](maintainers/spec.md).
 
-The **Release** layer ([spec.md §2](spec.md#2-architecture-golden-path)) is the
+The **Release** layer ([design spec §2, for maintainers](maintainers/spec.md#2-architecture-golden-path)) is the
 app repo's own CI. sealedstack builds the place (a Dokploy compose service);
 the app's CI ships the version. This is **D-015**
-([decisions.md](decisions.md)):
+([decisions.md](maintainers/decisions.md)):
 sealedstack creates services with **auto-deploy off**, and each app repo's
 pipeline deploys by calling the Dokploy API.
 
@@ -40,7 +40,7 @@ Dokploy pulls the image and restarts the compose service
 Nothing about the release touches the public internet: the CI runner dials
 **out** to the Tailscale control plane, gets a `100.x.y.z` address for the
 control server, and calls the Dokploy API over that private interface. The
-server keeps zero inbound ports ([spec.md §13](spec.md#13-security-model)).
+server keeps zero inbound ports ([design spec §13, for maintainers](maintainers/spec.md#13-security-model)).
 
 ## 1. How the release flow works
 
@@ -54,13 +54,13 @@ server keeps zero inbound ports ([spec.md §13](spec.md#13-security-model)).
    Cloudflare tunnel keep serving; only the app container changes.
 
 The Dokploy compose service is created by the platform stack
-([spec.md §9](spec.md#9-platform-opentofu-stacksplatform)) with `auto-deploy`
+([design spec §9, for maintainers](maintainers/spec.md#9-platform-opentofu-stacksplatform)) with `auto-deploy`
 off. The CI only triggers the deploy of the **existing** compose service.
 
 ## 2. Tailscale for CI: a trust credential and `tag:release`
 
 The job must reach the Dokploy panel, and only that. The edge stack already
-owns the whole ACL ([D-014](decisions.md), `scripts/mesh-policy.py`): `tag:release`
+owns the whole ACL ([D-014](maintainers/decisions.md), `scripts/mesh-policy.py`): `tag:release`
 is owned by `autogroup:admin`, and the one grant an app release job gets is:
 
 ```json

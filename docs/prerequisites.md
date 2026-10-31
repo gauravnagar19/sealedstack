@@ -34,13 +34,13 @@ in the encrypted OpenTofu state.
 | State passphrase | Bitwarden: `STATE_PASSPHRASE` | At least 16 random characters. Encrypts the OpenTofu state. |
 | Existing server: public IP and root password | Bitwarden: `SERVER_IP_<NAME>`, `ROOT_PASSWORD_<NAME>` | `<NAME>` is the server name upper-cased with `-` as `_`, so `server-1` gives `SERVER_IP_SERVER_1`. Used once by the first bootstrap; delete them afterwards. |
 | Admin SSH public key(s) | `config/stack.yaml`: `admin.ssh_keys` | A public key, not a secret. Installed on every server at bootstrap. |
-| Bot identity | GitHub repository secret `GH_TOKEN` | A **fine-grained personal access token** limited to the infra repo and the app repos ([permissions below](#bot-identity-fine-grained-token)). Its pull requests trigger the plan workflows, which the built-in `GITHUB_TOKEN` cannot ([D-058](decisions.md)). |
+| Bot identity | GitHub repository secret `GH_TOKEN` | A **fine-grained personal access token** limited to the infra repo and the app repos ([permissions below](#bot-identity-fine-grained-token)). Its pull requests trigger the plan workflows, which the built-in `GITHUB_TOKEN` cannot ([D-058](maintainers/decisions.md)). |
 | Approvers | `config/stack.yaml`: `approvers` | GitHub usernames allowed to approve write commands. Setup defaults it to the repository owner. |
 
 ### Key names are declared in config
 
 Setup writes the **name of every secret** into your config, so the mapping from
-setting to Bitwarden entry is visible and reviewable ([D-050](decisions.md)):
+setting to Bitwarden entry is visible and reviewable ([D-050](maintainers/decisions.md)):
 
 ```yaml
 # config/stack.yaml
@@ -93,7 +93,7 @@ App secrets default to `<app>.<NAME>` in the app-secrets project
 
 These are read from the same Bitwarden project today. They are listed so nothing
 surprises you at `up` time. Some are planned to be generated or derived instead
-(see the [user experience](user-experience.md) and [decisions](decisions.md)
+(see the [user experience](user-experience.md) and [decisions](maintainers/decisions.md)
 D-044).
 
 | Key | When | Notes |
@@ -148,7 +148,7 @@ Zone scope (`example.com`):
 ## Bot identity: fine-grained token
 
 For now the bot identity (`sealedstack-bot`) is a **fine-grained personal access
-token** ([D-058](decisions.md)); a user-owned GitHub App comes later. Create it at
+token** ([D-058](maintainers/decisions.md)); a user-owned GitHub App comes later. Create it at
 GitHub, Settings, Developer settings, Fine-grained tokens (the Setup checklist
 links the form with the name, owner, expiry and permissions pre-filled):
 
@@ -182,7 +182,7 @@ In Tailscale, Settings, OAuth clients, create a client with the scopes
 `policy_file`, `auth_keys` and `devices:core`. Enable MagicDNS and HTTPS
 certificates. Your existing tailnet policy is imported verbatim into
 `config/tailscale-policy.hujson` by `check`, so you can review it before anything
-is changed ([D-026](decisions.md)).
+is changed ([D-026](maintainers/decisions.md)).
 
 ## Bitwarden Secrets Manager layout
 
@@ -197,7 +197,7 @@ account the least access it needs: CI reads `infra` and `prod`, read-only.
 
 ## Using Doppler instead of Bitwarden
 
-Set `slots.secrets: doppler` (or run Setup with `--secrets doppler`, [D-066](decisions.md)).
+Set `slots.secrets: doppler` (or run Setup with `--secrets doppler`, [D-066](maintainers/decisions.md)).
 sealedstack reads your secrets from **one Doppler config** over Doppler's API with a
 **service token**; it never writes to Doppler, and no `doppler` program is needed.
 
@@ -250,7 +250,7 @@ written. A secret that exists but is empty is reported as missing.
 
 ## Using Infisical instead of Bitwarden
 
-Set `slots.secrets: infisical` (or run Setup with `--secrets infisical`, [D-067](decisions.md)).
+Set `slots.secrets: infisical` (or run Setup with `--secrets infisical`, [D-067](maintainers/decisions.md)).
 sealedstack reads your secrets from **one folder of one Infisical project environment**
 over Infisical's API with a **machine identity**; it never writes to Infisical, and no
 `infisical` program is needed. Infisical Cloud (US and EU) and self-hosted instances work.
@@ -351,9 +351,9 @@ Setup creates these in your infra repo. You edit them through pull requests.
 ## Private app repositories and the drift job
 
 - **Private app repos:** apps deploy as prebuilt images from a registry, so the
-  server never needs repository access ([D-024](decisions.md)). The infra repo
+  server never needs repository access ([D-024](maintainers/decisions.md)). The infra repo
   publishes the deploy settings (compose ID, CI identity) to each app repo
-  ([D-023](decisions.md)).
+  ([D-023](maintainers/decisions.md)).
 - **Drift job:** scheduled drift is off unless the repository variable
   `SEALEDSTACK_DRIFT_ENABLED` is `true` (D-059). When on, it reads the same secrets as `check`. Use
   a **separate** machine account for it if you want to keep app CI's access to

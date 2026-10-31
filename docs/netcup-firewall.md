@@ -5,7 +5,7 @@ firewall (see [providers.md](providers.md)) once `config/providers/netcup.yaml`
 is filled in from the SCP API docs, or, while that file is absent,
 `sealedstack server add` prints the rule table and pauses for you to apply it by
 hand. From
-[spec.md §7.4](spec.md#74-provider-firewall-compute-slot).
+[design spec §7.4, for maintainers](maintainers/spec.md#74-provider-firewall-compute-slot).
 
 ## Rule table (the same on every provider)
 

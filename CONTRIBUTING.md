@@ -1,5 +1,10 @@
 # Contributing
 
+> **For people and agents changing sealedstack itself.** If you are setting up or operating an infra
+> repository that *uses* sealedstack, this page is not for you: read the `AGENTS.md` in your infra repo and
+> [run it with an agent](docs/run-with-an-agent.md).
+
+
 Thanks for helping. sealedstack is at **0.5 (pre-release)**; what is validated
 and what's next are tracked in the private development repo.
 
@@ -50,9 +55,9 @@ ansible-lint
 
 ## Development
 
-- [docs/development.md](docs/development.md) — layout, tooling, the CI pipeline.
+- [docs/development.md](docs/maintainers/development.md) — layout, tooling, the CI pipeline.
 - [AGENTS.md](AGENTS.md) — the provider registry and how to extend it.
-- [docs/architecture.md](docs/architecture.md) — how the pieces fit.
+- [docs/architecture.md](docs/maintainers/architecture.md) — how the pieces fit.
 
 ## Reporting issues
 

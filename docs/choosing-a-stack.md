@@ -100,6 +100,6 @@ Doing this with an agent? See [run sealedstack with an agent](run-with-an-agent.
 
 ## Adding an implementation
 
-Not listed? Add it: one registry entry plus the code for the provider. The recipe and the
+Not listed? Adding one is a change to sealedstack itself: one registry entry plus the code for the provider. The recipe and the
 four patterns (OpenTofu module, REST adapter, Ansible role, CLI adapter) are in
-[providers](providers.md#add-a-provider).
+[adding a provider](maintainers/adding-a-provider.md) (for maintainers).

@@ -1,5 +1,10 @@
 # sealedstack — Design Spec
 
+> **Maintainers.** This page explains how sealedstack is built and why. It is **not** instructions for
+> setting up or running a sealedstack infrastructure, and parts of it describe designs that were later
+> changed (the decision log says which). To use sealedstack, start at [docs/](../README.md).
+
+
 | | |
 |---|---|
 | Status | Draft for review |
@@ -17,7 +22,7 @@
 > management (§8), the Dokploy ownership/env contract (§9), commands (§10, now a CLI),
 > the delivery plan (§15, milestones M0–M5) and risks (§16, R8–R10).
 >
-> **Update (CI-first):** the signed-off [user experience](user-experience.md)
+> **Update (CI-first):** the signed-off [user experience](../user-experience.md)
 > (D-034 to D-053) wins wherever it differs from this document. The engine runs in
 > the user's own CI from a pinned container image, users install nothing, and the
 > only commands users see are `sealedstack <noun> <verb>` (§10, §14). `just` is a
@@ -384,7 +389,7 @@ Use the community provider `vanillauys/dokploy`, pinned to an exact version. **v
 
 ## 10. Commands
 
-Every command is `sealedstack <noun> <verb>`. It is the same vocabulary as a workflow input, a `/sealedstack` pull request comment and, optionally, a terminal in a Codespace (D-042). `check` runs before every other command. Locally, only the read-only commands work; writes need CI or the guarded `--break-glass` (D-045). The full reference, with approvals, is [user-experience.md §12.1](user-experience.md#121-commands-ci-input-pr-comment-and-local-all-the-same).
+Every command is `sealedstack <noun> <verb>`. It is the same vocabulary as a workflow input, a `/sealedstack` pull request comment and, optionally, a terminal in a Codespace (D-042). `check` runs before every other command. Locally, only the read-only commands work; writes need CI or the guarded `--break-glass` (D-045). The full reference, with approvals, is [user-experience.md §12.1](../user-experience.md#121-commands-ci-input-pr-comment-and-local-all-the-same).
 
 | Command | Does |
 |---|---|
@@ -440,7 +445,7 @@ Every command is `sealedstack <noun> <verb>`. It is the same vocabulary as a wor
 
 ## 14. Prerequisites
 
-Users install nothing locally: a browser, a Git hosting account and the credentials below are enough (D-034, D-044). The Setup checklist verifies every item. The step-by-step version is [prerequisites.md](prerequisites.md).
+Users install nothing locally: a browser, a Git hosting account and the credentials below are enough (D-034, D-044). The Setup checklist verifies every item. The step-by-step version is [prerequisites.md](../prerequisites.md).
 
 | Requirement | Mandatory | Notes |
 |---|---|---|

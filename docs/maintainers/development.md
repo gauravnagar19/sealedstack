@@ -1,5 +1,10 @@
 # Development and repo tooling
 
+> **Maintainers.** This page explains how sealedstack is built and why. It is **not** instructions for
+> setting up or running a sealedstack infrastructure, and parts of it describe designs that were later
+> changed (the decision log says which). To use sealedstack, start at [docs/](../README.md).
+
+
 sealedstack is mostly YAML, HCL and shell. The tooling here is deliberately
 small; this page explains every non-obvious file so a newcomer (or agent) is not
 surprised by it.
@@ -72,8 +77,8 @@ just validate
 ```
 
 `SEALEDSTACK_CONFIG` wins when set; otherwise scripts fall back to
-`<repo>/config`. See [config-repo.md](config-repo.md) and
-[limitations.md](limitations.md).
+`<repo>/config`. See [config-repo.md](../config-repo.md) and
+[limitations.md](../limitations.md).
 
 ## Pinned installers on the servers (DR-8)
 

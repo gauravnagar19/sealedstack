@@ -23,11 +23,13 @@ nav:
       - CI/CD: ci-cd.md
   - Operations:
       - Netcup firewall: netcup-firewall.md
-  - Design:
-      - Architecture: architecture.md
-      - Design spec: spec.md
-      - Decision log: decisions.md
-  - Contributing: development.md
+  - Maintainers (not needed to use sealedstack):
+      - Overview: maintainers/README.md
+      - Architecture: maintainers/architecture.md
+      - Design spec: maintainers/spec.md
+      - Decision log: maintainers/decisions.md
+      - Development: maintainers/development.md
+      - Adding a provider: maintainers/adding-a-provider.md
 markdown_extensions:
   - admonition
   - tables

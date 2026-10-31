@@ -55,7 +55,7 @@ by your own infra repo. Every change is a reviewed pull request.
 
 Every external dependency is a pluggable **slot** — one provider per slot,
 catalogued in `registry/` and dispatched by config (spec §4). See
-[docs/architecture.md](docs/architecture.md) for the detailed design.
+[the architecture notes](docs/maintainers/architecture.md) (for maintainers) for the detailed design.
 
 ## Quickstart
 
@@ -171,10 +171,14 @@ Start with [docs/README.md](docs/README.md):
 - **Get started:** [getting-started](docs/getting-started.md), [prerequisites](docs/prerequisites.md), [config repository](docs/config-repo.md)
 - **Known limitations:** [limitations and caveats](docs/limitations.md) — what does not work yet, and the requirements behind it
 - **Configure & operate:** [providers](docs/providers.md), [CI/CD](docs/ci-cd.md), [netcup firewall](docs/netcup-firewall.md)
-- **Architecture:** [architecture](docs/architecture.md)
-- **Design:** [spec](docs/spec.md), [decisions](docs/decisions.md), [user experience](docs/user-experience.md)
+- **Choosing a stack:** [choosing a stack](docs/choosing-a-stack.md)
+- **With an AI agent:** [run it with an agent](docs/run-with-an-agent.md)
+- **Every journey:** [user experience](docs/user-experience.md)
 - **Distribution:** [infra repo + tool image](docs/infra-repo.md)
-- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md), [development](docs/development.md), [AGENTS.md](AGENTS.md)
+
+**For maintainers** (changing sealedstack itself, not using it): [CONTRIBUTING.md](CONTRIBUTING.md),
+[AGENTS.md](AGENTS.md), and [docs/maintainers/](docs/maintainers/README.md): architecture, design spec,
+decision log and development notes.
 
 ## Licence
 

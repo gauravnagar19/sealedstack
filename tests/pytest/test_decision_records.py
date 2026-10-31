@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-DECISIONS = (REPO / "docs" / "decisions.md").read_text(encoding="utf-8")
+DECISIONS = (REPO / "docs" / "maintainers" / "decisions.md").read_text(encoding="utf-8")
 
 
 def test_decision_ids_are_unique():

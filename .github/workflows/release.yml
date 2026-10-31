@@ -8,7 +8,7 @@ name: release
 # repository owner's own GHCR namespace (ghcr.io/${{ github.repository_owner }}/...),
 # which inherits the repository's visibility (private today), and no step ever
 # sets package or repository visibility. Making an image public is an owner
-# action in the GitHub UI after the owner has confirmed (see decisions.md D-053).
+# action in the GitHub UI after the owner has confirmed (see docs/maintainers/decisions.md D-053).
 # tests/pytest/test_public_guard.py fails if a workflow, script or engine module
 # adds a visibility change, GitHub Pages deploy, Homebrew tap or public-registry
 # publish without BOTH `!github.event.repository.private` and

@@ -195,7 +195,7 @@ and reports. A setup you have never restored from is not a backup.
 ## A prompt to start the agent
 
 Setup writes an `AGENTS.md` (and a `CLAUDE.md` that points at it) into your infra repo
-([D-068](decisions.md)). It holds these rules, so most agents pick them up by themselves.
+([D-068](maintainers/decisions.md)). It holds these rules, so most agents pick them up by themselves.
 Before Setup has run, or for an agent that does not read `AGENTS.md`, paste this at the
 start of the session, after phase 1:
 
@@ -226,4 +226,4 @@ Start with phase 2.
 3. If the fix is not obvious, check [limitations](limitations.md) and the
    troubleshooting list in [getting started](getting-started.md#troubleshooting).
 4. Write down what differed from this page. The first live run is how the unproven parts
-   (the provider APIs listed as open in [decisions](decisions.md)) get confirmed.
+   (the provider APIs listed as open in [decisions](maintainers/decisions.md)) get confirmed.

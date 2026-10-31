@@ -592,5 +592,5 @@ def test_the_naming_table_in_the_prerequisites_matches_the_code():
 
 
 def test_d067_is_recorded():
-    text = (REPO / "docs" / "decisions.md").read_text(encoding="utf-8")
+    text = (REPO / "docs" / "maintainers" / "decisions.md").read_text(encoding="utf-8")
     assert "### D-067" in text and "Infisical is a native, read-only secret source" in text

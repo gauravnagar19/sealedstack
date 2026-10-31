@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Interactive wizard that scaffolds an infra repo (spec section 10, v1.0).
 
-Reference: docs/spec.md section
+Reference: docs/maintainers/spec.md section
 6. Writes ``config/`` (stack.yaml, servers.yaml, apps.yaml) and, unless the
 config dir is inside this checkout, the surrounding infra repo
 (``sealedstack.version``, ``bin/sealedstack``, ``.github/workflows/sealedstack.yml``,

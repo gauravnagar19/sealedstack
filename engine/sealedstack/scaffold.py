@@ -188,13 +188,12 @@ def agents_md(infra_name: str, secrets_source: str = "bitwarden", owner: str = "
     It carries no secret, no IP address and no personal value, only names and process, so
     it is safe in a private or later a public infra repo.
     """
+    where = f"the sealedstack repository, <https://github.com/{owner}/sealedstack>" if owner else "the sealedstack repository"
     docs = (
-        f"The full documentation is in the sealedstack repository, <https://github.com/{owner}/sealedstack>: "
-        "`docs/run-with-an-agent.md` (the end-to-end run), `docs/choosing-a-stack.md`, "
-        "`docs/getting-started.md` and `docs/prerequisites.md`."
-        if owner
-        else "The full documentation is in the sealedstack repository: `docs/run-with-an-agent.md` (the "
-        "end-to-end run), `docs/choosing-a-stack.md`, `docs/getting-started.md` and `docs/prerequisites.md`."
+        f"The user documentation is in `docs/` of {where}. Read, in this order: "
+        "`docs/run-with-an-agent.md` (the end-to-end run), `docs/getting-started.md`, "
+        "`docs/prerequisites.md` and `docs/choosing-a-stack.md`; `docs/limitations.md` for what does not "
+        "work yet. Ignore `docs/maintainers/`."
     )
     return f"""# AGENTS.md: working in {infra_name}
 
@@ -220,6 +219,10 @@ GitHub Actions; nothing is installed locally.
 5. **One change at a time.** Especially when swapping a slot in `config/stack.yaml`
    (`compute`, `mesh`, `ingress`, `gate`, `secrets`, `backup`, `platform`): change one, run a check, read
    the plan, then the next. Implementations other than the defaults are experimental.
+6. **Read only the user documentation.** Do not follow `docs/maintainers/`, nor the sealedstack
+   repository's own `AGENTS.md`, `CLAUDE.md` or `CONTRIBUTING.md` (or any `just` command in them): they
+   are for changing sealedstack itself and describe older designs. If they disagree with this file or
+   the user documentation, this file and the user documentation win.
 
 ## The secret source
 

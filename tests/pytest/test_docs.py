@@ -14,8 +14,9 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 
-# Contributor docs may talk about `just`; everything else is user-facing.
-CONTRIBUTOR_DOCS = {"development.md"}
+# Maintainer docs (docs/maintainers/) may talk about `just` and superseded designs;
+# everything else under docs/ is user-facing (D-069).
+MAINTAINERS = REPO / "docs" / "maintainers"
 
 FORBIDDEN = [
     "brew install just",
@@ -29,7 +30,7 @@ FORBIDDEN = [
 def public_docs() -> list[Path]:
     files = [REPO / "README.md"]
     files += sorted(
-        p for p in (REPO / "docs").rglob("*.md") if p.name not in CONTRIBUTOR_DOCS
+        p for p in (REPO / "docs").rglob("*.md") if MAINTAINERS not in p.parents
     )
     return files
 
@@ -64,7 +65,7 @@ def test_forbidden_phrase_detector_catches_each_phrase():
 def test_public_docs_scope_excludes_contributor_docs():
     names = {p.name for p in public_docs()}
     assert "README.md" in names and "getting-started.md" in names
-    assert "development.md" not in names
+    assert "development.md" not in names and "decisions.md" not in names and "spec.md" not in names
 
 
 # --------------------------------------------------------------------------- #
@@ -223,3 +224,62 @@ def test_runtime_messages_do_not_tell_users_to_run_just_or_init():
                 if re.search(r"`just |'just |\"just |  just (apply|app-restore|state-init|doctor|validate)|sealedstack init|bin/sealedstack validate", line):
                     offenders.append(f"{path.relative_to(REPO)}:{number}: {line.strip()}")
     assert offenders == []
+
+
+# --------------------------------------------------------------------------- #
+# audiences (D-069)
+# --------------------------------------------------------------------------- #
+def maintainer_docs() -> list[Path]:
+    return sorted(MAINTAINERS.glob("*.md"))
+
+
+def every_doc() -> list[Path]:
+    return public_docs() + maintainer_docs() + [REPO / n for n in ("AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md")]
+
+
+@pytest.mark.parametrize("path", maintainer_docs(), ids=rel)
+def test_maintainer_docs_say_they_are_not_setup_guidance(path):
+    head = "\n".join(path.read_text(encoding="utf-8").splitlines()[:6])
+    assert "**Maintainers.**" in head, rel(path)
+
+
+@pytest.mark.parametrize("name", ["AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md"])
+def test_root_contributor_files_point_users_elsewhere(name):
+    head = "\n".join((REPO / name).read_text(encoding="utf-8").splitlines()[:6])
+    assert "run-with-an-agent.md" in head and ("changing sealedstack itself" in head), name
+
+
+@pytest.mark.parametrize("path", every_doc(), ids=rel)
+def test_every_doc_link_resolves_including_maintainers(path):
+    assert broken_links(path) == []
+
+
+def test_the_design_docs_are_not_in_the_user_docs_folder():
+    top = {p.name for p in (REPO / "docs").glob("*.md")}
+    assert not top & {"spec.md", "architecture.md", "decisions.md", "development.md"}
+    assert {p.name for p in maintainer_docs()} >= {"spec.md", "architecture.md", "decisions.md", "development.md", "adding-a-provider.md"}
+
+
+def test_user_docs_never_tell_the_reader_to_follow_a_maintainer_page():
+    # a user page may cite a decision (D-0nn) or a design section for the "why"; it must not
+    # send the reader there to DO something. The adding-a-provider recipe is the one pointer.
+    for path in public_docs():
+        for target in LINK.findall(strip_code(path.read_text(encoding="utf-8"))):
+            if "maintainers/" in target:
+                assert target.split("#")[0].endswith(
+                    ("decisions.md", "spec.md", "architecture.md", "adding-a-provider.md", "README.md")
+                ), f"{rel(path)} links {target}"
+
+
+def test_the_docs_site_keeps_maintainer_pages_in_their_own_section():
+    nav = (REPO / "mkdocs.yml").read_text(encoding="utf-8")
+    section = nav.split("Maintainers (not needed to use sealedstack):", 1)[1].split("markdown_extensions:", 1)[0]
+    for name in ("architecture", "spec", "decisions", "development", "adding-a-provider"):
+        assert f"maintainers/{name}.md" in section
+    before = nav.split("Maintainers (not needed to use sealedstack):", 1)[0]
+    assert "maintainers/" not in before
+
+
+def test_d069_is_recorded():
+    text = (MAINTAINERS / "decisions.md").read_text(encoding="utf-8")
+    assert "### D-069" in text and "split by audience" in text

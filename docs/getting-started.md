@@ -198,7 +198,7 @@ The hourly run always does `status`. To add drift detection right after it, set 
 repository variable `SEALEDSTACK_DRIFT_ENABLED` to `true` (Settings, Secrets and
 variables, Actions, Variables). It is off by default. You can run `drift` by hand
 at any time (Run workflow, or `/sealedstack drift`) whatever the variable says
-([D-059](decisions.md)).
+([D-059](maintainers/decisions.md)).
 
 ## What next
 

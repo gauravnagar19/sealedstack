@@ -1,5 +1,10 @@
 # Decision Log
 
+> **Maintainers.** This page explains how sealedstack is built and why. It is **not** instructions for
+> setting up or running a sealedstack infrastructure, and parts of it describe designs that were later
+> changed (the decision log says which). To use sealedstack, start at [docs/](../README.md).
+
+
 Each entry records what was decided, why, and what was rejected. Superseded entries stay in the log and are marked as such.
 Format: **D-NNN — title** · date · status.
 
@@ -199,7 +204,7 @@ Format: **D-NNN — title** · date · status.
 **Why:** Fragile shell glue caused several review findings (masked secret failures, ineffective caching, deploy polling). Python gives testable code, real error messages and a smaller toolchain (core: OpenTofu, Ansible, SSH).
 
 ### D-048 — The user experience is signed off · 2026-10-11 · accepted
-**Decision:** [user-experience.md](user-experience.md) is the final v1 UX: journeys A–H, mockups, command reference, time budgets and the defaults in its §13 (`production` approval environment, hourly status and drift, weekly restore drill on Sunday 03:00 UTC, backup alert at 2× the schedule, version warning after 6 months or on an advisory, `/sealedstack` comment prefix, `sealedstack-bot`, `hello` as the first app). It overrides spec §6 where they differ.
+**Decision:** [user-experience.md](../user-experience.md) is the final v1 UX: journeys A–H, mockups, command reference, time budgets and the defaults in its §13 (`production` approval environment, hourly status and drift, weekly restore drill on Sunday 03:00 UTC, backup alert at 2× the schedule, version warning after 6 months or on an advisory, `/sealedstack` comment prefix, `sealedstack-bot`, `hello` as the first app). It overrides spec §6 where they differ.
 **Why:** It's the contract the implementation is built and accepted against. Changing it needs a new decision.
 
 ### D-049 — A server's public IP is a bootstrap secret, never config or a job input · 2026-10-11 · accepted (refines D-008)
@@ -290,3 +295,8 @@ GitHub environments with required reviewers are still used where the plan suppor
 **Decision:** Setup adds `AGENTS.md` to PR #1, and a one-line `CLAUDE.md` (`@AGENTS.md`) so Claude Code reads the same file. It states the rules for an AI coding agent in the infra repo: change things only through pull requests, never apply or use `--break-glass`, never see secret values (`config/` holds names only, and the file tells the agent to ask the owner for the exact key instead), the owner merges PR #1 and approves `up`, no creating accounts or tokens, one change at a time when swapping a slot. It also names the secret source's credentials for the chosen source, the slash commands and workflow dispatches that exist, and where the documentation is. The file holds no secret, address or personal value, and editing it never triggers an `apply` (it is outside the relevant prefixes of `infraci`).
 **Why:** Users will set sealedstack up with an agent. The guidance should travel with the repository instead of depending on the user pasting a prompt, and the approval gate (D-052) already stops an agent from applying, so the file mainly tells it how to be useful inside that limit.
 **Rejected:** a long tutorial in the file (the full guide stays in the sealedstack docs, linked); one file per agent product (`AGENTS.md` plus a pointer covers the common ones).
+
+### D-069 — Documentation is split by audience · 2026-10-31 · accepted (refines D-068)
+**Decision:** `docs/` holds only what someone **using** sealedstack (and an AI agent helping them) needs: the guides, the catalog, the limitations and the user-experience reference. Everything about how sealedstack is built and why moved to `docs/maintainers/`: the architecture, the design spec, this decision log, the development notes, and the recipe for adding a provider (split out of `providers.md`). The root `AGENTS.md`, `CLAUDE.md` and `CONTRIBUTING.md` are for maintainers and say so at the top; each maintainer page opens with a banner saying it is not setup guidance and may describe superseded designs. The `AGENTS.md` that Setup writes into an infra repo lists the user documents in reading order and tells the agent to ignore `docs/maintainers/` and the sealedstack repo's own agent files. The documentation site shows maintainers' pages in their own section. User pages may still cite a decision (`D-0nn`), which links into the log, but they do not tell the reader to follow a maintainer page.
+**Why:** An agent that reads the sealedstack repository to help a user could land on the design spec (which still describes the older laptop flow), the decision log (which keeps superseded entries) or the root `AGENTS.md` (which tells contributors to run `just`) and follow the wrong one. A physical split with explicit banners, plus tests, keeps the paths apart.
+**Rejected:** labelling only (nothing stops a link or a search from landing on the wrong page); deleting superseded material (the log keeps history on purpose); moving the user-experience reference to maintainers (users and engine messages point at it).

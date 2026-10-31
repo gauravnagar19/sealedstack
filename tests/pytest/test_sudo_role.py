@@ -70,7 +70,7 @@ def test_no_admin_sudo_password_anywhere_in_tracked_files():
     tracked = subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True, text=True).stdout.split()
     offenders = []
     for rel in tracked:
-        if rel in ("docs/decisions.md", "tests/pytest/test_sudo_role.py", "tests/pytest/test_engine_server.py"):
+        if rel in ("docs/maintainers/decisions.md", "tests/pytest/test_sudo_role.py", "tests/pytest/test_engine_server.py"):
             continue  # D-055 and the tests that prove its absence name the removed secret
         path = REPO / rel
         try:

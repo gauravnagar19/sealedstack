@@ -432,5 +432,5 @@ def test_the_docs_tell_users_which_secret_to_create_and_that_the_token_is_read_o
 
 
 def test_d066_is_recorded():
-    text = (REPO / "docs" / "decisions.md").read_text(encoding="utf-8")
+    text = (REPO / "docs" / "maintainers" / "decisions.md").read_text(encoding="utf-8")
     assert "### D-066" in text and "Doppler is a native, read-only secret source" in text

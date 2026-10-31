@@ -5,7 +5,7 @@ accounts or a real server. This page is the candid list of things that will bite
 you: what does not work, what only works with caveats, and the environmental
 requirements behind both. For the capability matrix see status (private)
 and the verification log (private); for the design rationale behind a
-few of these, see [decisions.md](decisions.md).
+few of these, see [decisions.md](maintainers/decisions.md).
 
 - **Secret sources are read-only (D-038).** The engine only reads secrets; it never writes them. Tunnel tokens and other generated values live only in encrypted state. If you are upgrading from a build that wrote them to the source, `tofu state rm` the old `module.secrets_*` resources before the first apply (the release notes list the addresses).
 
@@ -185,8 +185,8 @@ implements both directions. `engine/sealedstack/secrets.py` is the read path:
 | `sops` | `sops --decrypt config/secrets/<project>.enc.yaml` |
 | `aws_ssm` | `aws ssm get-parameter --with-decryption` |
 | `vault` / `openbao` | `vault kv get` (KV v2) |
-| `doppler` | Doppler's REST API with a read-only service token ([D-066](decisions.md)); no CLI needed |
-| `infisical` | Infisical's REST API with a read-only machine identity ([D-067](decisions.md)); no CLI needed |
+| `doppler` | Doppler's REST API with a read-only service token ([D-066](maintainers/decisions.md)); no CLI needed |
+| `infisical` | Infisical's REST API with a read-only machine identity ([D-067](maintainers/decisions.md)); no CLI needed |
 | `onepassword`, `pass` | the provider's own CLI |
 
 **`gcp` and `azure_kv` are write-only.** They have no read path in the toolbox
