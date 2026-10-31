@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from sealedstack import preflight, secrets as secrets_mod
@@ -107,14 +108,103 @@ def workflow():
     return yaml.safe_load((REPO / ".github" / "workflows" / "infra.yml").read_text(encoding="utf-8"))
 
 
-def test_the_variable_reaches_both_engine_containers_and_is_not_interpolated_into_a_script():
-    jobs = workflow()["jobs"]
-    resolve = next(s for s in jobs["resolve"]["steps"] if s.get("id") == "resolve")
-    run = next(s for s in jobs["run"]["steps"] if str(s.get("name", "")).startswith("sealedstack "))
-    for step in (resolve, run):
-        assert step["env"][CI_SECRETS_VAR] == "${{ toJSON(secrets) }}"
-        assert "-e SEALEDSTACK_CI_SECRETS" in step["run"]  # by name: the value is never on the command line
-        assert "toJSON" not in step["run"] and "secrets." not in step["run"]
+def _all_steps():
+    return [(job, step) for job, body in workflow()["jobs"].items() for step in body.get("steps", [])]
+
+
+def test_the_bundle_reaches_only_the_ci_source_exec_step_and_is_not_interpolated_into_a_script():
+    steps = workflow()["jobs"]["run"]["steps"]
+    ci_exec = next(s for s in steps if str(s.get("name", "")).startswith("sealedstack ") and "(secret source ci)" in s["name"])
+    assert ci_exec["env"][CI_SECRETS_VAR] == "${{ toJSON(secrets) }}"
+    assert "-e SEALEDSTACK_CI_SECRETS" in ci_exec["run"]  # by name: the value is never on the command line
+    assert "toJSON" not in ci_exec["run"] and "secrets." not in ci_exec["run"]
+    assert ci_exec["if"] == "needs.resolve.outputs.ci_secrets == 'true'"
+
+
+def test_toJSON_secrets_appears_only_in_steps_gated_on_ci_secrets_true():
+    holders = [(job, s) for job, s in _all_steps() if "toJSON(secrets)" in json.dumps(s)]
+    assert len(holders) == 2  # the mask step and the ci-source exec step, nothing else
+    for job, step in holders:
+        assert job == "run"
+        assert "needs.resolve.outputs.ci_secrets == 'true'" in step["if"], step.get("name")
+    lines = (REPO / ".github" / "workflows" / "infra.yml").read_text(encoding="utf-8").splitlines()
+    assert sum(1 for line in lines if "toJSON(secrets)" in line and not line.lstrip().startswith("#")) == 2
+
+
+def test_the_resolve_job_never_receives_the_bundle():
+    resolve_steps = workflow()["jobs"]["resolve"]["steps"]
+    assert "SEALEDSTACK_CI_SECRETS" not in json.dumps(resolve_steps) and "toJSON" not in json.dumps(resolve_steps)
+    assert workflow()["jobs"]["resolve"]["outputs"]["ci_secrets"] == "${{ steps.resolve.outputs.ci_secrets || 'false' }}"
+
+
+def test_the_bitwarden_path_exec_step_passes_only_the_bitwarden_token_and_gh_token():
+    steps = workflow()["jobs"]["run"]["steps"]
+    plain = next(s for s in steps if str(s.get("name", "")).startswith("sealedstack ") and "(secret source ci)" not in s["name"])
+    assert plain["if"] == "needs.resolve.outputs.ci_secrets != 'true'"
+    assert CI_SECRETS_VAR not in plain["env"] and "SEALEDSTACK_CI_SECRETS" not in plain["run"]
+    assert "toJSON" not in json.dumps(plain)
+    assert plain["env"]["BWS_ACCESS_TOKEN"] == "${{ secrets.BWS_ACCESS_TOKEN }}"
+    assert plain["env"]["GH_TOKEN"] == "${{ secrets.GH_TOKEN || github.token }}"
+    others = {v for v in plain["env"].values() if "secrets." in str(v)}
+    assert others == {"${{ secrets.BWS_ACCESS_TOKEN }}", "${{ secrets.GH_TOKEN || github.token }}"}
+
+
+def test_exactly_one_exec_step_runs_for_any_ci_secrets_value():
+    steps = workflow()["jobs"]["run"]["steps"]
+    execs = [s for s in steps if "ci exec" in s.get("run", "")]
+    assert len(execs) == 2
+    assert {s["if"] for s in execs} == {"needs.resolve.outputs.ci_secrets == 'true'", "needs.resolve.outputs.ci_secrets != 'true'"}
+    # the two copies differ only in the bundle
+    strip = lambda s: s["run"].replace(" -e SEALEDSTACK_CI_SECRETS", "")
+    assert strip(execs[0]) == strip(execs[1])
+
+
+# -- resolve outputs ci_secrets from stack.yaml (slots.secrets) --------------------------------
+@pytest.mark.parametrize(
+    "slots, expected",
+    [({"secrets": "bitwarden"}, "false"), ({"secrets": "ci"}, "true"), ({"secrets": "sops"}, "false"), ({}, "false"),
+     ({"secrets": "env"}, "false"), ({"secrets": " CI "}, "true")],
+)
+def test_resolve_outputs_ci_secrets_per_source(tmp_path, slots, expected):
+    from sealedstack import infraci
+
+    config = make_config(tmp_path, stack={"name": "x", "slots": slots})
+    res = infraci.Resolution(command="check", ci_secrets=infraci.ci_secrets_enabled(config))
+    assert res.outputs()["ci_secrets"] == expected
+
+
+def test_ci_secrets_is_false_without_a_config_and_when_nothing_runs():
+    from sealedstack import infraci
+
+    assert infraci.ci_secrets_enabled(None) is False
+    assert infraci.Resolution().outputs()["ci_secrets"] == "false"
+
+
+def test_ci_resolve_writes_ci_secrets_to_the_job_output_file(tmp_path):
+    from sealedstack import infraci, config as config_mod
+    import yaml as _yaml
+
+    for source, expected in (("ci", "true"), ("bitwarden", "false"), (None, "false")):
+        root = tmp_path / str(source)
+        (root / "config").mkdir(parents=True)
+        slots = {"secrets": source} if source else {}
+        (root / "config" / "stack.yaml").write_text(_yaml.safe_dump({"name": "x", "slots": slots}))
+        (root / "config" / "servers.yaml").write_text("servers: {}\n")
+        (root / "config" / "apps.yaml").write_text("apps: {}\n")
+        out = root / "ghout"
+        env = {"SEALEDSTACK_CONFIG": str(root / "config"), "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": "you/my-infra",
+               "GITHUB_REF": "refs/heads/main", "GITHUB_SHA": "a" * 40, "GITHUB_ACTOR": "you", "SEALEDSTACK_DEFAULT_BRANCH": "main"}
+        forge = FakeForgeStub()
+        rc = infraci.main(["resolve", "--output", str(out)], env=env, forge=forge)
+        assert rc == 0
+        assert f"ci_secrets={expected}" in out.read_text()
+
+
+class FakeForgeStub:
+    """resolve for a schedule event never calls the forge; any call is a test failure."""
+
+    def __getattr__(self, name):
+        raise AssertionError(f"resolve called forge.{name}")
 
 
 def test_every_forwarded_value_is_registered_as_a_mask_before_the_engine_runs():

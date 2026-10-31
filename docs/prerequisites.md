@@ -108,7 +108,10 @@ and set `slots.secrets: ci`. GitHub only hands a workflow the secrets it names, 
 the caller workflow must pass **`secrets: inherit`** (the generated one does). The
 reusable workflow then forwards all of them to the engine as one masked JSON
 environment variable, `SEALEDSTACK_CI_SECRETS` (`toJSON(secrets)`), which the
-engine reads before any plain environment variable. Two limits to know:
+engine reads before any plain environment variable. The workflow does this
+**only when `slots.secrets` is `ci`** (its first job reads that setting and outputs
+`ci_secrets=true|false`); with Bitwarden or any other source the engine receives only
+`BWS_ACCESS_TOKEN` and `GH_TOKEN`, never the rest of your repository secrets. Two limits to know:
 
 - Only **repository** secrets arrive. Environment secrets are not forwarded, and
   private repositories on GitHub Free have no environments at all.

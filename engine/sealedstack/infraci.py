@@ -104,6 +104,9 @@ class Resolution:
     note: str = ""  # why nothing runs, or what is about to
     checkout_ref: str = ""  # what the job must check out ("" = the event's default)
     follow: list = field(default_factory=list)  # extra commands after the first (schedule: drift)
+    # True only when stack.yaml says `slots.secrets: ci`: the workflow then forwards the
+    # repository secrets bundle to the engine, and only then (otherwise it reaches nobody).
+    ci_secrets: bool = False
 
     @property
     def proceed(self) -> bool:
@@ -140,6 +143,7 @@ class Resolution:
             "pr": str(self.pr or ""),
             "checkout_ref": self.checkout_ref,
             "follow": ",".join(self.follow),
+            "ci_secrets": "true" if self.ci_secrets else "false",
             "note": self.note.replace("\n", " "),
         }
 
@@ -576,6 +580,18 @@ def write_outputs(path: str, outputs: Mapping[str, str]) -> None:
 # --------------------------------------------------------------------------- #
 # CLI entry points: `sealedstack ci resolve|exec`
 # --------------------------------------------------------------------------- #
+def ci_secrets_enabled(config: Optional[config_mod.Config]) -> bool:
+    """Does this infra repo read its secrets from the CI platform (`slots.secrets: ci`)?
+
+    Anything else (bitwarden, the default; sops; a CLI backend; env; no config at all) is
+    False, so the workflow never hands the repository secrets to the engine for it.
+    """
+    if config is None:
+        return False
+    slots = (config.stack or {}).get("slots") or {}
+    return str(slots.get("secrets") or "").strip().lower() == "ci"
+
+
 def _load_config(env: Mapping[str, str], code_root: Path) -> Optional[config_mod.Config]:
     config_dir = config_mod.resolve_config_dir(None, env, code_root)
     if not (Path(config_dir) / "stack.yaml").is_file():
@@ -618,6 +634,7 @@ def main(argv: Optional[list] = None, *, env: Optional[Mapping[str, str]] = None
 
     if verb == "resolve":
         res = resolve(event, forge, config, drift=drift_enabled(env))
+        res.ci_secrets = ci_secrets_enabled(config)
         print(f"sealedstack ci: {res.note or 'nothing to do'}", file=sys.stderr)
         if output_file:
             write_outputs(output_file, res.outputs())

@@ -51,6 +51,7 @@ jobs:
       pr: ${{ steps.resolve.outputs.pr }}
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       follow: ${{ steps.resolve.outputs.follow }}
+      ci_secrets: ${{ steps.resolve.outputs.ci_secrets || 'false' }}
     steps:
       - id: pre
         # Cheap pre-check, no image pull: ignore comments that are not commands
@@ -80,6 +81,9 @@ jobs:
         run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Decide what to run
+        # Also outputs ci_secrets=true|false from stack.yaml `slots.secrets` (D-050). This
+        # step never receives the repository secrets bundle: it only decides whether the
+        # run job may forward it.
         id: resolve
         if: steps.pre.outputs.skip != 'true'
         env:
@@ -94,8 +98,6 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_REF: ${{ github.ref }}
           GITHUB_SHA: ${{ github.sha }}
-          # D-050: secrets.source: ci reads the caller's secrets from this one variable.
-          SEALEDSTACK_CI_SECRETS: ${{ toJSON(secrets) }}
         run: |
           set -euo pipefail
           if [ ! -f sealedstack.version ]; then
@@ -108,7 +110,6 @@ jobs:
             -e SEALEDSTACK_CONFIG=/infra/config -e GITHUB_EVENT_PATH=/event.json \
             -e GH_TOKEN -e SEALEDSTACK_COMMAND -e SEALEDSTACK_ARGS -e SEALEDSTACK_DEFAULT_BRANCH -e SEALEDSTACK_DRIFT_ENABLED \
             -e GITHUB_ACTOR -e GITHUB_REPOSITORY -e GITHUB_EVENT_NAME -e GITHUB_REF -e GITHUB_SHA \
-            -e SEALEDSTACK_CI_SECRETS \
             "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
             ci resolve --output /ghout
 
@@ -148,6 +149,9 @@ jobs:
         run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Mask the forwarded secrets
+        # Only for `slots.secrets: ci` (resolve's ci_secrets output): any other source never
+        # evaluates toJSON(secrets) anywhere in this workflow.
+        if: needs.resolve.outputs.ci_secrets == 'true'
         # D-050: the caller's secrets reach the engine as one JSON variable. GitHub
         # masks each secret value it knows, but the JSON-escaped form of a value with
         # quotes or newlines is a different string, so register every value (and each
@@ -257,6 +261,46 @@ jobs:
           tags: tag:ci
 
       - name: sealedstack ${{ needs.resolve.outputs.command }}
+        # Secret sources other than `ci` (bitwarden by default): only BWS_ACCESS_TOKEN and
+        # GH_TOKEN reach the engine, never the whole repository secrets bundle.
+        if: needs.resolve.outputs.ci_secrets != 'true'
+        # `ci exec` runs the resolved command behind the D-052 approval gate for
+        # writes and reports the result (plan comment, checklist, Status issue).
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+          SEALEDSTACK_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          SEALEDSTACK_PR: ${{ needs.resolve.outputs.pr }}
+          SEALEDSTACK_RESOLVED_COMMAND: ${{ needs.resolve.outputs.command }}
+          SEALEDSTACK_RESOLVED_ARGS: ${{ needs.resolve.outputs.args }}
+          SEALEDSTACK_RESOLVED_PR: ${{ needs.resolve.outputs.pr }}
+          SEALEDSTACK_RESOLVED_FOLLOW: ${{ needs.resolve.outputs.follow }}
+        run: |
+          set -euo pipefail
+          docker run --rm -i --network host \
+            -v "$PWD:/infra" -w /infra \
+            -v "$GITHUB_EVENT_PATH:/event.json:ro" \
+            -e SEALEDSTACK_CONFIG=/infra/config \
+            -e SEALEDSTACK_WORKDIR=/infra/.sealedstack \
+            -e GITHUB_EVENT_PATH=/event.json \
+            -e BWS_ACCESS_TOKEN -e GH_TOKEN -e GITHUB_ACTOR -e GITHUB_REPOSITORY -e GITHUB_ACTIONS \
+            -e GITHUB_EVENT_NAME -e GITHUB_REF -e GITHUB_SHA \
+            -e GITHUB_SERVER_URL -e GITHUB_RUN_ID \
+            -e SEALEDSTACK_DEFAULT_BRANCH -e SEALEDSTACK_PR \
+            -e SEALEDSTACK_RESOLVED_COMMAND -e SEALEDSTACK_RESOLVED_ARGS -e SEALEDSTACK_RESOLVED_PR \
+            -e SEALEDSTACK_RESOLVED_FOLLOW \
+            "ghcr.io/${{ github.repository_owner }}/sealedstack:$(cat sealedstack.version)" \
+            ci exec
+
+      - name: sealedstack ${{ needs.resolve.outputs.command }} (secret source ci)
+        # slots.secrets: ci (D-050): the repository secrets reach the engine as ONE JSON
+        # variable, masked by the step above.
+        if: needs.resolve.outputs.ci_secrets == 'true'
         # `ci exec` runs the resolved command behind the D-052 approval gate for
         # writes and reports the result (plan comment, checklist, Status issue).
         env:
