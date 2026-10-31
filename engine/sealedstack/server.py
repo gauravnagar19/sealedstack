@@ -118,6 +118,7 @@ def up(
     provider = server_field(config, name, "provider")
     admin_user = str(config.stack.get("admin_user") or "")
     ip_key, pw_key = config.bootstrap_secrets(name)
+    reject_unimplemented_method(config, name)
 
     root_password = ""
     ip = ""
@@ -128,6 +129,10 @@ def up(
         if rc != 0:
             raise config_mod.ConfigError(f"compute apply failed for {name} (exit {rc})")
         ip = stdout.strip().splitlines()[-1] if stdout.strip() else ""
+        # The provider-issued root password (e.g. Hetzner e-mails one when the server is
+        # created without an SSH key) is read from the secret source like any other.
+        found_pw = source.get(pw_key)
+        root_password = found_pw.value if found_pw.found else ""
     elif not source.get(ip_key).found and not source.get(pw_key).found:
         # D-049: both bootstrap secrets are deleted after the first bootstrap, so
         # their absence means "already bootstrapped". Skip the public-SSH bootstrap
@@ -191,8 +196,11 @@ def up(
                 },
             )
             bootstrap_args = ["-e", f"@{vars_file}"]
-            if not root_password and not env.get("ROOT_PASSWORD"):
-                bootstrap_args.append("--ask-pass")
+            if not (root_password or env.get("ROOT_PASSWORD")):
+                # D-061: first login is by root password only. Never fall back to an
+                # interactive prompt: in CI it would hang the job, and a missing secret
+                # is something the user can fix.
+                raise config_mod.ConfigError(missing_password_message(name, pw_key, creates_server(code_root, provider)))
 
             print(f"==> bootstrap {name}", file=out)
             rc = io.run(
@@ -297,6 +305,27 @@ def sync(
     finally:
         vars_file.unlink(missing_ok=True)
         Path(identity).unlink(missing_ok=True)
+
+
+METHOD_KEY_MESSAGE = "bootstrap.method: key is not implemented yet; use password (D-061)"
+
+
+def reject_unimplemented_method(config: config_mod.Config, name: str) -> None:
+    """``bootstrap.method: key`` is in the schema for later; today it is refused (D-061)."""
+    spec = (config.servers.get("servers") or {}).get(name) or {}
+    if str((spec.get("bootstrap") or {}).get("method") or "password") == "key":
+        raise config_mod.ConfigError(f"server '{name}': {METHOD_KEY_MESSAGE}")
+
+
+def missing_password_message(name: str, pw_key: str, provider_creates: bool) -> str:
+    extra = (
+        " (Hetzner e-mails a root password when a server is created without an SSH key)" if provider_creates else ""
+    )
+    return (
+        f"no root password for '{name}': the first login uses the provider-issued root password (D-061) and "
+        f"{pw_key} is not in the secret source{extra}. Add {pw_key}; sealedstack never prompts for it, so a CI run "
+        "cannot hang waiting for one."
+    )
 
 
 def _pinned_known_hosts(config, name: str, ip: str, io: ServerIO, env, out, sleep) -> str:

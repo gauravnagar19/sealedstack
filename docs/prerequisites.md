@@ -66,7 +66,7 @@ servers:
     role: control
     os: ubuntu-24.04
     bootstrap:
-      method: password
+      method: password                       # the only method for now; `key` is refused (D-061)
       ip_secret: SERVER_IP_SERVER_1          # a key in the secret source, never the IP itself
       password_secret: ROOT_PASSWORD_SERVER_1
 ```

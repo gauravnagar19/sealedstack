@@ -287,7 +287,7 @@ The only secret the operator handles directly is `BWS_ACCESS_TOKEN`. It is expor
 
 ### 7.1 `bootstrap.yml`
 
-Runs once, as `root@<public IP>`, using a password or a provider-installed SSH key:
+Runs once, as `root@<public IP>`, using the provider-issued root password (a provider-installed SSH key, `bootstrap.method: key`, is rejected until it is implemented, D-061):
 
 1. Create the `admin` user with no password, give it passwordless sudo through a validated `/etc/sudoers.d/` drop-in (D-055), and install the public key.
 2. `sshd`: `PermitRootLogin no`, `PasswordAuthentication no`, `KbdInteractiveAuthentication no`.

@@ -86,6 +86,11 @@ def check_cross_file(stack: dict, servers: dict, apps: dict) -> list[str]:
                 "(a bare '*'/'**' matches every URI); use a specific suffix like '*.php'"
             )
 
+    # D-061: the key-based first login is in the schema for later but not implemented.
+    for name, spec in server_map.items():
+        if ((spec or {}).get("bootstrap") or {}).get("method") == "key":
+            problems.append(f"server '{name}': bootstrap.method: key is not implemented yet; use password (D-061)")
+
     for name, entry in (apps.get("apps") or {}).items():
         # A paused app (enabled: false) is not rendered and must not be held to
         # the cross-file rules (hostnames, servers, policies).
