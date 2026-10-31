@@ -17,9 +17,9 @@ from test_engine_server import FakeIO, FakeSource, make_config, fake_generated
 REPO = Path(__file__).resolve().parents[2]
 
 # Two real ed25519 host keys and their `ssh-keygen -l` SHA256 fingerprints.
-KEY_A = "AAAAC3NzaC1lZDI1NTE5AAAAIH3NQw3owo2x58guE/qxa4U/wSlCVKGeyvVqe1JsgCVL"
+BLOB_A = "AAAAC3NzaC1lZDI1NTE5AAAAIH3NQw3owo2x58guE/qxa4U/wSlCVKGeyvVqe1JsgCVL"
 FP_A = "SHA256:1dvnVwnkKOcZfGuJdEqf6S+PfDN1HqhUvChOheO1/DM"
-KEY_B = "AAAAC3NzaC1lZDI1NTE5AAAAIEgkF3NfrBR2Hc0edbx/psnj7xKSEdnn6n20NmNwvQgU"
+BLOB_B = "AAAAC3NzaC1lZDI1NTE5AAAAIEgkF3NfrBR2Hc0edbx/psnj7xKSEdnn6n20NmNwvQgU"
 FP_B = "SHA256:BE1GZomy0q35sAgswMA8RIsrjsIvX3ByZjKdOHiyVn4"
 IP = "203.0.113.10"
 
@@ -32,8 +32,8 @@ def scan(*keys):
 
 # -- the fingerprint maths ------------------------------------------------------------
 def test_the_fingerprint_matches_ssh_keygen_output():
-    assert hostkey.fingerprint(KEY_A) == FP_A
-    assert hostkey.fingerprint(KEY_B) == FP_B
+    assert hostkey.fingerprint(BLOB_A) == FP_A
+    assert hostkey.fingerprint(BLOB_B) == FP_B
 
 
 def test_normalise_accepts_sha256_form_only():
@@ -45,13 +45,13 @@ def test_normalise_accepts_sha256_form_only():
 
 
 def test_the_matching_key_becomes_the_only_known_hosts_line():
-    line = hostkey.known_hosts_line(scan(KEY_B, KEY_A), IP, FP_A)
-    assert line == f"{IP} ssh-ed25519 {KEY_A}\n"
+    line = hostkey.known_hosts_line(scan(BLOB_B, BLOB_A), IP, FP_A)
+    assert line == f"{IP} ssh-ed25519 {BLOB_A}\n"
 
 
 def test_a_mismatch_is_refused_and_says_what_was_presented_without_the_address():
     with pytest.raises(hostkey.HostKeyError) as err:
-        hostkey.known_hosts_line(scan(KEY_B), IP, FP_A, name="'server-1'")
+        hostkey.known_hosts_line(scan(BLOB_B), IP, FP_A, name="'server-1'")
     text = str(err.value)
     assert FP_A in text and FP_B in text and "Refusing to send the root password" in text
     assert IP not in text  # the public IP is a secret (D-049)
@@ -104,7 +104,7 @@ def up(tmp_path, io, fingerprint, sleeps=None):
 
 
 def test_match_runs_the_bootstrap_with_a_pinned_known_hosts(tmp_path):
-    io = PinIO(scan(KEY_B, KEY_A))
+    io = PinIO(scan(BLOB_B, BLOB_A))
     log = up(tmp_path, io, FP_A)
     assert io.keyscans == 1
     keyscan = next(c for c in io.captures if c[0] == "ssh-keyscan")
@@ -112,14 +112,14 @@ def test_match_runs_the_bootstrap_with_a_pinned_known_hosts(tmp_path):
     boot_vars = io.vars_files[0]
     assert boot_vars["ansible_password"] == "rootpw" and Path(boot_vars["bootstrap_known_hosts"]).name.startswith("sealedstack-known-hosts-")
     text, mode = io.known_hosts_seen[0]
-    assert text == f"{IP} ssh-ed25519 {KEY_A}\n" and mode == 0o600
+    assert text == f"{IP} ssh-ed25519 {BLOB_A}\n" and mode == 0o600
     assert not Path(boot_vars["bootstrap_known_hosts"]).exists()  # removed afterwards
     assert "matches the pinned fingerprint" in log and IP not in log
     assert "bootstrap_known_hosts" not in io.vars_files[1]  # the site run over the mesh is unaffected
 
 
 def test_mismatch_is_refused_before_any_password_is_sent(tmp_path):
-    io = PinIO(scan(KEY_B))
+    io = PinIO(scan(BLOB_B))
     with pytest.raises(hostkey.HostKeyError, match="does not match"):
         up(tmp_path, io, FP_A)
     assert not any("bootstrap.yml" in " ".join(r) for r in io.runs)  # ansible (and the password) never ran
@@ -136,13 +136,13 @@ def test_a_server_that_is_not_answering_yet_is_retried_then_refused(tmp_path):
 
 
 def test_a_server_that_answers_on_the_second_try_is_accepted(tmp_path):
-    io = PinIO(["", scan(KEY_A)])
+    io = PinIO(["", scan(BLOB_A)])
     up(tmp_path, io, FP_A)
     assert io.keyscans == 2 and io.known_hosts_seen
 
 
 def test_absent_keeps_todays_behaviour_and_says_so(tmp_path):
-    io = PinIO(scan(KEY_A))
+    io = PinIO(scan(BLOB_A))
     log = up(tmp_path, io, "")
     assert io.keyscans == 0
     assert "bootstrap_known_hosts" not in io.vars_files[0]
@@ -150,7 +150,7 @@ def test_absent_keeps_todays_behaviour_and_says_so(tmp_path):
 
 
 def test_a_malformed_fingerprint_fails_before_anything_runs(tmp_path):
-    io = PinIO(scan(KEY_A))
+    io = PinIO(scan(BLOB_A))
     with pytest.raises(hostkey.HostKeyError, match="not a SHA256 fingerprint"):
         up(tmp_path, io, "not-a-fingerprint")
     assert io.keyscans == 0 and io.runs == []
