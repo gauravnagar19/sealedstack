@@ -154,6 +154,109 @@ def devcontainer_json(image: str, secrets_source: str = "bitwarden") -> str:
     ) + "\n"
 
 
+def _agents_secret_source(secrets_source: str) -> str:
+    """The paragraph of AGENTS.md about the chosen secret source (names only, never values)."""
+    if secrets_source == "doppler":
+        return (
+            "The secret source is **Doppler**. The only secret kept in GitHub is a read-only service token, the "
+            "repository secret `DOPPLER_TOKEN` (optionally `DOPPLER_TOKEN_APPS` for a second config that holds "
+            "app secrets). Doppler names are upper-case with underscores, so `shop.CLERK_SECRET_KEY` is created "
+            "as `SHOP_CLERK_SECRET_KEY`."
+        )
+    if secrets_source == "infisical":
+        return (
+            "The secret source is **Infisical**. The only secrets kept in GitHub are a read-only machine "
+            "identity's `INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET` (or a Token Auth token, "
+            "`INFISICAL_TOKEN`). Where the secrets live is plain config: fill in "
+            "`providers.secrets_infisical.project_id` in `config/stack.yaml` (and `environment`, `secret_path`, "
+            "`site_url` if they differ from the defaults). Names are upper-case with underscores."
+        )
+    if secrets_source == "bitwarden":
+        return (
+            "The secret source is **Bitwarden Secrets Manager**. The only secret kept in GitHub is a read-only "
+            "machine account's access token, the repository secret `BWS_ACCESS_TOKEN`."
+        )
+    return (
+        f"The secret source is **{secrets_source}**. Its credentials are repository secrets or environment "
+        "values that only the owner creates; ask the owner which ones."
+    )
+
+
+def agents_md(infra_name: str, secrets_source: str = "bitwarden", owner: str = "") -> str:
+    """AGENTS.md for the infra repo: the rules an AI coding agent must follow here.
+
+    It carries no secret, no IP address and no personal value, only names and process, so
+    it is safe in a private or later a public infra repo.
+    """
+    docs = (
+        f"The full documentation is in the sealedstack repository, <https://github.com/{owner}/sealedstack>: "
+        "`docs/run-with-an-agent.md` (the end-to-end run), `docs/choosing-a-stack.md`, "
+        "`docs/getting-started.md` and `docs/prerequisites.md`."
+        if owner
+        else "The full documentation is in the sealedstack repository: `docs/run-with-an-agent.md` (the "
+        "end-to-end run), `docs/choosing-a-stack.md`, `docs/getting-started.md` and `docs/prerequisites.md`."
+    )
+    return f"""# AGENTS.md: working in {infra_name}
+
+This repository configures a sealed origin with [sealedstack](https://github.com/{owner or "OWNER"}/sealedstack):
+servers with no inbound ports, reached over a private mesh, apps behind a tunnel and a login.
+It holds **only configuration and a pinned tool version**. The engine runs in this repository's
+GitHub Actions; nothing is installed locally.
+
+## Rules
+
+1. **Change things only through pull requests.** Edit `config/`, open a PR, read the plan comment.
+   Never apply, never run a write command locally, and never use `--break-glass`: writes run only in CI
+   for an approver listed in `config/stack.yaml` under `approvers`.
+2. **You never see secret values.** `config/` holds secret *names* (`secrets.keys`, and `bootstrap` in
+   `servers.yaml`). If something needs a value, tell the owner the exact key name and where it goes
+   (the secret source, or a repository secret), then wait. Do not ask for the value, and do not paste or
+   log one.
+3. **The owner merges PR #1 and approves `up`.** Do not try to do either, and do not edit
+   `approvers`, `.github/workflows/sealedstack.yml` or `sealedstack.version` unless asked
+   (the version and the workflow ref must change together, in one PR).
+4. **Do not create accounts, tokens or API keys, and do not open or close the provider firewall.**
+   Those are the owner's.
+5. **One change at a time.** Especially when swapping a slot in `config/stack.yaml`
+   (`compute`, `mesh`, `ingress`, `gate`, `secrets`, `backup`, `platform`): change one, run a check, read
+   the plan, then the next. Implementations other than the defaults are experimental.
+
+## The secret source
+
+{_agents_secret_source(secrets_source)}
+
+`config/` never contains a value. The names live in `config/stack.yaml` under `secrets.keys` and in
+`config/servers.yaml` under each server's `bootstrap`.
+
+## Doing things
+
+| To | Do this |
+|---|---|
+| Re-check prerequisites and refresh the checklist | comment `/sealedstack check` on the PR |
+| See what a change will do | open the PR; the plan is posted as a comment |
+| Look for changes made outside git | comment `/sealedstack drift` |
+| Bring everything up (the owner approves) | `gh workflow run sealedstack.yml -f command=up` |
+| Add a server or an app | `gh workflow run sealedstack.yml -f command=add-server -f args='--name NAME'` or `-f command=add-app -f args='--name NAME --repo OWNER/REPO --host HOST --access owner-only'` |
+| Read health, versions and drift | the pinned **Status** issue |
+| Understand a failure | the failed job's summary: what happened, why, the fix and a link; running the same command again resumes |
+
+## Files
+
+- `config/stack.yaml`, `config/servers.yaml`, `config/apps.yaml`: what you edit, in pull requests.
+- `config/tailscale-policy.hujson`: the tailnet policy, imported by `check`.
+- `sealedstack.version` and `.github/workflows/sealedstack.yml`: the pinned version.
+- `.devcontainer/devcontainer.json`: a Codespace with `sealedstack` for read-only commands
+  (`check`, `plan`, `status`).
+
+{docs}
+"""
+
+
+def claude_md() -> str:
+    """CLAUDE.md that points Claude Code at AGENTS.md, so the rules live in one place."""
+    return "@AGENTS.md\n"
+
+
 def setup_readme(infra_name: str, image: str, version: str) -> str:
     return f"""# {infra_name}
 
@@ -180,6 +283,7 @@ the change is applied. The pinned **Status** issue shows health, versions and dr
 - `config/tailscale-policy.hujson`: your tailnet policy (imported by `check`); sealedstack adds only its own block.
 - `sealedstack.version` and `.github/workflows/sealedstack.yml`: the pinned version (they must match).
 - `.devcontainer/devcontainer.json`: opens a Codespace with the pinned image (`{image}`) for read-only commands.
+- `AGENTS.md` (and `CLAUDE.md`, which points at it): the rules for an AI coding agent working here.
 
 Secrets are never stored here. Their **names** are in `config/stack.yaml` under
 `secrets.keys` and in `config/servers.yaml` under `bootstrap`; the values live in

@@ -194,7 +194,10 @@ and reports. A setup you have never restored from is not a backup.
 
 ## A prompt to start the agent
 
-Paste this at the start of the session, after phase 1:
+Setup writes an `AGENTS.md` (and a `CLAUDE.md` that points at it) into your infra repo
+([D-068](decisions.md)). It holds these rules, so most agents pick them up by themselves.
+Before Setup has run, or for an agent that does not read `AGENTS.md`, paste this at the
+start of the session, after phase 1:
 
 ```text
 You are helping me set up sealedstack in this infra repo. Read docs/run-with-an-agent.md,

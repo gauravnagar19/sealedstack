@@ -131,7 +131,7 @@ You can rename any key (e.g. to match an existing Bitwarden entry). The checklis
 
 ### Step 4: the Setup PR and its live checklist
 
-Setup opens **PR #1 "sealedstack setup"** with `config/stack.yaml`, `servers.yaml`, `apps.yaml` (containing the `hello` app), `.devcontainer/devcontainer.json` and a README. It then posts this comment, which updates itself:
+Setup opens **PR #1 "sealedstack setup"** with `config/stack.yaml`, `servers.yaml`, `apps.yaml` (containing the `hello` app), `.devcontainer/devcontainer.json`, a README and an `AGENTS.md` (plus a `CLAUDE.md` pointing at it) with the rules for an AI agent working in the repo (D-068). It then posts this comment, which updates itself:
 
 ```markdown
 ## sealedstack setup checklist                                   (updated 14:02 UTC)

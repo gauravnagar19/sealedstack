@@ -108,7 +108,9 @@ the repository secrets `INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET`.
 
 Setup asks for nothing else. It opens **PR #1 "sealedstack setup"** with
 `config/stack.yaml`, `config/servers.yaml`, `config/apps.yaml` (containing a
-`hello` app), `.devcontainer/devcontainer.json` and a README, and posts the living
+`hello` app), `.devcontainer/devcontainer.json`, a README and an `AGENTS.md` (with a `CLAUDE.md` that
+points at it) holding the rules for an AI agent working in the repo
+([with an agent](run-with-an-agent.md)), and posts the living
 checklist as a comment ([example](user-experience.md#step-4-the-setup-pr-and-its-live-checklist)).
 
 Setup writes the **name of every secret** into `config/`, so you can always see

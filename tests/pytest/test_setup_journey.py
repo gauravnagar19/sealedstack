@@ -83,7 +83,7 @@ def test_the_files_have_the_explicit_defaults_and_neutral_content(tmp_path):
     args = setupjob.parse_args(ARGS)
     files = setupjob.build_files(args, repo=SLUG, version="0.6.0", owner="you")
     assert set(files) == {"config/stack.yaml", "config/servers.yaml", "config/apps.yaml", ".devcontainer/devcontainer.json",
-                          ".gitignore", "README.md"}
+                          ".gitignore", "README.md", "AGENTS.md", "CLAUDE.md"}
     stack = yaml.safe_load(files["config/stack.yaml"])
     assert stack["name"] == "my-infra" and stack["approvers"] == ["you"] and stack["admin"]["ssh_keys"] == []
     assert stack["secrets"]["keys"]["state_passphrase"] == "STATE_PASSPHRASE"

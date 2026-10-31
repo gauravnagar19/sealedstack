@@ -136,6 +136,8 @@ def build_files(args: SetupArgs, *, repo: str, version: str, owner: str) -> dict
         ".devcontainer/devcontainer.json": scaffold.devcontainer_json(image, args.secrets),
         ".gitignore": scaffold.gitignore(),
         "README.md": scaffold.setup_readme(name, image, version),
+        "AGENTS.md": scaffold.agents_md(name, args.secrets, owner),
+        "CLAUDE.md": scaffold.claude_md(),
     }
 
 
