@@ -235,13 +235,13 @@ class SopsSource(SecretSource):
         return SecretResult(name, "missing", detail=f"{name} not found in {self.path.name}")
 
 
-CLI_BACKENDS = ("aws_ssm", "vault", "openbao", "infisical", "onepassword", "pass", "gcp", "azure_kv")
+CLI_BACKENDS = ("aws_ssm", "vault", "openbao", "onepassword", "pass", "gcp", "azure_kv")
 
 
 class CliSource(SecretSource):
-    """Read secrets through a provider CLI (aws_ssm, vault/openbao, infisical,
-    onepassword, pass). gcp/azure_kv have no CLI here and error. (Doppler is read
-    natively over its API, ``doppler.DopplerSource``.)"""
+    """Read secrets through a provider CLI (aws_ssm, vault/openbao, onepassword, pass).
+    gcp/azure_kv have no CLI here and error. (Doppler and Infisical are read natively
+    over their APIs, ``doppler.DopplerSource`` and ``infisical.InfisicalSource``.)"""
 
     kind = "cli"
 
@@ -309,13 +309,6 @@ class CliSource(SecretSource):
                 {"VAULT_ADDR": addr, "VAULT_TOKEN": token},
             )
             return ("found", out, "") if rc == 0 and out else ("missing", "", "")
-        if backend == "infisical":
-            rc, out, _ = self._run(
-                ["infisical", "secrets", "get", name, "--projectId", self._cfg("project_id"),
-                 "--env", self._cfg("environment") or "prod", "--plain"],
-                {"INFISICAL_TOKEN": self.env.get("INFISICAL_TOKEN", "")},
-            )
-            return ("found", out, "") if rc == 0 and out else ("missing", "", "")
         if backend == "onepassword":
             rc, out, _ = self._run(
                 ["op", "read", f"op://{self._cfg('vault')}/{name}/password"],
@@ -357,7 +350,8 @@ def build_source(
     ``secrets.app_project``), ``stack.yaml: secrets.project`` (D-050, default
     ``infra``), the legacy ``providers.secrets_bitwarden.project_name``. Doppler has no
     such project: its service token is scoped to one config, and a second config for the
-    app secrets uses ``DOPPLER_TOKEN_APPS``.
+    app secrets uses ``DOPPLER_TOKEN_APPS``. Infisical names its project in
+    ``providers.secrets_infisical`` and keeps app secrets in ``apps_secret_path``.
     """
     env = dict(env or {})
     kind = (stack.get("slots") or {}).get("secrets") or "env"
@@ -375,6 +369,15 @@ def build_source(
 
         infra = str((stack.get("secrets") or {}).get("project") or DEFAULT_INFRA_PROJECT)
         return DopplerSource(env, apps=project is not None and str(project) != infra, http=http)
+    if kind == "infisical":
+        # Same split as Doppler: the app secrets may live in their own folder
+        # (`apps_secret_path`); the project, environment and site are plain config.
+        from .infisical import InfisicalSource, load_settings
+
+        infra = str((stack.get("secrets") or {}).get("project") or DEFAULT_INFRA_PROJECT)
+        return InfisicalSource(
+            env, load_settings(stack, config_dir), apps=project is not None and str(project) != infra, http=http
+        )
     if kind in CLI_BACKENDS:
         return CliSource(kind, stack, config_dir, env, runner=cli_runner, project=project)
     if kind == "ci":
@@ -414,14 +417,23 @@ def lookup(source: SecretSource, config, logical: str) -> SecretResult:
     return result
 
 
+def _infisical_settings(config):
+    from .infisical import load_settings
+
+    return load_settings(config.stack, config.config_dir)
+
+
 def scope(config) -> str:
     """Where in the source the infra secrets live, for messages.
 
     Most sources have a named project; a Doppler service token is scoped to one config
-    by Doppler itself, so there is nothing to name."""
+    by Doppler itself, so there is nothing to name; Infisical is named by project, environment
+    and folder."""
     kind = str((config.stack.get("slots") or {}).get("secrets") or "")
     if kind == "doppler":
         return "the config of the Doppler service token"
+    if kind == "infisical":
+        return _infisical_settings(config).describe()
     return f"project '{config.source_project()}'"
 
 
@@ -430,6 +442,8 @@ def where(config) -> str:
     kind = str((config.stack.get("slots") or {}).get("secrets") or "bitwarden")
     if kind == "doppler":
         return "Doppler, the config of your service token"
+    if kind == "infisical":
+        return _infisical_settings(config).describe()
     return f"{kind.capitalize()}, project `{config.source_project()}`"
 
 

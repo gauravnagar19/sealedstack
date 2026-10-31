@@ -146,12 +146,15 @@ def test_the_non_ci_path_exec_step_passes_only_the_source_token_and_gh_token():
     assert plain["env"]["BWS_ACCESS_TOKEN"] == "${{ secrets.BWS_ACCESS_TOKEN }}"
     assert plain["env"]["GH_TOKEN"] == "${{ secrets.GH_TOKEN || github.token }}"
     others = {v for v in plain["env"].values() if "secrets." in str(v)}
-    # the secret source's access token (Bitwarden's, or Doppler's service tokens, D-066) and
-    # GH_TOKEN; never the whole repository secrets bundle
+    # the secret source's credentials (Bitwarden's token, Doppler's service tokens D-066, Infisical's
+    # machine identity D-067) and GH_TOKEN; never the whole repository secrets bundle
     assert others == {
         "${{ secrets.BWS_ACCESS_TOKEN }}",
         "${{ secrets.DOPPLER_TOKEN }}",
         "${{ secrets.DOPPLER_TOKEN_APPS }}",
+        "${{ secrets.INFISICAL_CLIENT_ID }}",
+        "${{ secrets.INFISICAL_CLIENT_SECRET }}",
+        "${{ secrets.INFISICAL_TOKEN }}",
         "${{ secrets.GH_TOKEN || github.token }}",
     }
 
@@ -162,8 +165,9 @@ def test_exactly_one_exec_step_runs_for_any_ci_secrets_value():
     assert len(execs) == 2
     assert {s["if"] for s in execs} == {"needs.resolve.outputs.ci_secrets == 'true'", "needs.resolve.outputs.ci_secrets != 'true'"}
     # the two copies differ only in how the secrets arrive: the bundle (ci) or the source's own
-    # token (Doppler's service tokens, D-066; Bitwarden's is passed by both)
-    strip = lambda s: s["run"].replace(" -e SEALEDSTACK_CI_SECRETS", "").replace(" -e DOPPLER_TOKEN -e DOPPLER_TOKEN_APPS", "")
+    # credentials (Doppler's service tokens D-066, Infisical's identity D-067; Bitwarden's is passed by both)
+    source_flags = " -e DOPPLER_TOKEN -e DOPPLER_TOKEN_APPS -e INFISICAL_CLIENT_ID -e INFISICAL_CLIENT_SECRET -e INFISICAL_TOKEN"
+    strip = lambda s: s["run"].replace(" -e SEALEDSTACK_CI_SECRETS", "").replace(source_flags, "")
     assert strip(execs[0]) == strip(execs[1])
 
 

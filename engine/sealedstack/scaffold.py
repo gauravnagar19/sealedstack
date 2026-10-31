@@ -85,6 +85,11 @@ def stack_config(
             "keys": config_mod.default_secret_keys(),
         },
     }
+    if secrets_source == "infisical":
+        # Where the secrets live is plain config; the owner fills in the project ID (D-067).
+        stack["providers"] = {
+            "secrets_infisical": {"project_id": "", "environment": "prod", "secret_path": "/"},
+        }
     if ci:
         stack["slots"]["ci"] = ci
     if forge:
@@ -110,6 +115,13 @@ def gitignore() -> str:
     return ".sealedstack/\n*.tfstate*\n"
 
 
+# The repository secrets each secret source needs (D-066, D-067); Bitwarden's is the default.
+SOURCE_TOKEN_VARS = {
+    "doppler": ["DOPPLER_TOKEN", "DOPPLER_TOKEN_APPS"],
+    "infisical": ["INFISICAL_CLIENT_ID", "INFISICAL_CLIENT_SECRET", "INFISICAL_TOKEN"],
+}
+
+
 def devcontainer_json(image: str, secrets_source: str = "bitwarden") -> str:
     """A devcontainer that runs the pinned engine image (D-046).
 
@@ -119,9 +131,10 @@ def devcontainer_json(image: str, secrets_source: str = "bitwarden") -> str:
     toolchain installed on the host.
 
     The remote environment passes through the token of the chosen secret source (the
-    only secret the source needs); Bitwarden's unless ``secrets_source`` is ``doppler``.
+    only secrets the source needs); Bitwarden's unless ``secrets_source`` is ``doppler`` or
+    ``infisical``.
     """
-    token_vars = ["DOPPLER_TOKEN", "DOPPLER_TOKEN_APPS"] if secrets_source == "doppler" else ["BWS_ACCESS_TOKEN"]
+    token_vars = SOURCE_TOKEN_VARS.get(secrets_source, ["BWS_ACCESS_TOKEN"])
     remote_env = {name: "${localEnv:" + name + "}" for name in token_vars}
     remote_env["GH_TOKEN"] = "${localEnv:GH_TOKEN}"
     return json.dumps(

@@ -26,7 +26,7 @@ import re
 import time
 from typing import Callable, Mapping, Optional
 
-from .http import HttpClient, Response, UrllibClient
+from .http import HttpClient, Response, UrllibClient, one_line, retry_wait
 from .secrets import SecretResult, SecretSource
 
 API = "https://api.doppler.com"
@@ -61,8 +61,7 @@ def candidates(key: str) -> list[str]:
     return names
 
 
-def _one_line(text: str, limit: int = 160) -> str:
-    return " ".join(str(text).split())[:limit]
+_one_line = one_line
 
 
 def _messages(response: Response) -> str:
@@ -79,13 +78,7 @@ def _messages(response: Response) -> str:
 
 
 def _retry_after(response: Response, attempt: int) -> float:
-    for name, value in dict(response.headers or {}).items():
-        if str(name).lower() == "retry-after":
-            try:
-                return max(0.0, min(float(value), RETRY_AFTER_CAP))
-            except (TypeError, ValueError):
-                break
-    return float(min(2 ** (attempt - 1), 8))
+    return retry_wait(response, attempt, RETRY_AFTER_CAP)
 
 
 class DopplerSource(SecretSource):

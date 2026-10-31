@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="a server name; repeat for more (the first is the control server)")
     parser.add_argument("--provider", default="any-ssh",
                         help="provider of the server(s): any-ssh, netcup, hetzner, ... (default: any-ssh)")
-    parser.add_argument("--secrets", default="bitwarden", help="secret source: bitwarden (default), doppler, env, ci, sops")
+    parser.add_argument("--secrets", default="bitwarden", help="secret source: bitwarden (default), doppler, infisical, env, ci, sops")
     parser.add_argument("--name", default="", help="infra name (default: the repository name)")
     parser.add_argument("--owner", default="", help="owner of the engine image and the approver (default: the repository owner)")
     parser.add_argument("--os", default="ubuntu-24.04", help="server OS (default: ubuntu-24.04)")

@@ -403,6 +403,17 @@ def _check_secret_source(ctx: CheckContext) -> Result:
                 "as the repository secret DOPPLER_TOKEN (the only secret kept in GitHub)",
             docs=DOCS_SECRETS,
         )
+    if kind == "infisical":
+        problem = ctx.secrets.credentials_problem()
+        if problem and not ctx.env.get(ctx.config.secret_key("state_passphrase")):
+            return Result(
+                "secrets.source", "secrets", "fail",
+                detail=f"{problem} for this repository",
+                fix="create a machine identity with Universal Auth and a read-only role on the project, then add its client "
+                    "id and client secret as the repository secrets INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET "
+                    "(the only secrets kept in GitHub); or add a Token Auth token as INFISICAL_TOKEN",
+                docs=DOCS_SECRETS,
+            )
     probe = ctx.secrets.get(ctx.config.secret_key("state_passphrase"))
     if probe.errored:
         return Result(

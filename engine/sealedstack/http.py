@@ -145,3 +145,19 @@ class StubClient(HttpClient):
                     body = route.text.encode("utf-8")
                 return Response(status=route.status, headers=route.headers, body=body, url=url, set_cookies=list(route.set_cookies))
         return Response(status=404, headers={}, body=b"{}", url=url)
+
+
+def one_line(text: object, limit: int = 160) -> str:
+    """``text`` on one line, cut to ``limit`` characters, for error messages."""
+    return " ".join(str(text).split())[:limit]
+
+
+def retry_wait(response: Response, attempt: int, cap: float = 30.0) -> float:
+    """Seconds to wait before retrying a 429 / 5xx: ``Retry-After`` (capped), else 1, 2, 4, 8 s."""
+    for name, value in dict(response.headers or {}).items():
+        if str(name).lower() == "retry-after":
+            try:
+                return max(0.0, min(float(value), cap))
+            except (TypeError, ValueError):
+                break
+    return float(min(2 ** (attempt - 1), 8))
