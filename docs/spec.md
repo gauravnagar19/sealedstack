@@ -528,7 +528,7 @@ verification log (private); the README status flips to stable.
 | R6 | Dokploy's Traefik container and network names (`dokploy-traefik`, `dokploy-network`) are assumed | Checked by an Ansible assert after the Dokploy install |
 | R7 | Cloudflare only supports cloudflared releases from the last 12 months | Pinned tag; quarterly bump (Renovate in the roadmap) |
 | R8 | GHCR / GitHub Actions pricing can change | The `registry` slot lets you move registries; image retention keeps usage small |
-| R9 | Dokploy API keys may not be project-scoped | Each app CI may hold the shared key; mitigate with a `production` environment + required reviewers |
+| R9 | Dokploy API keys are not project-scoped | Resolved by D-063: each app gets its own Dokploy member limited to its services and its own key. A writer of an app repo can still change that app's compose (see limitations.md) |
 | R10 | HuJSON parse/merge fidelity | A pinned JSON5 parser; `plan` shows a readable policy diff before apply |
 | Q1 | Does Bitwarden's official OpenTofu/Terraform provider cover writing secrets, or do we shell out to `bws`? | Check during v0.1 |
 | Q2 | Can Dokploy's API start a restore from a named backup object? This is needed for `restore_on_create`. | Check during v0.3; fallback is a one-time `pg_restore` job container |

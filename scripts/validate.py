@@ -261,6 +261,8 @@ def main() -> int:
         if app.get("_compose"):
             for problem in lint_mod.lint(app["_compose"], app.get("needs")):
                 compose_problems.append(f"app '{name}': {problem}")
+            for problem in lint_mod.lint_security(app["_compose"]):
+                compose_problems.append(f"app '{name}': {problem}")
         # build.mode compose rules (spec 4.2): the ci image pin, checked while
         # rendering the deploy compose.
         for problem in app.get("_build_problems") or []:

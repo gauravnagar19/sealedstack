@@ -6,6 +6,10 @@ Rules:
     ``dokploy-network``.
   - No database service inside the compose file when that database is declared
     under ``needs:``.
+  - No host-escape settings (D-063): privileged, the Docker socket or host paths,
+    host network/pid/ipc, extra capabilities, devices, disabled confinement. The
+    rules live in ``engine/sealedstack/composelint.py`` (one source, also embedded
+    in the app release workflow); see ``lint_security``.
   - ``build.mode: ci`` (the default, D-030): every service with ``build:`` must
     also pin ``image: <registry>/<owner>/<repo>-<service>:${APP_VERSION}`` so the
     built image exists in the registry and Dokploy never builds. ``build.mode:
@@ -23,6 +27,19 @@ def _services(compose: dict | None) -> dict:
 def expected_image(registry: str, owner: str, repo: str, service: str) -> str:
     """The image ref a ``ci``-mode service must pin (spec 4.2)."""
     return f"{registry}/{owner}/{repo}-{service}:${{APP_VERSION}}"
+
+
+def lint_security(compose: dict | None) -> list[str]:
+    """Host-escape problems (D-063): refused by ``check``, ``plan`` and ``apply``."""
+    import pathlib
+    import sys
+
+    engine = str(pathlib.Path(__file__).resolve().parent.parent / "engine")
+    if engine not in sys.path:
+        sys.path.insert(0, engine)
+    from sealedstack import composelint
+
+    return composelint.lint(compose or {})
 
 
 def lint(compose: dict, needs: dict | None = None) -> list[str]:

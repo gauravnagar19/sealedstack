@@ -242,10 +242,15 @@ def check_config(ctx: CheckContext) -> list[Result]:
 
     render_problems: list[str] = []
     compose_warnings: list[str] = []
+    security_problems: list[str] = []
     try:
         rendered = render_mod.render_all(allow_unresolved=True)
     except Exception as exc:  # noqa: BLE001
-        render_problems.append(f"render failed: {exc}")
+        # A compose file that asks for host access is its own, clearly named failure (D-063).
+        if str(exc).startswith("the compose file asks for host access"):
+            security_problems.extend(line.strip() for line in str(exc).splitlines()[1:])
+        else:
+            render_problems.append(f"render failed: {exc}")
     else:
         for name, app in rendered.items():
             if app.get("_disabled"):
@@ -261,6 +266,7 @@ def check_config(ctx: CheckContext) -> list[Result]:
                 compose_warnings.append(f"app '{name}': could not fetch compose ({app['_compose_error']})")
             if app.get("_compose"):
                 compose_warnings.extend(f"app '{name}': {p}" for p in lint.lint(app["_compose"], app.get("needs")))
+                security_problems.extend(f"app '{name}': {p}" for p in lint.lint_security(app["_compose"]))
             render_problems.extend(f"app '{name}': {p}" for p in (app.get("_build_problems") or []))
 
     results.append(
@@ -270,6 +276,16 @@ def check_config(ctx: CheckContext) -> list[Result]:
             render_problems,
             fix="fix the app manifests/registry so they render",
             docs=DOCS_CONFIG,
+        )
+    )
+    results.append(
+        _result(
+            "config.compose_security",
+            "config",
+            security_problems,
+            fix="remove the host-escape settings from the app's compose file (privileged, docker.sock or host paths, "
+                "host network/pid/ipc, extra capabilities, devices); use named volumes",
+            docs="docs/limitations.md",
         )
     )
     results.append(

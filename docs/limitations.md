@@ -11,6 +11,60 @@ few of these, see [decisions.md](decisions.md).
 
 - **R2 access uses the `aws` CLI.** Database backups/restores and the state backend read/write R2 through the bundled `aws` CLI (the engine signs S3 via it); unlike `gh`/`jq`/`yq`/`curl`, `aws` stays in the toolbox image.
 
+## Threat model: what an app repo's writers can and cannot do (D-063)
+
+Anyone who can run a workflow in an app repo can run its release job, and the job
+holds a Dokploy API key. What that key allows is the boundary.
+
+**Since D-063 the key is not the admin key.** `apply` creates one Dokploy *member*
+per app (role `member`, e-mail `deploy-<app>@dokploy.invalid`, no mail is ever sent)
+and publishes **that member's** key as the repository secret
+`SEALEDSTACK_DOKPLOY_API_KEY`. The member is limited, in Dokploy's own permission
+model (pinned to v0.30.8), to that app's projects, environments and compose
+services. `apply` proves it every time: the key must read the app's own composes and
+be refused on every other app's, and a key that is not scoped is never published.
+
+| | A writer of one app repo |
+|---|---|
+| Read or change the env (secrets, database URLs) of **another app** | No |
+| Deploy, stop or delete **another app**, or touch the panel's settings, users, servers, registries | No |
+| Read the admin key, the other apps' keys, or the Tailscale / Cloudflare / R2 credentials | No (none is in an app repo) |
+| Reach the servers over SSH | No (`tag:release` may use TCP 3000 only, D-057) |
+| Read or change **its own** app's env and compose, and deploy it | Yes, by design |
+| Make **its own** compose run with host access (privileged, `docker.sock`, host paths, host namespaces) | **Yes, and Dokploy cannot prevent it** (below) |
+
+**What remains open.** Dokploy has no permission for "deploy this compose but do not
+change what it contains": a member who may deploy a compose may also change its
+`composeFile`, its `command` and its source (`compose.update` accepts all of them,
+and needs the `canCreateServices` flag on the member). A compose file or command
+with a privileged container or the Docker socket is root on the host, and the lint
+below cannot stop someone who calls Dokploy's API directly with the key instead of
+using the release job. So **a writer of an app repo can still, in effect, take over
+the server that runs that app.** What D-063 removes is the *other* apps, the panel
+and the infrastructure credentials, and the lint adds two checks:
+
+- the **release job** lints the rendered deploy compose before anything reaches
+  Dokploy (`app.yml`; refuses `privileged`, `docker.sock` and other runtime sockets,
+  host paths other than `/etc/localtime`, `network_mode`/`pid`/`ipc`/`uts`/`userns_mode: host`,
+  `cap_add` beyond a short list, `devices`, and `security_opt` that turns off confinement);
+- the **infra repo** applies the same rules to every app's compose in `check`,
+  `plan` and `apply` (an app that fails is refused, and nothing is deployed for it).
+
+Both only see the compose file. They are a guard rail against mistakes and
+against the release job being misused, not a boundary against someone who holds the key.
+
+**Closing it fully** needs app repos to hold *no* Dokploy credentials: the release
+job would record a GitHub Deployment and the infra repo's CI (`tag:ci`) would perform
+the deploy, reading the compose from the app repo at the tagged commit through the
+lint. That needs a trigger path (the infra CI watching deployments, or an approved
+`/sealedstack release <app> <tag>` command) and is a follow-up, not part of this
+release. Until then: treat every writer of an app repo as an administrator of the
+server that runs that app, and keep apps with different trust levels on different servers.
+
+Two further details. An app that shares its repository with another app receives the
+key of the last one published. And the member's password and key live only in the
+encrypted state (never in the secret source or in git), like the Dokploy admin password.
+
 ## The state lock (D-062)
 
 CI write commands (`apply`, `up`, `restore`, `add-server`, `server sync`) and

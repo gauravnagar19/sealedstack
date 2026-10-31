@@ -245,6 +245,7 @@ def build_app(
         "_build_mode": mode,
         "_deploy_compose": "",
         "_build_problems": [],
+        "_security_problems": [],
     }
     if flags["unresolved"]:
         rendered["_reason"] = flags["reason"]
@@ -258,6 +259,8 @@ def build_app(
             flags["compose_error"] = str(exc)
             rendered["_compose_error"] = str(exc)
     rendered["_compose"] = compose
+    # D-063: a compose file that asks Docker for the host is refused, never deployed.
+    rendered["_security_problems"] = lint_compose.lint_security(compose)
     rendered["_compose_hash"] = trigger_hash(manifest, compose, source)
 
     # ci mode: render the deploy compose Dokploy pulls (spec 4.2, 4.5).
@@ -303,6 +306,16 @@ def render_all(*, allow_unresolved: bool = False) -> dict:
         if rendered["_unresolved"]:
             unresolved.append(name)
         rendered_apps[name] = rendered
+
+    unsafe = [
+        f"app '{name}': {problem}"
+        for name, rendered in rendered_apps.items()
+        for problem in rendered.get("_security_problems") or []
+    ]
+    if unsafe:
+        raise RenderError(
+            "the compose file asks for host access (refused, D-063):\n  " + "\n  ".join(unsafe)
+        )
 
     if unresolved and not allow_unresolved:
         raise RenderError(

@@ -10,6 +10,8 @@ import yaml
 from sealedstack import forge, publishsettings
 from sealedstack.http import Route, StubClient
 
+from fake_dokploy import ADMIN_KEY, FakeDokploy
+from fake_generated import fake_generated
 from test_engine_publishsettings import FakeSource, FakeState, make_config
 
 REPO = Path(__file__).resolve().parents[2]
@@ -17,21 +19,24 @@ REPO = Path(__file__).resolve().parents[2]
 
 def publish(tmp_path, f):
     out = io.StringIO()
-    publishsettings.run(make_config(tmp_path), {}, source=FakeSource({"DOKPLOY_API_KEY": "dk"}), state=FakeState(), forge=f, out=out)
+    gen = fake_generated()
+    publishsettings.run(make_config(tmp_path), {}, source=FakeSource({"DOKPLOY_API_KEY": ADMIN_KEY}), state=FakeState(), forge=f,
+                        generated=gen, http=FakeDokploy({"compose-1": ("project-1", "env-1")}), out=out)
+    publish.key = gen.values()["dokploy_member_shop_key"]
     return out.getvalue()
 
 
 def test_environments_available_still_writes_a_repository_secret(tmp_path):
     f = forge.InMemoryForge()
     log = publish(tmp_path, f)
-    assert f.secrets == {("example/shop", "SEALEDSTACK_DOKPLOY_API_KEY"): "dk"}
+    assert f.secrets == {("example/shop", "SEALEDSTACK_DOKPLOY_API_KEY"): publish.key}
     assert "mode: repository secret; environments are available" in log
 
 
 def test_no_environments_on_the_plan_falls_back_cleanly_and_says_so(tmp_path):
     f = forge.InMemoryForge(no_environments={"example/shop"})  # a private repo on GitHub Free
     log = publish(tmp_path, f)
-    assert f.secrets == {("example/shop", "SEALEDSTACK_DOKPLOY_API_KEY"): "dk"}
+    assert f.secrets == {("example/shop", "SEALEDSTACK_DOKPLOY_API_KEY"): publish.key}
     assert ("example/shop", "production") not in f.environments
     assert "mode: repository secret; environments are not available" in log and "GitHub Free" in log
 

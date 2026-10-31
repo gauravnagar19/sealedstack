@@ -9,6 +9,9 @@ import yaml
 from sealedstack import config as config_mod, forge, publishsettings, secrets as secrets_mod
 from sealedstack.secrets import SecretResult
 
+from fake_dokploy import ADMIN_KEY, FakeDokploy
+from fake_generated import fake_generated
+
 
 class FakeSource(secrets_mod.SecretSource):
     kind = "fake"
@@ -61,12 +64,15 @@ def make_config(tmp_path: Path) -> config_mod.Config:
 def test_publishes_vars_and_secret_for_repo_apps_only(tmp_path):
     config = make_config(tmp_path)
     f = forge.InMemoryForge()
+    gen = fake_generated()
     publishsettings.run(
         config,
         {},
-        source=FakeSource({"DOKPLOY_API_KEY": "dk"}),
+        source=FakeSource({"DOKPLOY_API_KEY": ADMIN_KEY}),
         state=FakeState(),
         forge=f,
+        generated=gen,
+        http=FakeDokploy({"compose-1": ("project-1", "env-1")}),
         out=io.StringIO(),
     )
 
@@ -79,7 +85,8 @@ def test_publishes_vars_and_secret_for_repo_apps_only(tmp_path):
     assert f.get_variable(repo, "SEALEDSTACK_TS_OAUTH_CLIENT_ID") in (None, "")
     assert f.get_variable(repo, "SEALEDSTACK_TS_AUDIENCE") in (None, "")
     assert f.get_variable(repo, "SEALEDSTACK_REGISTRY") == "ghcr.io/example"
-    assert f.secrets[(repo, "SEALEDSTACK_DOKPLOY_API_KEY")] == "dk"
+    # D-063: the app repo gets its own Dokploy member's key, never the admin key
+    assert f.secrets[(repo, "SEALEDSTACK_DOKPLOY_API_KEY")] == gen.values()["dokploy_member_shop_key"] != ADMIN_KEY
     assert (repo, "production") in f.environments
     # the landing app has no repo, so nothing is published under it
     assert all(key[0] != "landing" for key in f.variables)

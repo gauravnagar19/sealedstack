@@ -16,6 +16,7 @@ from typing import Mapping, Optional
 
 from . import config as config_mod
 from . import dokploy as dokploy_mod
+from . import dokploymembers as dokploymembers_mod
 from . import forge as forge_mod
 from . import platformstate as platformstate_mod
 from . import secrets as secrets_mod
@@ -29,6 +30,8 @@ def run(
     source: Optional[secrets_mod.SecretSource] = None,
     state: Optional[platformstate_mod.PlatformState] = None,
     forge: Optional[forge_mod.Forge] = None,
+    generated=None,
+    http=None,
     out=None,
 ) -> None:
     env = dict(env or os.environ)
@@ -51,9 +54,21 @@ def run(
     dokploy_url = f"http://{dokploy_mod.control_host(config)}:3000"
     from . import generated as generated_mod
 
-    api_key = generated_mod.resolve_api_key(config, env, source)
-    if not api_key:
+    # The admin key is used here only to provision the scoped members (D-063); it is
+    # never published. Each app repo gets its own member's key.
+    admin_key = generated_mod.resolve_api_key(config, env, source, generated)
+    if not admin_key:
         raise config_mod.ConfigError(dokploy_mod.NO_KEY_MESSAGE)
+    generated = generated or generated_mod.shared(config, env, source, http=http)
+    member_keys = dokploymembers_mod.ensure(
+        config,
+        {app: compose_ids.get(app) or {} for app in repo_apps},
+        admin_key=admin_key,
+        generated=generated,
+        http=http,
+        out=out,
+        everything=compose_ids,
+    )
 
     providers = config.stack.get("providers") or {}
     mesh = providers.get("mesh_tailscale") or {}
@@ -85,13 +100,15 @@ def run(
         # `environment:`, so an environment secret would be invisible to it, and
         # private repos on GitHub Free have no environments at all.
         has_environments = forge.ensure_environment(repo, "production")
-        forge.set_secret(repo, "SEALEDSTACK_DOKPLOY_API_KEY", api_key)
+        if app not in member_keys:
+            continue
+        forge.set_secret(repo, "SEALEDSTACK_DOKPLOY_API_KEY", member_keys[app])
         note = (
             "environments are available, but the release job reads a repository secret"
             if has_environments
             else "environments are not available for this repository (private repo on GitHub Free, or the token cannot create them)"
         )
-        print(f"    secret SEALEDSTACK_DOKPLOY_API_KEY (mode: repository secret; {note})", file=out)
+        print(f"    secret SEALEDSTACK_DOKPLOY_API_KEY (the scoped key of this app's Dokploy member; mode: repository secret; {note})", file=out)
 
     print("publish-app-settings: done", file=out)
 
