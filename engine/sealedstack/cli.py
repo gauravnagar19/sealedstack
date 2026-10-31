@@ -256,15 +256,22 @@ def _r2_client(config, env, http=None, *, purpose: str = "remote state lock"):
         return None
 
 
-def _state_lock(config, env, http=None):
-    """Build the remote R2 state lock, or None when R2 credentials are absent."""
+def _state_lock(config, env, http=None, *, kind: str = "break-glass"):
+    """Build the remote R2 state lock, or None when R2 credentials are absent.
+
+    ``kind`` names the holder in the lock body (``ci`` or ``break-glass``)."""
     client = _r2_client(config, env, http)
     if client is None:
         return None
     from . import lock as lock_mod
 
     key = lock_mod.lock_key(config.name)
-    return lock_mod.StateLock(lock_mod.S3LockBackend(client, key), owner=config.name or "sealedstack", key=key)
+    return lock_mod.StateLock(
+        lock_mod.S3LockBackend(client, key),
+        owner=lock_mod.lock_owner(env, kind),
+        key=key,
+        run_url=lock_mod.run_url(env),
+    )
 
 
 def _progress(config, env, command: str, workdir: str, *, client=None):

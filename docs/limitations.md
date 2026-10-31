@@ -11,6 +11,24 @@ few of these, see [decisions.md](decisions.md).
 
 - **R2 access uses the `aws` CLI.** Database backups/restores and the state backend read/write R2 through the bundled `aws` CLI (the engine signs S3 via it); unlike `gh`/`jq`/`yq`/`curl`, `aws` stays in the toolbox image.
 
+## The state lock (D-062)
+
+CI write commands (`apply`, `up`, `restore`, `add-server`, `server sync`) and
+`--break-glass` runs take **one lock**, the object `sealedstack/<infra name>/state.lock`
+in your R2 state bucket, with a conditional write, so they exclude each other.
+It records the holder, the CI run URL and an expiry (2 hours). Reads (`check`,
+`plan`, `status`, `drift`) never lock.
+
+- A run that finds the lock held stops and prints the holder, how long it has
+  been held and `sealedstack --force-unlock <id>`.
+- A lock past its expiry (a runner killed mid-apply never releases it) is taken
+  over by the next write run, with a warning naming the previous holder. The
+  hand-over is read-then-delete-then-create, not one atomic step, so two runs
+  that start in the same second on the same expired lock could still both
+  proceed; the previous holder is dead by then and the window is a few requests.
+- The Status issue gets a problem comment when a lock has been held for more than an hour.
+- OpenTofu's own state lock still protects the tofu phases on top of this.
+
 ## No config ships in this repository
 
 The repository is the *tool*, not a deployment. The user-specific config files

@@ -362,10 +362,7 @@ class Runtime:
             try:
                 info = lock.acquire()
             except Exception as exc:  # noqa: BLE001 - LockHeld
-                raise BreakGlassError(
-                    f"{command}: {exc}. Wait for it to finish, or clear it with "
-                    "`sealedstack --force-unlock <id>` if it is stale."
-                ) from exc
+                raise BreakGlassError(f"{command}: {exc} Wait for the other run to finish first.") from exc
             atexit.register(lambda: lock.release(info))
         else:
             workdir = Path(self.env.get("SEALEDSTACK_WORKDIR") or (self.code_root / ".sealedstack"))

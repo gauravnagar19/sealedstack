@@ -90,8 +90,10 @@ def publish(f: forge_mod.Forge, repo: str, body: str, *, title: str = "sealedsta
     return number
 
 
-def post_problem(f: forge_mod.Forge, repo: str, text: str) -> None:
-    """Comment on the Status issue so the owner is notified."""
+def post_problem(f: forge_mod.Forge, repo: str, text: str, *, marker: str = "") -> None:
+    """Comment on the Status issue so the owner is notified.
+
+    With a ``marker`` the same problem is edited in place instead of repeated."""
     number = issue_number(f, repo)
     if number is not None:
-        f.upsert_comment(repo, number, text)
+        f.upsert_comment(repo, number, f"{marker}\n{text}" if marker else text, marker=marker)

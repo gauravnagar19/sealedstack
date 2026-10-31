@@ -35,6 +35,7 @@ from . import checklist
 from . import commands as commands_mod
 from . import config as config_mod
 from . import forge as forge_mod
+from . import lock as lock_mod
 from . import planreport
 from . import setupjob
 from . import statusissue
@@ -351,11 +352,13 @@ def execute(
     out=None,
     http=None,
     secrets=None,
+    lock_fn: Optional[Callable[[], Optional[lock_mod.StateLock]]] = None,
 ) -> int:
     """Run the resolved command and report the result. Returns the job's exit code.
 
     ``http`` / ``secrets`` are injected by tests; in CI they are built from the
-    config and the environment.
+    config and the environment. ``lock_fn`` builds the remote state lock (D-062):
+    write commands hold it for the whole run, reads never touch it.
     """
     out = out if out is not None else sys.stderr
     if not res.proceed:
@@ -388,12 +391,36 @@ def execute(
             return 1
         pr = pr or decision.pr or 0
 
-    rc, output = _run_one(res.command, res.args, pr, event, forge, run, status_fn=status_fn, env=env, config=config, http=http, secrets=secrets)
-    for follow in res.follow:
-        rc2, _ = _run_one(follow, "", pr, event, forge, run, status_fn=status_fn, env=env, config=config,
-                          http=http, secrets=secrets)
-        rc = rc or rc2
-    return rc
+    held = None
+    lock = lock_fn() if (res.write and lock_fn is not None) else None
+    if res.write and lock is None:
+        print("sealedstack ci: warning: no remote state lock (R2 credentials unavailable); "
+              "break-glass runs cannot be excluded from this run", file=out)
+    if lock is not None:
+        try:
+            held = lock.acquire()
+        except lock_mod.LockHeld as exc:
+            print(f"sealedstack ci: refused — {exc}", file=out)
+            target = pr or _merged_pr(forge, event)
+            if target and event.name != "push":
+                forge.upsert_comment(event.repo, target, f"❌ `{res.command}` refused: {exc}")
+            return 1
+        print(f"sealedstack ci: state lock taken (id {held['id']}, expires {held['expires']})", file=out)
+    try:
+        rc, output = _run_one(res.command, res.args, pr, event, forge, run, status_fn=status_fn, env=env, config=config,
+                              http=http, secrets=secrets, lock_fn=lock_fn)
+        for follow in res.follow:
+            rc2, _ = _run_one(follow, "", pr, event, forge, run, status_fn=status_fn, env=env, config=config,
+                              http=http, secrets=secrets, lock_fn=lock_fn)
+            rc = rc or rc2
+        return rc
+    finally:
+        if lock is not None and held is not None:
+            try:
+                if not lock.release(held):
+                    print("sealedstack ci: warning: the state lock was no longer ours at the end of the run", file=out)
+            except Exception as exc:  # noqa: BLE001 - never mask the command's own result
+                print(f"sealedstack ci: warning: could not release the state lock ({exc}); it expires on its own", file=out)
 
 
 def _run_one(
@@ -409,9 +436,10 @@ def _run_one(
     config: Optional[config_mod.Config] = None,
     http=None,
     secrets=None,
+    lock_fn: Optional[Callable[[], Optional[lock_mod.StateLock]]] = None,
 ) -> tuple[int, str]:
     if command == "status" and status_fn is not None:
-        return _run_status(event, forge, status_fn)
+        return _run_status(event, forge, status_fn, lock_fn)
 
     argv = _argv(command, args)
     setup_pr = command == "check" and bool(pr) and _is_setup_pr(forge, event.repo, pr)
@@ -487,7 +515,11 @@ def _check_results(output: str):
     return [_R(r) for r in data.get("results", [])]
 
 
-def _run_status(event: Event, forge: forge_mod.Forge, status_fn: Callable[[], tuple]) -> tuple[int, str]:
+STALE_LOCK_MARKER = "<!-- sealedstack:stale-lock -->"
+
+
+def _run_status(event: Event, forge: forge_mod.Forge, status_fn: Callable[[], tuple],
+                lock_fn: Optional[Callable[[], Optional[lock_mod.StateLock]]] = None) -> tuple[int, str]:
     """Compute health, update the pinned Status issue, comment on every problem."""
     config, version, health = status_fn()
     body = statusissue.render_from_health(config, version, health)
@@ -495,6 +527,14 @@ def _run_status(event: Event, forge: forge_mod.Forge, status_fn: Callable[[], tu
     problems = [r for r in health if r.status == "fail"]
     for result in problems:
         statusissue.post_problem(forge, event.repo, f"🔴 {result.id}: {result.detail}" + (f"\nFix: {result.fix}" if result.fix else ""))
+    if lock_fn is not None:  # D-062: a lock held longer than an hour is a problem (a read, never a lock)
+        try:
+            lock = lock_fn()
+            report = lock.stale_report() if lock is not None else ""
+            if report:
+                statusissue.post_problem(forge, event.repo, f"🔴 state lock: {report}", marker=STALE_LOCK_MARKER)
+        except Exception as exc:  # noqa: BLE001 - the lock check must never fail the status run
+            print(f"sealedstack ci: could not read the state lock ({exc})", file=sys.stderr)
     return 0, body
 
 
@@ -514,8 +554,20 @@ def _load_config(env: Mapping[str, str], code_root: Path) -> Optional[config_mod
     return config_mod.load_config(config_dir, code_root, env)
 
 
+def _default_lock_fn(config: Optional[config_mod.Config], env: Mapping[str, str]):
+    """Build the R2 state lock lazily: only write commands and status need it."""
+    def build():
+        if config is None:
+            return None
+        from . import cli
+
+        return cli._state_lock(config, dict(env), kind="ci")
+
+    return build
+
+
 def main(argv: Optional[list] = None, *, env: Optional[Mapping[str, str]] = None, forge: Optional[forge_mod.Forge] = None,
-         runner: Optional[CommandRunner] = None, status_fn=None) -> int:
+         runner: Optional[CommandRunner] = None, status_fn=None, lock_fn=None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     env = dict(os.environ if env is None else env)
     verb = args[0] if args else ""
@@ -548,7 +600,8 @@ def main(argv: Optional[list] = None, *, env: Optional[Mapping[str, str]] = None
     res = Resolution.from_env(env)
     if status_fn is None:
         status_fn = _default_status_fn(env, code_root)
-    return execute(res, event, forge, config, runner or tee_runner(env), env=env, status_fn=status_fn)
+    return execute(res, event, forge, config, runner or tee_runner(env), env=env, status_fn=status_fn,
+                   lock_fn=lock_fn if lock_fn is not None else _default_lock_fn(config, env))
 
 
 def _default_status_fn(env: Mapping[str, str], code_root: Path):
