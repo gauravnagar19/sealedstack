@@ -238,6 +238,22 @@
           "description": "Image platforms to build, e.g. [linux/amd64]. Derived from the servers if omitted."
         }
       }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who may release this app (DR-11). Without it, anyone who can run the app repo's release workflow can deploy.",
+      "properties": {
+        "approvers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\[bot\\])?$"
+          },
+          "description": "GitHub usernames allowed to run a release. When set, the release job refuses anyone else (checked against github.actor)."
+        }
+      }
     }
   }
 }

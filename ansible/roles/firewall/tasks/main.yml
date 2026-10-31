@@ -3,20 +3,19 @@
 # UFW denies by default, the mesh is trusted, and a DOCKER-USER block closes
 # Docker's well-known bypass of UFW's INPUT rules.
 
-- name: Detect the default WAN interface
+- name: Detect the IPv4 default route
   ansible.builtin.command: ip route show default
   register: firewall_default_route
   changed_when: false
 
-- name: Record the WAN interface
-  ansible.builtin.set_fact:
-    firewall_wan_if: "{{ firewall_default_route.stdout.split('dev ')[1].split()[0] }}"
-  when: "'dev ' in firewall_default_route.stdout"
+- name: Detect the IPv6 default route
+  ansible.builtin.command: ip -6 route show default
+  register: firewall_default_route6
+  changed_when: false
+  failed_when: false
 
-- name: Fall back to eth0 when there is no default route
-  ansible.builtin.set_fact:
-    firewall_wan_if: eth0
-  when: firewall_wan_if is not defined
+- name: Work out the WAN interfaces
+  ansible.builtin.include_tasks: interfaces.yml
 
 - name: Read the current UFW status
   ansible.builtin.command: ufw status verbose
@@ -47,14 +46,9 @@
   ansible.builtin.blockinfile:
     path: /etc/ufw/after.rules
     marker: "# {mark} sealedstack DOCKER-USER"
-    block: |
-      *filter
-      :DOCKER-USER - [0:0]
-      -A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
-      -A DOCKER-USER -i {{ mesh_interface }} -j RETURN
-      -A DOCKER-USER -i {{ firewall_wan_if }} -j DROP
-      -A DOCKER-USER -j RETURN
-      COMMIT
+    block: "{{ lookup('ansible.builtin.template', 'docker-user-block.j2') }}"
+  vars:
+    interfaces: ["{{ firewall_wan_if }}"]
   notify: Reload ufw
 
 - name: Check whether ip6tables is available
@@ -67,14 +61,9 @@
   ansible.builtin.blockinfile:
     path: /etc/ufw/after6.rules
     marker: "# {mark} sealedstack DOCKER-USER"
-    block: |
-      *filter
-      :DOCKER-USER - [0:0]
-      -A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
-      -A DOCKER-USER -i {{ mesh_interface }} -j RETURN
-      -A DOCKER-USER -i {{ firewall_wan_if }} -j DROP
-      -A DOCKER-USER -j RETURN
-      COMMIT
+    block: "{{ lookup('ansible.builtin.template', 'docker-user-block.j2') }}"
+  vars:
+    interfaces: "{{ firewall_wan6_interfaces }}"
   # Enforce the block whenever ip6tables exists (Docker's ip6tables option is
   # enabled by the docker role); do not wait for Docker to have created the
   # chain, or a boot-time reload leaves IPv6 wide open.

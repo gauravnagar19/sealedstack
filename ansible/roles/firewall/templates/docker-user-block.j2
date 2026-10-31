@@ -1,0 +1,9 @@
+*filter
+:DOCKER-USER - [0:0]
+-A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+-A DOCKER-USER -i {{ mesh_interface }} -j RETURN
+{% for interface in interfaces %}
+-A DOCKER-USER -i {{ interface }} -j DROP
+{% endfor %}
+-A DOCKER-USER -j RETURN
+COMMIT

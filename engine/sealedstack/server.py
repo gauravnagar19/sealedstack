@@ -24,6 +24,7 @@ from . import config as config_mod
 from . import generated as generated_mod
 from . import hostkey as hostkey_mod
 from . import secrets as secrets_mod
+from . import tailnet as tailnet_mod
 from . import tofu as tofu_mod
 
 # run: inherit stdio, return rc. capture: capture stdout, return (rc, stdout).
@@ -36,6 +37,9 @@ class ServerIO:
     run: RunFn
     capture: CaptureFn
     prompt: Callable[[str], str]
+    # Is <name> already a tagged node on the tailnet? True/False, or None when unknown (DR-10).
+    # Optional: test doubles that do not define it make `up` use the secrets rule alone.
+    tailnet_node: Optional[Callable[[str, str, str, str], Optional[bool]]] = None
 
 
 def _default_io() -> ServerIO:
@@ -54,7 +58,10 @@ def _default_io() -> ServerIO:
         print(f"{message}(non-interactive run: continuing)", flush=True)
         return ""
 
-    return ServerIO(run=run, capture=capture, prompt=prompt)
+    def tailnet_node(name, client_id, client_secret, tailnet):
+        return tailnet_mod.node_registered(name, client_id, client_secret, tailnet=tailnet or "-")
+
+    return ServerIO(run=run, capture=capture, prompt=prompt, tailnet_node=tailnet_node)
 
 
 def write_vars(path: Path, values: Mapping[str, str]) -> None:
@@ -123,6 +130,7 @@ def up(
     root_password = ""
     ip = ""
     already_bootstrapped = False
+    registered = _registered_on_tailnet(config, name, source, io, out)
     if creates_server(code_root, provider):
         print(f"==> provisioning {name} via {provider}", file=out)
         rc, stdout = io.capture([sys.executable, "-m", "sealedstack.compute", name, "apply"], env)
@@ -133,10 +141,21 @@ def up(
         # created without an SSH key) is read from the secret source like any other.
         found_pw = source.get(pw_key)
         root_password = found_pw.value if found_pw.found else ""
+        already_bootstrapped = registered is True
+    elif registered is True:
+        # DR-10: the tailnet is the authority. A node named <name> with tag:server means the
+        # bootstrap is done, whatever is left in the secret source.
+        already_bootstrapped = True
+        print(f"==> {name}: already a node on the tailnet; re-asserting the baseline over the mesh", file=out)
     elif not source.get(ip_key).found and not source.get(pw_key).found:
-        # D-049: both bootstrap secrets are deleted after the first bootstrap, so
-        # their absence means "already bootstrapped". Skip the public-SSH bootstrap
-        # and only re-assert the baseline over the mesh; this keeps `up` re-runnable.
+        if registered is False:
+            raise config_mod.ConfigError(
+                f"'{name}' is not on the tailnet and its bootstrap secrets are missing: add {ip_key} and {pw_key} "
+                "to the secret source so `up` can do the first login (D-049)"
+            )
+        # The tailnet could not say (no devices scope, or no network): fall back to D-049.
+        # Both bootstrap secrets are deleted after the first bootstrap, so their absence
+        # means "already bootstrapped". Only re-assert the baseline over the mesh.
         already_bootstrapped = True
         print(
             f"==> {name}: no bootstrap secrets ({ip_key}, {pw_key}); assuming it is already "
@@ -326,6 +345,21 @@ def missing_password_message(name: str, pw_key: str, provider_creates: bool) -> 
         f"{pw_key} is not in the secret source{extra}. Add {pw_key}; sealedstack never prompts for it, so a CI run "
         "cannot hang waiting for one."
     )
+
+
+def _registered_on_tailnet(config, name: str, source, io: ServerIO, out) -> Optional[bool]:
+    """Ask the tailnet whether ``name`` is already a tagged node (None = cannot tell)."""
+    check = getattr(io, "tailnet_node", None)
+    if check is None:
+        return None
+    client_id = source.get("TAILSCALE_OAUTH_CLIENT_ID")
+    client_secret = source.get("TAILSCALE_OAUTH_CLIENT_SECRET")
+    if not (client_id.found and client_secret.found):
+        return None
+    answer = check(name, client_id.value, client_secret.value, "-")  # "-" = the OAuth client's own tailnet, as for the auth keys
+    if answer is None:
+        print(f"==> {name}: could not ask the tailnet whether it is bootstrapped (the OAuth client may lack the devices scope); using the secrets rule", file=out)
+    return answer
 
 
 def _pinned_known_hosts(config, name: str, ip: str, io: ServerIO, env, out, sleep) -> str:

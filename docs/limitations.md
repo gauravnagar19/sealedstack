@@ -65,6 +65,29 @@ Two further details. An app that shares its repository with another app receives
 key of the last one published. And the member's password and key live only in the
 encrypted state (never in the secret source or in git), like the Dokploy admin password.
 
+## Who may release an app (DR-11)
+
+By default an app's release is not gated: D-025 gives app CI the release, so anyone
+who can run the app repo's release workflow (a writer) can deploy to production.
+For one owner that is what you want. To narrow it, list the people under
+`release.approvers` in the app's `sealedstack.yaml`:
+
+```yaml
+release:
+  approvers: [you, co-owner]
+```
+
+The release job then refuses a run started by anyone else (`github.actor`), before
+it touches Dokploy. Know what this is and is not:
+
+- The list is read from the **default branch**, never from the branch the run was
+  started on, so choosing a branch cannot add yourself to it.
+- A writer who can push to the default branch can still edit the list (and the
+  workflow). Branch protection, which private repositories on GitHub Free do not
+  have, is what would stop that. So the list limits who may *start* a release; it
+  is not a boundary against a writer who is determined to bypass it.
+- It does not change what a releaser can do once running (see the threat model above).
+
 ## The state lock (D-062)
 
 CI write commands (`apply`, `up`, `restore`, `add-server`, `server sync`) and

@@ -66,8 +66,10 @@ def test_the_bot_row(tmp_path):
     assert none.status == "fail" and "fine-grained personal access token" in none.fix and "Pull requests: read and write" in none.fix
     token = by_id(preflight.check_bot(make_ctx(tmp_path / "b", secrets=EnvSource({}), env={"GH_TOKEN": "github_pat_example"})))
     assert token["forge.bot"].status == "ok" and "fine-grained token" in token["forge.bot"].detail
+    # the removed SEALEDSTACK_BOT_TOKEN_SET flag no longer stands in for a token
     flag = by_id(preflight.check_bot(make_ctx(tmp_path / "b2", secrets=EnvSource({}), env={"SEALEDSTACK_BOT_TOKEN_SET": "true"})))
-    assert flag["forge.bot"].status == "ok"
+    assert flag["forge.bot"].status == "fail"
+    assert "BOT_TOKEN_SET" not in (REPO / "engine" / "sealedstack" / "preflight.py").read_text(encoding="utf-8")
     # the workflow's built-in token (what GH_TOKEN falls back to) is not a bot identity
     builtin = by_id(preflight.check_bot(make_ctx(tmp_path / "d", secrets=EnvSource({}), env={"GH_TOKEN": "ghs_builtin"})))["forge.bot"]
     assert builtin.status == "fail" and "built-in token" in builtin.detail

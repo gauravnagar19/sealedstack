@@ -1,0 +1,36 @@
+---
+# Work out which interfaces face the WAN (DR-12). Included by tasks/main.yml after
+# `ip route show default` and `ip -6 route show default` ran; kept separate so the
+# parsing is tested with canned route output (tests/pytest/test_firewall_interfaces.py).
+#
+# IPv4 and IPv6 default routes can use different interfaces (a tunnel or a second
+# NIC carrying v6). The IPv6 DOCKER-USER block must drop on the interface the v6
+# default route uses, not only on the IPv4 one, or the host stays open over v6.
+
+- name: Record the IPv4 WAN interface
+  ansible.builtin.set_fact:
+    firewall_wan_if: "{{ firewall_default_route.stdout.split('dev ')[1].split()[0] }}"
+  when: "'dev ' in firewall_default_route.stdout"
+
+- name: Fall back to eth0 when there is no IPv4 default route
+  ansible.builtin.set_fact:
+    firewall_wan_if: eth0
+  when: firewall_wan_if is not defined
+
+- name: Record the IPv6 WAN interface
+  ansible.builtin.set_fact:
+    firewall_wan6_if: "{{ firewall_default_route6.stdout.split('dev ')[1].split()[0] }}"
+  when:
+    - firewall_default_route6 is defined
+    - "'dev ' in (firewall_default_route6.stdout | default(''))"
+
+- name: Use the IPv4 interface for IPv6 when there is no IPv6 default route
+  ansible.builtin.set_fact:
+    firewall_wan6_if: "{{ firewall_wan_if }}"
+  when: firewall_wan6_if is not defined
+
+- name: List every interface the IPv6 block must drop on
+  ansible.builtin.set_fact:
+    # The v6 default route's interface first; the v4 one is kept too (a host with two
+    # uplinks should not be reachable from either).
+    firewall_wan6_interfaces: "{{ [firewall_wan6_if, firewall_wan_if] | unique }}"

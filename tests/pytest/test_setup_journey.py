@@ -214,10 +214,13 @@ TS_ROUTES = [
 ]
 
 
-def stub(*, cloudflare=True, tailscale=True):
+def stub(*, cloudflare=True, tailscale=True, github=False):
     http = StubClient()
     for needle, route in (CF_ROUTES if cloudflare else []) + (TS_ROUTES if tailscale else []):
         http.add(needle, route)
+    if github:  # the bot token (GH_TOKEN) is checked against the GitHub API once it is present
+        http.add("api.github.com/user", Route(json_body={"login": "sealedstack-bot"}))
+        http.add("api.github.com/repos/", Route(json_body={"permissions": {"push": True}}))
     return http
 
 
@@ -273,8 +276,8 @@ def test_the_full_journey_setup_then_credentials_then_check_then_merge(tmp_path)
     servers_file.write_text(yaml.safe_dump(servers_doc))
     config = cfg.load_config(config_dir, REPO, {})
     source = EnvSource(SECRETS_ALL)
-    env2 = {**env1, **SECRETS_ALL, "SEALEDSTACK_BOT_TOKEN_SET": "true"}
-    http = stub()
+    env2 = {**env1, **SECRETS_ALL, "GH_TOKEN": "github_pat_example"}
+    http = stub(github=True)
     config = cfg.load_config(config_dir, REPO, {})
     rc = infraci.execute(res, event, f, config, check_runner(config_dir, env2, http, source, probe), env=env2, http=http, secrets=source)
     comments = f.comments[(SLUG, number)]
@@ -314,8 +317,8 @@ def test_check_is_idempotent_once_everything_is_filled_in(tmp_path):
     materialize(f, number, root)
     config_dir = root / "config"
     source = EnvSource(SECRETS_ALL)
-    env = {"SEALEDSTACK_CONFIG": str(config_dir), **SECRETS_ALL, "SEALEDSTACK_BOT_TOKEN_SET": "true"}
-    http = stub()
+    env = {"SEALEDSTACK_CONFIG": str(config_dir), **SECRETS_ALL, "GH_TOKEN": "github_pat_example"}
+    http = stub(github=True)
     res = infraci.Resolution(command="check", pr=number)
     for _ in range(2):
         config = cfg.load_config(config_dir, REPO, {})

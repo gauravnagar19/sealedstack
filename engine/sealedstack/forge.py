@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 import urllib.parse
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
@@ -185,10 +186,12 @@ class GitHubForge(Forge):
 
     api = "https://api.github.com"
 
-    def __init__(self, token: str, *, http: Optional[HttpClient] = None, seal=None):
+    def __init__(self, token: str, *, http: Optional[HttpClient] = None, seal=None, sleep=None, attempts: int = 3):
         self.token = token
         self.http = http or UrllibClient()
         self._seal = seal if seal is not None else libsodium_sealer()
+        self._sleep = sleep or time.sleep
+        self.attempts = max(1, attempts)
 
     @classmethod
     def from_env(cls, env: Optional[Mapping[str, str]] = None, *, http: Optional[HttpClient] = None) -> "GitHubForge":
@@ -211,11 +214,23 @@ class GitHubForge(Forge):
         return headers
 
     def _send(self, method: str, url: str, *, json_body=None, text: bool = False):
-        response = self.http.request(method, url, headers=self._headers(text), json_body=json_body)
-        if response.status >= 400:
-            path = url[len(self.api):] if url.startswith(self.api) else url
-            raise ForgeError(f"{method} {path} failed (HTTP {response.status})", status=response.status)
-        return response
+        """One API call with a small retry for the failures GitHub documents as transient (DR-9).
+
+        Retried, at most ``attempts`` times with backoff (``Retry-After`` honoured, capped):
+        HTTP 429, a 403 that is a secondary rate limit, and 5xx for requests that are safe to
+        repeat (never a POST: a timed-out create may have succeeded, and repeating it would
+        duplicate the issue or comment). Every error carries GitHub's own ``message`` and the
+        ``x-github-request-id`` (what GitHub support asks for)."""
+        path = url[len(self.api):] if url.startswith(self.api) else url
+        for attempt in range(1, self.attempts + 1):
+            response = self.http.request(method, url, headers=self._headers(text), json_body=json_body)
+            if response.status < 400:
+                return response
+            if attempt < self.attempts and retryable(method, response):
+                self._sleep(backoff_seconds(response, attempt))
+                continue
+            raise ForgeError(describe_failure(method, path, response), status=response.status)
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def _request(self, method: str, path: str, *, json_body=None, text: bool = False) -> object:
         response = self._send(method, f"{self.api}{path}", json_body=json_body, text=text)
@@ -462,6 +477,53 @@ class GitHubForge(Forge):
             if deployment_outcome(statuses) == "success":
                 return deployment_record(deployment)
         return {}
+
+
+def _header(response, name: str) -> str:
+    for key, value in (getattr(response, "headers", None) or {}).items():
+        if str(key).lower() == name.lower():
+            return str(value)
+    return ""
+
+
+def _github_message(response) -> str:
+    try:
+        data = response.json()
+    except Exception:  # noqa: BLE001 - not JSON (a proxy error page)
+        return ""
+    return str(data.get("message") or "") if isinstance(data, dict) else ""
+
+
+def retryable(method: str, response) -> bool:
+    """Is this failure worth repeating (DR-9)?"""
+    status = response.status
+    if status == 429:
+        return True
+    if status == 403:
+        message = _github_message(response).lower()
+        return "secondary rate limit" in message or "abuse detection" in message or bool(_header(response, "retry-after"))
+    return status >= 500 and status != 501 and method.upper() != "POST"
+
+
+def backoff_seconds(response, attempt: int) -> float:
+    """``Retry-After`` when GitHub sends it, else 1 s, 2 s, ...; never more than a minute."""
+    try:
+        wanted = float(_header(response, "retry-after"))
+    except ValueError:
+        wanted = 0.0
+    return min(wanted if wanted > 0 else float(2 ** (attempt - 1)), 60.0)
+
+
+def describe_failure(method: str, path: str, response) -> str:
+    """``GET /repos/o/r/issues failed (HTTP 403): <GitHub's message> [request id ABCD]``."""
+    text = f"{method} {path} failed (HTTP {response.status})"
+    message = " ".join(_github_message(response).split())[:300]
+    if message:
+        text += f": {message}"
+    request_id = _header(response, "x-github-request-id")
+    if request_id:
+        text += f" [x-github-request-id {request_id}]"
+    return text
 
 
 def next_link(headers) -> str:

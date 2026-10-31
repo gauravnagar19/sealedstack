@@ -1337,8 +1337,7 @@ def check_bot(ctx: CheckContext) -> list[Result]:
 
     token = ctx.env.get("GH_TOKEN") or ""
     kind = botpermissions.token_kind(token) if token else ""
-    flagged = ctx.env.get("SEALEDSTACK_BOT_TOKEN_SET", "").lower() == "true"
-    if (token and kind != "builtin") or flagged:
+    if token and kind != "builtin":
         label = {"fine-grained": "fine-grained token", "classic": "classic token"}.get(kind, "token")
         return [Result("forge.bot", "forge", "ok", detail=f"bot identity configured ({label} in GH_TOKEN)")]
     app_keys = ("SEALEDSTACK_BOT_APP_ID", "bot_private_key", "SEALEDSTACK_BOT_INSTALLATION_ID")
