@@ -131,7 +131,7 @@ ALLOWED_V6 = [ipaddress.ip_network(n) for n in (
     "fd00::/8",                                            # unique local
     "fe80::/10",                                           # link-local
 )]
-ALLOWED_EMAIL_DOMAINS = {"example.com", "example.org", "users.noreply.github.com"}
+ALLOWED_EMAIL_DOMAINS = {"example.com", "example.org", "users.noreply.github.com", "dokploy.invalid"}  # .invalid is reserved (RFC 2606): the scoped Dokploy members
 ALLOWED_EMAILS = {"noreply@anthropic.com"}
 ALLOWED_MACS = {"00:00:00:00:00:00"}
 

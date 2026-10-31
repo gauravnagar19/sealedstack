@@ -121,6 +121,11 @@
                 "password_secret": {
                   "type": "string",
                   "description": "Source key holding the root password (default ROOT_PASSWORD_<NAME>)."
+                },
+                "host_key_fingerprint": {
+                  "type": "string",
+                  "pattern": "^SHA256:[A-Za-z0-9+/]{43}=?$",
+                  "description": "Optional (D-064): the SHA256 fingerprint of the server's SSH host key as providers show it. When set, the first (password) login only goes to a server presenting that key. Not secret."
                 }
               }
             }

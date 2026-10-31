@@ -265,7 +265,13 @@ def test_the_full_journey_setup_then_credentials_then_check_then_merge(tmp_path)
     ready, total = map(int, re.search(r"Progress: (\d+) of (\d+) ready", first).groups())
     assert ready < total
 
-    # 2) the user adds the credentials, comments /sealedstack check
+    # 2) the user adds the credentials and pins the host key from the provider console
+    # (the checklist row says where), then comments /sealedstack check
+    servers_file = config_dir / "servers.yaml"
+    servers_doc = yaml.safe_load(servers_file.read_text())
+    servers_doc["servers"]["server-1"]["bootstrap"] = {"host_key_fingerprint": "SHA256:" + "A" * 43}
+    servers_file.write_text(yaml.safe_dump(servers_doc))
+    config = cfg.load_config(config_dir, REPO, {})
     source = EnvSource(SECRETS_ALL)
     env2 = {**env1, **SECRETS_ALL, "SEALEDSTACK_BOT_TOKEN_SET": "true"}
     http = stub()

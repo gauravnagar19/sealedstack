@@ -15,12 +15,14 @@ import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
 from . import config as config_mod
 from . import generated as generated_mod
+from . import hostkey as hostkey_mod
 from . import secrets as secrets_mod
 from . import tofu as tofu_mod
 
@@ -102,6 +104,7 @@ def up(
     io: Optional[ServerIO] = None,
     out=None,
     generated: Optional[generated_mod.Generated] = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> str:
     """Bootstrap a server; returns the redacted success message."""
     if not name:
@@ -169,8 +172,12 @@ def up(
     fd, vars_path = tempfile.mkstemp()
     os.close(fd)
     vars_file = Path(vars_path)
+    known_hosts = ""
     try:
         if not already_bootstrapped:
+            # D-064: with a pinned fingerprint, the first (password) login only goes to
+            # a server that presents exactly that host key.
+            known_hosts = _pinned_known_hosts(config, name, ip, io, env, out, sleep)
             write_vars(
                 vars_file,
                 {
@@ -180,6 +187,7 @@ def up(
                     "admin_ssh_keys_json": admin_ssh_keys_json,
                     "admin_ssh_identity": identity,
                     "ansible_password": root_password or env.get("ROOT_PASSWORD", ""),
+                    "bootstrap_known_hosts": known_hosts,
                 },
             )
             bootstrap_args = ["-e", f"@{vars_file}"]
@@ -226,6 +234,8 @@ def up(
     finally:
         vars_file.unlink(missing_ok=True)
         Path(identity).unlink(missing_ok=True)
+        if known_hosts:
+            Path(known_hosts).unlink(missing_ok=True)
 
     if already_bootstrapped:
         print(_checklist(name), file=out)
@@ -287,6 +297,34 @@ def sync(
     finally:
         vars_file.unlink(missing_ok=True)
         Path(identity).unlink(missing_ok=True)
+
+
+def _pinned_known_hosts(config, name: str, ip: str, io: ServerIO, env, out, sleep) -> str:
+    """Path of a 0600 ``known_hosts`` with the pinned key, or ``""`` when no fingerprint is configured."""
+    wanted = hostkey_mod.configured(config, name)
+    if not wanted:
+        print(
+            f"==> {name}: no bootstrap.host_key_fingerprint; the first login will not verify the server's host key (D-064)",
+            file=out,
+        )
+        return ""
+    hostkey_mod.normalise(wanted)  # a malformed fingerprint fails before anything is sent
+    scanned = ""
+    for attempt in range(4):  # a server that was just created may not answer yet
+        rc, scanned = io.capture(hostkey_mod.scan_command(ip), env)
+        if rc == 0 and hostkey_mod.parse_scan(scanned):
+            break
+        if attempt < 3:
+            sleep(5)
+    line = hostkey_mod.known_hosts_line(scanned, ip, wanted, name=f"'{name}'")
+    import tempfile
+
+    fd, path = tempfile.mkstemp(prefix="sealedstack-known-hosts-")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(line)
+    os.chmod(path, 0o600)
+    print(f"==> {name}: SSH host key matches the pinned fingerprint; host-key checking is on for the first login", file=out)
+    return path
 
 
 def _write_identity(private_key: str) -> str:

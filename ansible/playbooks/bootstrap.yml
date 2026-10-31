@@ -18,10 +18,17 @@
   become: true
   gather_facts: true
   vars:
-    # Scope the disabled host-key check to this play only: bootstrap always
-    # connects to a brand-new host over the public IP. It is NOT disabled
-    # globally in ansible.cfg (site.yml/inventory rely on known_hosts).
-    ansible_host_key_checking: false
+    # Bootstrap connects to a brand-new host over the public IP, so the host key
+    # is unknown. With a pinned fingerprint (servers.yaml bootstrap.host_key_fingerprint,
+    # D-064) the engine writes a known_hosts holding only the matching key and passes
+    # its path as bootstrap_known_hosts: checking is then ON and strict. Without it
+    # the check is off for this play only (it is NOT disabled globally in ansible.cfg;
+    # site.yml/inventory rely on known_hosts) and `check` warns.
+    bootstrap_known_hosts: ""
+    ansible_host_key_checking: "{{ bootstrap_known_hosts | length > 0 }}"
+    ansible_ssh_common_args: >-
+      {{ ('-o UserKnownHostsFile=' ~ bootstrap_known_hosts ~ ' -o StrictHostKeyChecking=yes')
+         if bootstrap_known_hosts | length > 0 else '' }}
     admin_user: "{{ lookup('env', 'ADMIN_USER') | default('admin', true) }}"
     # Operator public keys come from config (D-040), never the environment.
     admin_ssh_keys: "{{ (admin_ssh_keys_json | default('[]')) | from_json }}"
@@ -85,8 +92,10 @@
         # `admin_ssh_identity` is the CI key (a 0600 file); without it the
         # operator's agent or default keys are used (a local run).
         argv: >-
-          {{ ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
-              '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=10']
+          {{ ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10']
+             + (['-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' ~ bootstrap_known_hosts]
+                if bootstrap_known_hosts | length > 0
+                else ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=/dev/null'])
              + (['-o', 'IdentitiesOnly=yes', '-i', admin_ssh_identity] if (admin_ssh_identity | default('')) | length > 0 else [])
              + ['-p', (ansible_port | default(22)) | string,
                 admin_user ~ '@' ~ (ansible_host | default(inventory_hostname)), 'true'] }}

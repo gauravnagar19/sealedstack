@@ -30,6 +30,32 @@ hand. From
    SCP and confirm.
 4. The rest of the run happens over Tailscale.
 
+## Pin the server's SSH host key (recommended)
+
+The first login goes to the public IP and sends the root password. Nothing
+authenticates that connection yet, so anyone able to intercept it could capture
+the password. Pin the server's host key and the bootstrap only proceeds if the
+server presents exactly that key (D-064):
+
+1. Find the SHA256 fingerprint of the server's SSH host key. The provider's console
+   shows it for the machine (in the Netcup Server Control Panel, on the server's
+   details), or read it yourself from a network you trust:
+   `ssh-keygen -lf <(ssh-keyscan -t ed25519 <public-ip>)` prints `SHA256:...`.
+2. Put it in `config/servers.yaml`. It is not secret, so it belongs in config:
+
+   ```yaml
+   servers:
+     server-1:
+       provider: netcup
+       bootstrap:
+         host_key_fingerprint: "SHA256:AbC...43 characters...xYz"
+   ```
+
+With it, `up` scans the server, refuses to continue if the key differs (before
+any password is sent) and runs the bootstrap with strict host-key checking against
+only the matching key. Without it nothing changes, and `check` warns once per
+server that still needs its first login.
+
 ## Verify the origin is sealed
 
 From an external network, confirm these time out on the public IP:

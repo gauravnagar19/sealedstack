@@ -1302,7 +1302,28 @@ def check_servers(ctx: CheckContext) -> list[Result]:
                         docs="docs/netcup-firewall.md",
                     )
                 )
+            results.append(_host_key_row(ctx, name))
     return results
+
+
+def _host_key_row(ctx: CheckContext, name: str) -> Result:
+    """Is the first (password) login to a not-yet-bootstrapped machine host-key pinned? (D-064)"""
+    from . import hostkey
+
+    rid = f"servers.{name}.host_key"
+    wanted = hostkey.configured(ctx.config, name)
+    if wanted:
+        try:
+            hostkey.normalise(wanted)
+        except hostkey.HostKeyError as exc:
+            return Result(rid, "servers", "fail", detail=str(exc), fix="copy the SHA256 fingerprint from the provider console", docs="docs/netcup-firewall.md")
+        return Result(rid, "servers", "ok", detail=f"the first login to {name} is pinned to {wanted}")
+    return Result(
+        rid, "servers", "warn",
+        detail=f"bootstrap.host_key_fingerprint is not set for {name}: the first login sends the root password to the public IP without verifying the server's SSH host key",
+        fix=f"add `bootstrap: {{host_key_fingerprint: SHA256:...}}` for {name} in servers.yaml; {hostkey.WHERE}",
+        docs="docs/netcup-firewall.md",
+    )
 
 
 def check_bot(ctx: CheckContext) -> list[Result]:
