@@ -31,7 +31,7 @@ be refused on every other app's, and a key that is not scoped is never published
 | Read the admin key, the other apps' keys, or the Tailscale / Cloudflare / R2 credentials | No (none is in an app repo) |
 | Reach the servers over SSH | No (`tag:release` may use TCP 3000 only, D-057) |
 | Read or change **its own** app's env and compose, and deploy it | Yes, by design |
-| Make **its own** compose run with host access (privileged, `docker.sock`, host paths, host namespaces) | **Yes, and Dokploy cannot prevent it** (below) |
+| Make **its own** compose run with host access (privileged, `docker.sock`, host paths, host namespaces) | **Yes, and Dokploy cannot prevent it** (below; planned fix: D-065) |
 
 **What remains open.** Dokploy has no permission for "deploy this compose but do not
 change what it contains": a member who may deploy a compose may also change its
@@ -58,7 +58,8 @@ job would record a GitHub Deployment and the infra repo's CI (`tag:ci`) would pe
 the deploy, reading the compose from the app repo at the tagged commit through the
 lint. That needs a trigger path (the infra CI watching deployments, or an approved
 `/sealedstack release <app> <tag>` command) and is a follow-up, not part of this
-release. Until then: treat every writer of an app repo as an administrator of the
+release. **Planned: D-065**, to be built after the first live run and before anyone
+else gets write access to an app repo. Until then: treat every writer of an app repo as an administrator of the
 server that runs that app, and keep apps with different trust levels on different servers.
 
 Two further details. An app that shares its repository with another app receives the
