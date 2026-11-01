@@ -257,7 +257,7 @@ module "gate" {
 
 module "ingress" {
   source   = "../../modules/ingress_cloudflare"
-  for_each = local.use_cloudflare_ingress ? local.deployable : {}
+  for_each = { for k, v in local.deployable : k => v if local.use_cloudflare_ingress }
 
   providers = {
     cloudflare = cloudflare.this["default"]
@@ -274,7 +274,7 @@ module "ingress" {
 
 module "ingress_ngrok" {
   source   = "../../modules/ingress_ngrok"
-  for_each = local.use_ngrok ? local.deployable : {}
+  for_each = { for k, v in local.deployable : k => v if local.use_ngrok }
 
   providers = {
     ngrok = ngrok.this["default"]

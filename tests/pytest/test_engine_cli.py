@@ -229,7 +229,7 @@ def test_check_run_emits_json(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["tool"] == "sealedstack"
     assert payload["command"] == "check"
-    assert payload["engine_version"] == "0.6.12"
+    assert payload["engine_version"] == "0.6.13"
     assert isinstance(payload["results"], list) and payload["results"]
     assert rc in (0, 1)
 

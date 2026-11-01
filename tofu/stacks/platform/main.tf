@@ -176,7 +176,7 @@ locals {
 # docs/limitations.md for the manual scoping steps.
 
 resource "cloudflare_r2_bucket" "app" {
-  for_each = local.platform_is_dokploy ? local.object_storage : {}
+  for_each = { for k, v in local.object_storage : k => v if local.platform_is_dokploy }
   provider = cloudflare.this["default"]
 
   account_id = local.r2_account_id
@@ -231,7 +231,7 @@ resource "dokploy_ssh_key" "workers" {
 }
 
 resource "dokploy_server" "worker" {
-  for_each = local.platform_is_dokploy && length(dokploy_ssh_key.workers) > 0 ? local.workers : {}
+  for_each = { for k, v in local.workers : k => v if local.platform_is_dokploy && length(dokploy_ssh_key.workers) > 0 }
   provider = dokploy.this["default"]
 
   name        = each.key
@@ -314,7 +314,7 @@ resource "dokploy_web_server_backup" "panel" {
 
 module "app" {
   source   = "../../modules/platform_dokploy"
-  for_each = local.platform_is_dokploy ? local.deployable : {}
+  for_each = { for k, v in local.deployable : k => v if local.platform_is_dokploy }
 
   providers = {
     dokploy = dokploy.this["default"]
