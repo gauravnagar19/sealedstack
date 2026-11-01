@@ -152,3 +152,35 @@ def test_for_each_over_apps_filters_instead_of_choosing_between_two_object_types
     for stack in ("edge", "platform"):
         text = (root / stack / "main.tf").read_text(encoding="utf-8")
         assert not bad.search(text), stack
+
+
+# -- D-079: TLS floor and ciphers ---------------------------------------------------------------------------------------
+def test_the_zone_floor_is_tls_12_and_cbc_sha_suites_are_not_offered():
+    assert re.search(r'min_tls_version\s*=\s*try\(local\.stack\.edge_security\.min_tls_version, "1\.2"\)', EDGE_TF)
+    ciphers = EDGE_TF[EDGE_TF.index("tls_ciphers = ["):]
+    ciphers = ciphers[: ciphers.index("]")]
+    assert "GCM" in ciphers and "CHACHA20" in ciphers
+    assert "CBC" not in ciphers and not re.search(r"-SHA\"", ciphers)  # plain -SHA suites are CBC
+
+
+def test_tls_settings_are_zone_settings_gated_on_cloudflare_and_the_opt_out():
+    assert 'setting_id = "min_tls_version"' in EDGE_TF and 'setting_id = "ciphers"' in EDGE_TF
+    ciphers_block = EDGE_TF[EDGE_TF.index('resource "cloudflare_zone_setting" "ciphers"'):]
+    assert "local.restrict_ciphers" in ciphers_block[: ciphers_block.index("\n}\n")]
+
+
+def test_schema_accepts_only_real_tls_versions_and_hsts_is_in_the_header_rule():
+    schema = json.loads((Path(__file__).resolve().parents[2] / "schemas" / "stack.schema.json").read_text(encoding="utf-8"))
+    props = schema["properties"]["edge_security"]["properties"]
+    assert props["min_tls_version"]["enum"] == ["1.0", "1.1", "1.2", "1.3"] and props["min_tls_version"]["default"] == "1.2"
+    assert "min_tls_version" not in schema["properties"]["edge_security"]["required"]
+    block = _block("security_headers")
+    assert '"Strict-Transport-Security"' in block and "max-age=31536000" in block
+    code = "\n".join(line for line in block.splitlines() if not line.lstrip().startswith("#"))
+    assert "includeSubDomains" not in code and "preload" not in code
+
+
+def test_check_probes_zone_settings_permission():
+    from sealedstack import preflight
+
+    assert any(e[0] == "zone_settings_edit" and "Zone Settings: Edit" in e[1] for e in preflight.CF_PERMISSIONS)

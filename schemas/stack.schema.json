@@ -250,6 +250,17 @@
             "minLength": 1
           }
         },
+        "min_tls_version": {
+          "type": "string",
+          "enum": ["1.0", "1.1", "1.2", "1.3"],
+          "default": "1.2",
+          "description": "Lowest TLS version the Cloudflare zone accepts (D-079)."
+        },
+        "restrict_tls_ciphers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Offer only AEAD (GCM/ChaCha20) ECDHE suites; drops CBC-SHA (D-079)."
+        },
         "security_headers": {
           "type": "boolean",
           "default": true,

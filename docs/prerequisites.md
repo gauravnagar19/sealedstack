@@ -145,6 +145,7 @@ Zone scope (`example.com`):
 - Bot Management: Edit
 - Single Redirect: Edit
 - Transform Rules: Edit (response security headers, D-078)
+- Zone Settings: Edit (minimum TLS version and ciphers, D-079)
 
 `check` probes each permission and tells you exactly which one is missing. Your
 **Account ID** and **Zone** go into `config/stack.yaml`; they are not secrets.

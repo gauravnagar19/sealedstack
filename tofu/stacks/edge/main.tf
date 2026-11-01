@@ -177,6 +177,13 @@ locals {
   # Response security headers on every app hostname (D-078). Cloudflare's own
   # Access login page (the team domain) is not ours to change.
   security_headers_on = try(local.stack.edge_security.security_headers, true)
+  # TLS floor and cipher list for the zone (D-079). Qualys caps the grade at B while TLS 1.0/1.1 are on.
+  min_tls_version = try(local.stack.edge_security.min_tls_version, "1.2")
+  restrict_ciphers = try(local.stack.edge_security.restrict_tls_ciphers, true)
+  tls_ciphers = [
+    "ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-ECDSA-CHACHA20-POLY1305", "ECDHE-ECDSA-AES256-GCM-SHA384",
+    "ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-CHACHA20-POLY1305", "ECDHE-RSA-AES256-GCM-SHA384",
+  ]
   app_hostnames       = sort(distinct(flatten([for name, app in local.deployable : app.hostnames])))
   security_headers_expression = format(
     "(http.host in {%s})",
@@ -351,6 +358,24 @@ resource "cloudflare_ruleset" "redirects" {
   ]
 }
 
+resource "cloudflare_zone_setting" "min_tls_version" {
+  count    = local.use_cloudflare ? 1 : 0
+  provider = cloudflare.this["default"]
+
+  zone_id    = local.cloudflare_zone_id
+  setting_id = "min_tls_version"
+  value      = local.min_tls_version
+}
+
+resource "cloudflare_zone_setting" "ciphers" {
+  count    = local.use_cloudflare && local.restrict_ciphers ? 1 : 0
+  provider = cloudflare.this["default"]
+
+  zone_id    = local.cloudflare_zone_id
+  setting_id = "ciphers"
+  value      = local.tls_ciphers
+}
+
 # Headers only: no Content-Security-Policy, because a policy that is right for
 # one app (inline scripts, CDNs, frames) breaks another. Apps send their own.
 resource "cloudflare_ruleset" "security_headers" {
@@ -372,6 +397,8 @@ resource "cloudflare_ruleset" "security_headers" {
         "Permissions-Policy"     = { operation = "set", value = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()" }
         "X-Content-Type-Options" = { operation = "set", value = "nosniff" }
         "Referrer-Policy"        = { operation = "set", value = "strict-origin-when-cross-origin" }
+        # No includeSubDomains and no preload: both are hard to undo, and the zone has other subdomains.
+        "Strict-Transport-Security" = { operation = "set", value = "max-age=31536000" }
       }
     }
   }]

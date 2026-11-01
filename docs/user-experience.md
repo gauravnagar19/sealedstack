@@ -144,7 +144,7 @@ Progress: 3 of 9 ready. Fix the ❌ items below, then comment `/sealedstack chec
 | ✅ | Version pins match (sealedstack.version = workflow ref = 0.6.0) | |
 | ✅ | Domain `example.com` is on Cloudflare | |
 | ❌ | **Secret source: Bitwarden** | `BWS_ACCESS_TOKEN` is not set in this repo's `production` environment. → [How to create it (2 min)](…) |
-| ❌ | **CLOUDFLARE_API_TOKEN** (in Bitwarden, project `infra`) | not found. → [Create token with exactly these permissions](…): Account · Cloudflare Tunnel: Edit · Access: Apps and Policies: Edit · Workers R2 Storage: Edit · Zone · DNS: Edit · Zone WAF: Edit · Bot Management: Edit · Single Redirect: Edit · Transform Rules: Edit |
+| ❌ | **CLOUDFLARE_API_TOKEN** (in Bitwarden, project `infra`) | not found. → [Create token with exactly these permissions](…): Account · Cloudflare Tunnel: Edit · Access: Apps and Policies: Edit · Workers R2 Storage: Edit · Zone · DNS: Edit · Zone WAF: Edit · Bot Management: Edit · Single Redirect: Edit · Transform Rules: Edit · Zone Settings: Edit |
 | ❌ | **Tailscale OAuth client** (`TAILSCALE_OAUTH_CLIENT_ID` / `_SECRET`) | not found. → [Create client: scopes `policy_file`, `auth_keys`, `devices:core`](…) |
 | ⏳ | Tailscale policy imported into `config/tailscale-policy.hujson` | waits for the OAuth client |
 | — | Tailscale OIDC trust credential for app releases (`tag:release`) | not needed until an app has its own repository. → manual step in the Tailscale console, Settings → Trust credentials → Credential → OpenID Connect: Issuer GitHub; Subject `repo:you/<app>:environment:production`; Scope `auth_keys` write; Tag `tag:release`. Then put its Client ID and Audience in `config/stack.yaml` (D-057 amendment) |

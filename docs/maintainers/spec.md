@@ -361,7 +361,8 @@ The rule table, the same on every provider:
 | Access | Reusable policies from `stack.yaml`; one self-hosted app per gated hostname; a `catch-all` app on `*.<domain>`; a Bypass policy for `user_auth.webhook_paths` |
 | WAF | One custom rule, `block-scanner-paths`, built from `edge_security.blocked_paths` |
 | Bots | Bot Fight Mode and AI-bot blocking per `edge_security` |
-| Response headers | A response-header transform, `security-response-headers`, sets `Permissions-Policy`, `X-Content-Type-Options` and `Referrer-Policy` on every app hostname; off with `edge_security.security_headers: false` (D-078) |
+| Response headers | A response-header transform, `security-response-headers`, sets `Permissions-Policy`, `X-Content-Type-Options`, `Referrer-Policy` and HSTS on every app hostname; off with `edge_security.security_headers: false` (D-078) |
+| TLS | Zone settings `min_tls_version` (default 1.2) and `ciphers` (AEAD ECDHE suites only), from `edge_security.min_tls_version` / `restrict_tls_ciphers` (D-079) |
 | Redirects | A single redirect rule for each `redirects:` entry (`www` → apex, 301) |
 | R2 | `sealedstack-backups` bucket, plus one scoped token for each app's prefix |
 
@@ -452,7 +453,7 @@ Users install nothing locally: a browser, a Git hosting account and the credenti
 |---|---|---|
 | A domain on Cloudflare nameservers | ✅ | Tunnel hostnames and Access require a Cloudflare zone |
 | Cloudflare account (Free plan) with Zero Trust enabled | ✅ | Zero Trust and R2 may ask for a payment method even on free plans |
-| Cloudflare API token (`CLOUDFLARE_API_TOKEN`) | ✅ | Account: Cloudflare Tunnel Edit, Access Apps and Policies Edit, Workers R2 Storage Edit. Zone: DNS Edit, Zone WAF Edit, Bot Management Edit, Single Redirect Edit, Transform Rules Edit. The R2 S3 keys are derived from it (D-044, D-054): key id = the token's id, secret = SHA-256 of the token value; `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` are an optional override |
+| Cloudflare API token (`CLOUDFLARE_API_TOKEN`) | ✅ | Account: Cloudflare Tunnel Edit, Access Apps and Policies Edit, Workers R2 Storage Edit. Zone: DNS Edit, Zone WAF Edit, Bot Management Edit, Single Redirect Edit, Transform Rules Edit, Zone Settings Edit. The R2 S3 keys are derived from it (D-044, D-054): key id = the token's id, secret = SHA-256 of the token value; `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` are an optional override |
 | Tailscale account with MagicDNS on, and an OAuth client | ✅ | Scopes `policy_file`, `auth_keys`, `devices:core`. Server auth keys are minted from it; no long-lived API key |
 | `STATE_PASSPHRASE` | ✅ | At least 16 characters; encrypts the OpenTofu state (key name configurable in `secrets.keys`, default `STATE_PASSPHRASE`; the older key `state_passphrase` is read as a deprecated fallback) |
 | Bitwarden account plus a free organisation with Secrets Manager | ✅ | One **read-only** machine-account token, held in CI as `BWS_ACCESS_TOKEN` |
