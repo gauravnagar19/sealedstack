@@ -121,8 +121,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # publication hygiene checks history identities; gitleaks scans all of it
-          # The PR's own commits, not GitHub's synthetic merge commit (committer "GitHub
-          # <noreply@github.com>"), which the identity check rightly calls non-neutral.
+          # The PR's own commits, not GitHub's synthetic merge commit, whose committer is the
+          # GitHub web-flow identity that the publication identity check calls non-neutral.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/toolbox
         with:
