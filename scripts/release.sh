@@ -8,14 +8,14 @@
 #   2. picks the next version: one more than the highest of VERSION on origin/main and every vX.Y.Z tag
 #      (so a release another session cut a minute ago is never reused);
 #   3. writes VERSION and commits "release: X.Y.Z";
-#   4. runs the tests and `scripts/publish-check.sh --strict`;
+#   4. runs the tests, `tofu fmt -check` and `scripts/publish-check.sh --strict`;
 #   5. fetches again and refuses if origin/main moved meanwhile;
 #   6. pushes HEAD to main, pushes the lightweight tag vX.Y.Z, dispatches the release workflow and waits for it.
 #
 # --dry-run prints the version and the commits that would ship, changing nothing.
 # --yes skips the confirmation before the push. --no-wait leaves the release run to finish on its own.
 #
-# Overrides (mostly for tests): RELEASE_TEST_CMD, RELEASE_CHECK_CMD, RELEASE_REMOTE (default origin),
+# Overrides (mostly for tests): RELEASE_TEST_CMD, RELEASE_FMT_CMD, RELEASE_CHECK_CMD, RELEASE_REMOTE (default origin),
 # RELEASE_WORKFLOW (default release.yml).
 set -euo pipefail
 
@@ -80,6 +80,17 @@ elif docker image inspect sealedstack-tests:dev >/dev/null 2>&1; then
     python -m pytest -q -p no:cacheprovider tests/pytest
 else
   PYTHONPATH="$here/engine" python3 -m pytest -q -p no:cacheprovider tests/pytest
+fi
+
+# CI runs `tofu fmt -check`; a misaligned local cost release 0.6.15 a red CI run, so run it here too.
+if [[ -n "${RELEASE_FMT_CMD:-}" ]]; then
+  bash -c "$RELEASE_FMT_CMD"
+elif command -v tofu >/dev/null 2>&1; then
+  tofu fmt -check -recursive tofu
+elif docker image inspect sealedstack-toolbox:dev >/dev/null 2>&1; then
+  docker run --rm -v "$here":/repo -w /repo sealedstack-toolbox:dev tofu fmt -check -recursive tofu
+else
+  echo "release: warning: no tofu and no sealedstack-toolbox:dev image, skipping 'tofu fmt -check'" >&2
 fi
 bash -c "${RELEASE_CHECK_CMD:-scripts/publish-check.sh --strict}"
 

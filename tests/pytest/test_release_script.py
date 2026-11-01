@@ -12,8 +12,8 @@ REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "release.sh"
 
 
-IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
-            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
 
 
 def git(cwd, *args, check=True):
@@ -50,8 +50,8 @@ def world(tmp_path):
     return {"origin": origin, "work": work, "log": log, "path": f"{bin_dir}:{os.environ['PATH']}", "tmp": tmp_path}
 
 
-def release(w, *args, tests="true", checks="true"):
-    env = {**os.environ, **IDENTITY, "PATH": w["path"], "RELEASE_TEST_CMD": tests, "RELEASE_CHECK_CMD": checks}
+def release(w, *args, tests="true", checks="true", fmt="true"):
+    env = {**os.environ, **IDENTITY, "PATH": w["path"], "RELEASE_TEST_CMD": tests, "RELEASE_FMT_CMD": fmt, "RELEASE_CHECK_CMD": checks}
     return subprocess.run(["bash", "scripts/release.sh", *args], cwd=w["work"], env=env, text=True, capture_output=True)
 
 
@@ -113,6 +113,13 @@ def test_a_failing_publication_check_stops_before_any_push(world):
     assert out.returncode != 0 and "v0.6.15" not in origin_tags(world)
 
 
+def test_a_failing_tofu_fmt_check_stops_before_any_push(world):
+    """0.6.15 went out with a misaligned tofu file and CI went red."""
+    out = release(world, "--yes", "--no-wait", fmt="exit 1")
+    assert out.returncode != 0 and "v0.6.15" not in origin_tags(world)
+    assert not world["log"].exists()
+
+
 def test_main_moving_while_the_checks_run_aborts_and_keeps_the_local_commit(world):
     other = world["tmp"] / "other"
     git(world["tmp"], "clone", "-q", str(world["origin"]), str(other))
@@ -147,7 +154,7 @@ def test_a_version_that_already_exists_is_refused(world):
 
 
 def test_the_confirmation_can_decline(world):
-    env = {**os.environ, **IDENTITY, "PATH": world["path"], "RELEASE_TEST_CMD": "true", "RELEASE_CHECK_CMD": "true"}
+    env = {**os.environ, **IDENTITY, "PATH": world["path"], "RELEASE_TEST_CMD": "true", "RELEASE_FMT_CMD": "true", "RELEASE_CHECK_CMD": "true"}
     out = subprocess.run(["bash", "scripts/release.sh", "--no-wait"], cwd=world["work"], env=env, input="n\n",
                          text=True, capture_output=True)
     assert out.returncode != 0 and "v0.6.15" not in origin_tags(world)
