@@ -75,6 +75,7 @@ class Env:
         self.source = FakeSource(CREDS if data is None else data)
         self.http = FakeNetcup()
         self.cleared, self.removed_nodes, self.probes, self.out = [], [], [], io.StringIO()
+        self.opened = []
         self._probe, self._removed = probe, removed
 
     def go(self, *args, http=None):
@@ -84,6 +85,7 @@ class Env:
             forget_progress=lambda: self.cleared.append(True),
             remove_node=lambda name, cid, sec: (self.removed_nodes.append(name), self._removed)[1],
             tcp_probe=lambda host, port, timeout: (self.probes.append((host, port)), self._probe)[1],
+            open_ssh=lambda: self.opened.append(True),
         )
 
     @property
@@ -379,3 +381,20 @@ def test_the_bootstrap_play_removes_the_first_boot_sshd_drop_in_before_hardening
     assert reinstall.BOOTSTRAP_DROPIN in play
     remove, harden = play.index("Remove the first-boot sshd drop-in"), play.index("Harden sshd before anything else")
     assert remove < harden
+
+
+def test_after_the_wipe_tcp_22_is_opened_on_the_provider_firewall_before_waiting_for_ssh(tmp_path):
+    env = Env(tmp_path)
+    assert env.go("--name", "web-1", "--confirm", "web-1") == 0
+    assert env.opened == [True]
+
+
+def test_a_failing_firewall_call_is_a_warning_the_wipe_still_counts(tmp_path):
+    env = Env(tmp_path)
+
+    def broken():
+        raise RuntimeError("firewall API down")
+
+    rc = reinstall.run(env.config, {}, ["--name", "web-1", "--confirm", "web-1"], source=env.source, http=env.http, out=env.out,
+                       sleep=lambda s: None, forget_progress=lambda: None, remove_node=lambda *a: 0, tcp_probe=lambda *a: True, open_ssh=broken)
+    assert rc == 0 and "could not open TCP 22" in env.text

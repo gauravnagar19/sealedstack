@@ -120,16 +120,10 @@ resource "dokploy_compose" "connector" {
   raw            = { compose_file = local.connector_compose }
 }
 
-resource "dokploy_environment_variables" "connector" {
-  for_each = local.has_connector ? toset(var.servers) : toset([])
-
-  compose_id = dokploy_compose.connector[each.key].id
-  variables = var.connector_type == "ngrok" ? {
-    NGROK_AUTHTOKEN = var.connector_token
-    } : {
-    TUNNEL_TOKEN = var.connector_token
-  }
-}
+# The connector's token (TUNNEL_TOKEN / NGROK_AUTHTOKEN) is NOT set here. The provider's `dokploy_compose` update clears the
+# compose env on every apply, so a `dokploy_environment_variables` resource for it was wiped right after being written and
+# cloudflared started with a blank token (first live run, error 1033). The engine's `connector` phase owns that field: it
+# sets the token after each platform apply and deploys the connector when its tunnel is not connected (D-073).
 
 # --- managed database (spec section 11, D-018) ------------------------------
 

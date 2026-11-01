@@ -339,8 +339,7 @@ module "app" {
     lookup(local.env, each.key, {}),
     lookup(local.object_storage_vars, each.key, {}),
   )
-  connector_token = lookup(local.edge.connector_tokens, each.key, "")
-  connector_type  = try(local.edge.ingress_type, "cloudflare")
+  connector_type = try(local.edge.ingress_type, "cloudflare")
 
   database                 = try(local.databases[each.key], null)
   external_database        = local.external_databases[each.key]

@@ -7,6 +7,20 @@ is filled in from the SCP API docs, or, while that file is absent,
 hand. From
 [design spec §7.4, for maintainers](maintainers/spec.md#74-provider-firewall-compute-slot).
 
+## Automatic mode (recommended)
+
+When `NETCUP_REFRESH_TOKEN` is in the secret source and the server has an `external_id`
+([Netcup reinstall](netcup-reinstall.md#what-you-set-up-once)), sealedstack applies this rule table for you through the
+Server Control Panel API and you skip the manual steps below:
+
+- `up` opens TCP 22 before the first login of a bootstrap and closes it after the baseline.
+- `reinstall` opens TCP 22 again after the wipe.
+- It keeps one policy called `sealedstack` and attaches only that (plus Netcup's own, such as the SMTP block). A policy you made
+  yourself is detached from the server, not deleted, and the run says so.
+- Preview it any time with the `netcupfw` module's `--dry-run` (it prints the plan and changes nothing).
+
+Without the token, `up` prints the table and waits, as before.
+
 ## Rule table (the same on every provider)
 
 | Direction | Proto | Src port | Dst port | Action | Note |

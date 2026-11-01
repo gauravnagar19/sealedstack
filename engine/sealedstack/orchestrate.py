@@ -72,6 +72,7 @@ def phases(
         return prefix + [
             Phase("edge-apply", _mod("edge", "apply")),
             Phase("platform-apply", _mod("platform", "apply")),
+            Phase("connector", _mod("connector")),
             Phase("post-apply", _mod("postapply")),
             Phase("publish", _mod("publishsettings")),
         ]
@@ -88,6 +89,7 @@ def phases(
             # Create the Dokploy admin + API key through its API (over the tailnet).
             Phase("dokploy-bootstrap", _mod("dokploybootstrap"), up_only=True),
             Phase("platform-apply", _mod("platform", "apply")),
+            Phase("connector", _mod("connector")),
             Phase("post-apply", _mod("postapply")),
             Phase("publish", _mod("publishsettings")),
             Phase("status", _py(code_root, "status.py")),

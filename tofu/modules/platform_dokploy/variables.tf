@@ -79,12 +79,6 @@ variable "environment_variables" {
   sensitive   = true
 }
 
-variable "connector_token" {
-  description = "Cloudflare tunnel token for this app."
-  type        = string
-  sensitive   = true
-}
-
 variable "connector_image" {
   description = "Pinned cloudflared image (D-013)."
   type        = string

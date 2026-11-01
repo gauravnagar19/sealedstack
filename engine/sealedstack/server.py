@@ -64,6 +64,21 @@ def _default_io() -> ServerIO:
     return ServerIO(run=run, capture=capture, prompt=prompt, tailnet_node=tailnet_node)
 
 
+def managed_firewall(config, source, provider: str, name: str):
+    """The provider-firewall function for this server when sealedstack can drive it through an API, else ``None``.
+
+    Netcup: when the Netcup refresh token is in the secret source and the server has an ``external_id`` (D-074). Anything else
+    keeps the manual steps (print the rule table, wait for the operator)."""
+    if provider != "netcup":
+        return None
+    spec = (config.servers.get("servers") or {}).get(name) or {}
+    if not spec.get("external_id") or not tofu_mod.optional(source, config, "netcup_refresh_token"):
+        return None
+    from . import netcupfw
+
+    return lambda ssh, out, **kw: netcupfw.apply(config, dict(kw.get("env") or {}), name, ssh=ssh, source=source, out=out)
+
+
 def ansible_env(env: Mapping[str, str], code_root: Path) -> dict:
     """``env`` plus the Ansible settings that point at the engine's own tree.
 
@@ -125,6 +140,7 @@ def up(
     out=None,
     generated: Optional[generated_mod.Generated] = None,
     sleep: Callable[[float], None] = time.sleep,
+    firewall: Optional[Callable[..., bool]] = None,
 ) -> str:
     """Bootstrap a server; returns the redacted success message."""
     if not name:
@@ -187,6 +203,10 @@ def up(
     import tempfile
 
     auth_key = ""
+    drive_firewall = firewall if firewall is not None else managed_firewall(config, source, provider, name)
+    if not already_bootstrapped and drive_firewall is not None:
+        print(f"==> {name}: opening TCP 22 on the provider firewall for the first login", file=out)
+        drive_firewall("open", out, env=env)
     if not already_bootstrapped:
         auth_key = _capture_required(
             io,
@@ -281,6 +301,11 @@ def up(
         print(_checklist(name), file=out)
         return f"sealedstack: server '{name}' is up"
     firewall_mode = registry_value(code_root, "compute", provider, "firewall", "manual")
+    if drive_firewall is not None:
+        print(f"==> {name}: applying the provider firewall rule table and closing TCP 22", file=out)
+        drive_firewall("closed", out, env=env)
+        print(_checklist(name), file=out)
+        return f"sealedstack: server '{name}' is up"
     if not creates_server(code_root, provider) and firewall_mode in ("native", "api"):
         print(f"==> applying provider firewall for {name} ({firewall_mode})", file=out)
         rc = io.run([sys.executable, "-m", "sealedstack.compute", name, "apply"], env)

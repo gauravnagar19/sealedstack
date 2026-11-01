@@ -95,7 +95,7 @@ def _call(http: HttpClient, token: str, method: str, path: str, **kwargs):
 
 
 def _json(response, what: str):
-    if response.status not in (200, 202):
+    if not 200 <= response.status < 300:  # 201 for a created resource, 202 for a started task
         detail = response.text.strip().replace("\n", " ")[:200]
         raise ReinstallError(f"Netcup API: {what} failed (HTTP {response.status}) {detail}".rstrip())
     return response.json()
@@ -287,16 +287,17 @@ def run(
     forget_progress: Optional[Callable[[], None]] = None,
     remove_node: Optional[Callable[[str, str, str], Optional[int]]] = None,
     tcp_probe: Callable[[str, int, float], bool] = _default_probe,
+    open_ssh: Optional[Callable[[], None]] = None,
 ) -> int:
     out = out if out is not None else sys.stdout
     try:
-        return _run(config, env, argv, source, http or UrllibClient(), out, sleep, forget_progress, remove_node, tcp_probe)
+        return _run(config, env, argv, source, http or UrllibClient(), out, sleep, forget_progress, remove_node, tcp_probe, open_ssh)
     except config_mod.ConfigError as exc:
         print(f"sealedstack: {exc}", file=out)
         return 1
 
 
-def _run(config, env, argv, source, http, out, sleep, forget_progress, remove_node, tcp_probe) -> int:
+def _run(config, env, argv, source, http, out, sleep, forget_progress, remove_node, tcp_probe, open_ssh=None) -> int:
     args = parse_args(argv)
     name = args.name_flag or args.name or ""
     if not name:
@@ -381,6 +382,7 @@ def _run(config, env, argv, source, http, out, sleep, forget_progress, remove_no
             "Replace it with the fingerprint the Server Control Panel now shows (or remove the line) before running `up`.",
             file=out,
         )
+    _open_ssh(config, env, name, source, http, out, open_ssh)
     ip = _secret_value(source, config.bootstrap_secrets(name)[0])
     if ip:
         if _wait_for_ssh(ip, tcp_probe, sleep, out):
@@ -389,6 +391,20 @@ def _run(config, env, argv, source, http, out, sleep, forget_progress, remove_no
             print("warning: port 22 did not answer in 10 minutes. Open TCP 22 in the Netcup firewall (docs/netcup-firewall.md) and check the server in the panel.", file=out)
     print(f"done. Next: run `sealedstack up` (it bootstraps '{name}' with the root password from the secret source).", file=out)
     return 0
+
+
+def _open_ssh(config, env, name, source, http, out, open_ssh) -> None:
+    """The first login of the next ``up`` goes to the public address, so TCP 22 has to be open on the provider firewall (D-074)."""
+    try:
+        if open_ssh is not None:
+            open_ssh()
+        else:
+            from . import netcupfw
+
+            netcupfw.apply(config, dict(env), name, ssh="open", source=source, http=http, out=out)
+    except Exception as exc:  # noqa: BLE001 - the wipe itself succeeded; say how to finish by hand
+        print(f"warning: could not open TCP 22 on the Netcup firewall automatically ({exc}); open it in the Server Control "
+              "Panel before running `up` (docs/netcup-firewall.md).", file=out)
 
 
 def _secret_value(source: secrets_mod.SecretSource, key: str) -> str:
