@@ -94,6 +94,41 @@ def sign_v4(
     return canonical_request, out
 
 
+def presign_v4(
+    method: str,
+    scheme_host: str,
+    canonical_uri: str,
+    *,
+    access_key: str,
+    secret_key: str,
+    region: str,
+    now: datetime,
+    expires: int,
+) -> str:
+    """A SigV4 query-string signed URL (S3 "presigned URL"): anyone holding it may do this one request until it expires.
+
+    The payload is ``UNSIGNED-PAYLOAD`` and only ``host`` is signed, as S3 expects for presigned GETs. Checked against the
+    published AWS example (GET examplebucket/test.txt, 2013-05-24) in the tests.
+    """
+    host = urllib.parse.urlparse(scheme_host).netloc
+    amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = now.strftime("%Y%m%d")
+    scope = f"{date_stamp}/{region}/s3/aws4_request"
+    params = {
+        "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+        "X-Amz-Credential": f"{access_key}/{scope}",
+        "X-Amz-Date": amz_date,
+        "X-Amz-Expires": str(int(expires)),
+        "X-Amz-SignedHeaders": "host",
+    }
+    query = "&".join(f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in sorted(params.items()))
+    canonical_request = "\n".join([method, canonical_uri, query, f"host:{host}\n", "host", "UNSIGNED-PAYLOAD"])
+    string_to_sign = "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, _sha256_hex(canonical_request.encode("utf-8"))])
+    signing_key = _hmac(_hmac(_hmac(_hmac(f"AWS4{secret_key}".encode(), date_stamp), region), "s3"), "aws4_request")
+    signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{scheme_host.rstrip('/')}{canonical_uri}?{query}&X-Amz-Signature={signature}"
+
+
 class S3Client:
     def __init__(
         self,
@@ -123,6 +158,11 @@ class S3Client:
 
     def url(self, key: str) -> str:
         return f"{self.endpoint}{self.path(key)}"
+
+    def presign_get(self, key: str, expires: int = 900) -> str:
+        """A read-only URL for one object, valid ``expires`` seconds (the server fetches a backup with it, D-085)."""
+        return presign_v4("GET", self.endpoint, self.path(key), access_key=self.access_key, secret_key=self.secret_key,
+                          region=self.region, now=self._clock(), expires=expires)
 
     def _request(self, method: str, key: str, *, body: bytes = b"", extra: Optional[Mapping[str, str]] = None) -> Response:
         _, headers = sign_v4(

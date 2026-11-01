@@ -34,6 +34,11 @@ ARG BWS_SHA256_AMD64=f59ee150e42b82128d437087e9bac920053c6bfddcb960d20ce9386e5ac
 ARG BWS_SHA256_ARM64=eb0f1ae61d1c3b74244d2841233276e05c77e8be4da197ed90fc6248387005e1
 ARG SOPS_SHA256_AMD64=cd795109851c3a483bbaa66d15d19ddb2227ac0352b39e25d96b67d51edb6225
 ARG SOPS_SHA256_ARM64=bc946fef11dbe199587adac567037b69374c4202f928ca138443539efc85b357
+# The Docker CLI only (not the daemon): `backup check --where runner` starts its throwaway Postgres on the runner's Docker
+# through the socket the workflow mounts for that command (D-085). Checksums taken from download.docker.com over TLS.
+ARG DOCKER_CLI_VERSION=27.3.1
+ARG DOCKER_CLI_SHA256_AMD64=9b4f6fe406e50f9085ee474c451e2bb5adb119a03591f467922d3b4e2ddf31d3
+ARG DOCKER_CLI_SHA256_ARM64=4da6a6c7502b7ab561675a5ff5ac192d9b49d76d0b8847cf17ade246122279f4
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_NO_CACHE_DIR=1
@@ -79,12 +84,12 @@ RUN set -eux; \
 
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
-        amd64) just_arch=x86_64;  tofu_arch=amd64; bws_arch=x86_64; sops_arch=amd64; gl_arch=x64; \
+        amd64) just_arch=x86_64;  tofu_arch=amd64; bws_arch=x86_64; sops_arch=amd64; gl_arch=x64; docker_arch=x86_64; \
                just_sha="${JUST_SHA256_AMD64}"; tofu_sha="${TOFU_SHA256_AMD64}"; \
-               bws_sha="${BWS_SHA256_AMD64}"; sops_sha="${SOPS_SHA256_AMD64}" ;; \
-        arm64) just_arch=aarch64; tofu_arch=arm64; bws_arch=aarch64; sops_arch=arm64; gl_arch=arm64; \
+               bws_sha="${BWS_SHA256_AMD64}"; sops_sha="${SOPS_SHA256_AMD64}"; docker_sha="${DOCKER_CLI_SHA256_AMD64}" ;; \
+        arm64) just_arch=aarch64; tofu_arch=arm64; bws_arch=aarch64; sops_arch=arm64; gl_arch=arm64; docker_arch=aarch64; \
                just_sha="${JUST_SHA256_ARM64}"; tofu_sha="${TOFU_SHA256_ARM64}"; \
-               bws_sha="${BWS_SHA256_ARM64}"; sops_sha="${SOPS_SHA256_ARM64}" ;; \
+               bws_sha="${BWS_SHA256_ARM64}"; sops_sha="${SOPS_SHA256_ARM64}"; docker_sha="${DOCKER_CLI_SHA256_ARM64}" ;; \
         *) echo "unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac; \
     tmp="$(mktemp -d)"; \
@@ -116,6 +121,11 @@ RUN set -eux; \
     ( cd "${tmp}" && grep " ${gl}$" gitleaks.checksums | sha256sum -c - ); \
     tar -xzf "${tmp}/${gl}" -C "${tmp}"; \
     install -m 0755 "${tmp}/gitleaks" /usr/local/bin/gitleaks; \
+    \
+    curl -fsSL -o "${tmp}/docker.tgz" "https://download.docker.com/linux/static/stable/${docker_arch}/docker-${DOCKER_CLI_VERSION}.tgz"; \
+    verify "${tmp}/docker.tgz" "${docker_sha}"; \
+    tar -xzf "${tmp}/docker.tgz" -C "${tmp}" docker/docker; \
+    install -m 0755 "${tmp}/docker/docker" /usr/local/bin/docker; \
     \
     rm -rf "${tmp}"
 
