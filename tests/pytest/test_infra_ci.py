@@ -525,3 +525,14 @@ def test_the_caller_workflows_offer_plan_and_apply_and_every_trigger():
         text = (REPO / rel).read_text(encoding="utf-8")
         for trigger in ("pull_request:", "push:", "issue_comment:", "schedule:", "workflow_dispatch:"):
             assert trigger in text, (rel, trigger)
+
+
+def test_the_weekly_cron_runs_the_restore_drill_for_every_database(tmp_path):
+    """The docs promised a weekly drill; the workflow only had the hourly status cron (2026-11-01)."""
+    f, c = make_forge(), make_config(tmp_path)
+    event = ev("schedule")
+    event.payload = {"schedule": infraci.DRILL_CRON}
+    res = infraci.resolve(event, f, c)
+    assert (res.command, res.args, res.write) == ("drill", "all", False)
+    event.payload = {"schedule": "17 * * * *"}
+    assert infraci.resolve(event, f, c).command == "status"

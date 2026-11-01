@@ -44,6 +44,9 @@ from . import statusissue
 COMMENT_READ = ("check", "plan", "status", "drill", "drift", "verify")
 COMMENT_WRITE = ("up", "apply")
 
+# The second cron of the workflow template (weekly, Sunday 03:00 UTC) runs the restore drill for every app with a database.
+DRILL_CRON = "0 3 * * 0"
+
 # Commands that never touch a server or Dokploy, so the runner needs no tailnet.
 NO_MESH = frozenset({"setup", "add-app", "app add", "reinstall"})
 
@@ -238,6 +241,8 @@ def resolve(
     if name == "schedule":
         if config is None:
             return _skip("no config/ yet")
+        if (event.payload or {}).get("schedule") == DRILL_CRON:
+            return Resolution(command="drill", args="all", note="scheduled: weekly restore drill of every managed database")
         if drift:
             return Resolution(command="status", follow=["drift"], note="scheduled: status, then drift detection")
         return Resolution(

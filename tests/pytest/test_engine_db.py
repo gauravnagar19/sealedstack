@@ -176,3 +176,34 @@ def test_ssh_names_the_admin_user_and_the_ci_key_when_it_has_an_identity():
     assert ci[:3] == ["ssh", "-i", "/tmp/key"] and ["-l", "admin"] == ci[ci.index("-l"):ci.index("-l") + 2]
     assert ci[-2:] == ["server-1", "true"] and "BatchMode=yes" in ci and "IdentitiesOnly=yes" in ci
     assert dbmod.Transport().ssh_argv("server-1", "true") == ["ssh", "server-1", "true"]
+
+
+def _drill_all_db(tmp_path, urls, failing=()):
+    db = make_db(tmp_path)
+    db._urls = urls
+    ran = []
+
+    def fake_drill(app, table=""):
+        ran.append((app, table))
+        if app in failing:
+            raise dbmod.DbError("no backups")
+        return 0
+
+    db.drill = fake_drill
+    return db, ran
+
+
+def test_drill_all_drills_every_app_with_a_managed_database_and_fails_if_one_does(tmp_path):
+    db, ran = _drill_all_db(tmp_path, {"b": "postgres://x", "a": "postgres://y"})
+    db._output = lambda name: db._urls
+    assert db.drill_all("notes") == 0 and ran == [("a", "notes"), ("b", "notes")]
+    (tmp_path / "f").mkdir()
+    db, ran = _drill_all_db(tmp_path / "f", {"a": "u", "b": "u"}, failing=("a",))
+    db._output = lambda name: db._urls
+    assert db.drill_all() == 1 and [app for app, _ in ran] == ["a", "b"]  # one failure does not stop the others
+
+
+def test_drill_all_with_no_database_is_not_an_error(tmp_path):
+    db, ran = _drill_all_db(tmp_path, {})
+    db._output = lambda name: {}
+    assert db.drill_all() == 0 and ran == []

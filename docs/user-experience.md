@@ -73,6 +73,7 @@ on:
     types: [created]
   schedule:
     - cron: "17 * * * *"          # hourly status (+ drift if SEALEDSTACK_DRIFT_ENABLED=true)
+    - cron: "0 3 * * 0"           # weekly restore drill (Sunday 03:00 UTC)
 jobs:
   sealedstack:
     uses: <owner>/sealedstack/.github/workflows/infra.yml@v0.6.0

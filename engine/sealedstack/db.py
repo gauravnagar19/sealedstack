@@ -436,6 +436,25 @@ class Db:
         print(f"==> drill ok for {app}", file=self.out)
         return 0
 
+    def drill_all(self, table: str = "") -> int:
+        """Drill every app that has a managed database; non-zero when any of them fails (the weekly scheduled drill)."""
+        apps = sorted(self._output("database_urls"))
+        if not apps:
+            print("==> no app has a managed database; nothing to drill", file=self.out)
+            return 0
+        failed = []
+        for app in apps:
+            print(f"==> drill {app}", file=self.out)
+            try:
+                self.drill(app, table)
+            except DbError as exc:
+                print(f"sealedstack: {app}: {exc}", file=self.out)
+                failed.append(app)
+        if failed:
+            print(f"==> drill failed for: {', '.join(failed)}", file=self.out)
+            return 1
+        return 0
+
     def move_dump(self, app: str, from_server: str, to_server: str) -> bool:
         """Dump the app's DB and (best-effort) upload it for the restore path."""
         app_file = Path(self.config.code_root) / ".build" / "apps" / f"{app}.json"
@@ -513,7 +532,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         if action == "drill":
             if not rest:
                 raise DbError("usage: db drill <app> [table]")
-            return db.drill(rest[0], rest[1] if len(rest) > 1 else "")
+            table = rest[1] if len(rest) > 1 else ""
+            if rest[0] == "all" and "all" not in (config.apps.get("apps") or {}):
+                return db.drill_all(table)  # `drill all`: every app with a managed database
+            return db.drill(rest[0], table)
         if action == "move":
             if len(rest) < 3:
                 raise DbError("usage: db move <app> <from-server> <to-server>")
