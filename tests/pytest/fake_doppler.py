@@ -27,7 +27,8 @@ class FakeDoppler:
         self.requests: list = []
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self.endpoint = f"http://127.0.0.1:{self._server.server_address[1]}"
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        # poll_interval: shutdown() waits for the next poll, 0.5s by default, per fixture.
+        self._thread = threading.Thread(target=self._server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
 
     def __enter__(self):
         self._thread.start()
