@@ -75,6 +75,7 @@ def phases(
             Phase("connector", _mod("connector")),
             Phase("post-apply", _mod("postapply")),
             Phase("publish", _mod("publishsettings")),
+            Phase("verify", _mod("verify")),
         ]
 
     if command == "up":
@@ -93,6 +94,7 @@ def phases(
             Phase("post-apply", _mod("postapply")),
             Phase("publish", _mod("publishsettings")),
             Phase("status", _py(code_root, "status.py")),
+            Phase("verify", _mod("verify")),
         ]
         return result
 
