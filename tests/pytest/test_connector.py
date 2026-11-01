@@ -141,3 +141,11 @@ def test_the_tofu_module_no_longer_writes_the_connector_env():
     text = (REPO / "tofu" / "modules" / "platform_dokploy" / "main.tf").read_text(encoding="utf-8")
     code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
     assert 'dokploy_environment_variables" "connector"' not in code
+
+
+def test_the_connector_compose_ignores_env_drift_so_tofu_cannot_clear_the_token():
+    """Re-running `up` locally: tofu planned `- env = "TUNNEL_TOKEN=..." -> null` on every apply and restarted the connector."""
+    text = (REPO / "tofu" / "modules" / "platform_dokploy" / "main.tf").read_text(encoding="utf-8")
+    block = text[text.index('resource "dokploy_compose" "connector"'):]
+    block = block[: block.index("\n}\n") + 3]
+    assert "ignore_changes = [env]" in block

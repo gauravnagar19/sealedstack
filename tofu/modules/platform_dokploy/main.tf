@@ -118,6 +118,12 @@ resource "dokploy_compose" "connector" {
   compose_type   = "docker-compose"
   auto_deploy    = false
   raw            = { compose_file = local.connector_compose }
+
+  lifecycle {
+    # The engine's `connector` phase owns the env (the tunnel token, D-073). Without this, every apply saw the token as drift,
+    # set `env` back to null and redeployed the container with a blank token (found by re-running `up` locally).
+    ignore_changes = [env]
+  }
 }
 
 # The connector's token (TUNNEL_TOKEN / NGROK_AUTHTOKEN) is NOT set here. The provider's `dokploy_compose` update clears the
