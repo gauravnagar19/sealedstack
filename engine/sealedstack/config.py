@@ -209,6 +209,12 @@ class Config:
             str(boot.get("password_secret") or default_pw),
         )
 
+    def console_password_secret(self, name: str) -> str:
+        """The secret-source key of the root password for the provider console (D-077); ``CONSOLE_PASSWORD_<NAME>`` by default."""
+        spec = (self.servers.get("servers") or {}).get(name) or {}
+        boot = spec.get("bootstrap") or {}
+        return str(boot.get("console_password_secret") or f"CONSOLE_PASSWORD_{str(name).upper().replace('-', '_')}")
+
     def app_secret_key(self, app: str, name: str) -> str:
         """The source key for one app secret (default ``<app>.<NAME>``)."""
         spec = (self.apps.get("apps") or {}).get(app) or {}

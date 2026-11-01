@@ -64,6 +64,23 @@ def _default_io() -> ServerIO:
     return ServerIO(run=run, capture=capture, prompt=prompt, tailnet_node=tailnet_node)
 
 
+MIN_CONSOLE_PASSWORD = 12
+
+
+def console_password(config: config_mod.Config, source: secrets_mod.SecretSource, name: str) -> str:
+    """The root password for the provider console from the secret source, or ``""`` (D-077). A bad value is refused, never applied."""
+    key = config.console_password_secret(name)
+    found = source.get(key)
+    if not found.found:
+        return ""
+    value = found.value
+    if len(value) < MIN_CONSOLE_PASSWORD or "\n" in value or "\r" in value:
+        raise config_mod.ConfigError(
+            f"{key} must be at least {MIN_CONSOLE_PASSWORD} characters on one line; it is the root password for the provider console"
+        )
+    return value
+
+
 def managed_firewall(config, source, provider: str, name: str):
     """The provider-firewall function for this server when sealedstack can drive it through an API, else ``None``.
 
@@ -268,6 +285,7 @@ def up(
                 "dokploy_ssh_public_key": dokploy_ssh_public_key,
                 "admin_ssh_keys_json": admin_ssh_keys_json,
                 "ansible_ssh_private_key_file": identity,
+                "root_console_password": console_password(config, source, name),
             },
         )
         print(f"==> site {name} over Tailscale", file=out)
@@ -352,6 +370,7 @@ def sync(
                 "admin_ssh_keys_json": json.dumps([*config.admin_ssh_keys(), str(state["ci_ssh_public_key"])]),
                 "dokploy_ssh_public_key": str(state["dokploy_ssh_public_key"]),
                 "ansible_ssh_private_key_file": identity,
+                "root_console_password": console_password(config, source, name) if name else "",
             },
         )
         argv = ["ansible-playbook", "-i", str(Path(config.code_root) / "ansible" / "inventory.py")]

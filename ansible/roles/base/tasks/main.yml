@@ -92,3 +92,41 @@
         path: /etc/fstab
         line: "/swapfile none swap sw 0 0"
         state: present
+
+# D-077: the root password for the provider console (VNC). SSH logins as root and password logins stay off (bootstrap play);
+# this only decides what the console accepts, so the one-time bootstrap password stops being the key to the machine. The value
+# comes from the secret source through the 0600 vars file; a marker holding its SHA-256 keeps the run idempotent.
+- name: Set the root password for the provider console
+  when: (root_console_password | default('')) | length > 0
+  block:
+    - name: Create the sealedstack state directory
+      ansible.builtin.file:
+        path: /var/lib/sealedstack
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Read the marker of the console password last applied
+      ansible.builtin.slurp:
+        src: /var/lib/sealedstack/console-password.sha256
+      register: base_console_marker
+      failed_when: false
+
+    - name: Apply the console password
+      ansible.builtin.command: chpasswd
+      args:
+        stdin: "root:{{ root_console_password }}"
+      no_log: true
+      when: >-
+        (base_console_marker.content | default('') | b64decode | trim) != (root_console_password | hash('sha256'))
+      changed_when: true
+
+    - name: Record the console password marker
+      ansible.builtin.copy:
+        dest: /var/lib/sealedstack/console-password.sha256
+        content: "{{ root_console_password | hash('sha256') }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true

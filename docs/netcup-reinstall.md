@@ -16,6 +16,7 @@ providers create and destroy servers through OpenTofu.
 | `external_id` | `config/servers.yaml` | The server's id or `v22…` name from the Server Control Panel. |
 | `os` (optional) | `config/servers.yaml` | `ubuntu-24.04` (default), `debian-13`, `debian-12` and so on. Netcup names its images like `Debian 13.7.0 UEFI amd64`; sealedstack matches the OS and version, then picks the build that fits the server: plain OS images only (not `cloudimg` or other products), the server's own boot mode (UEFI or BIOS, required: a mismatch could not boot), its architecture, and the `minimal` variant. If one image is still not clear, the run lists them and you pass `--flavour <id>`. |
 | Root password | secret source: `ROOT_PASSWORD_<NAME>` | **You choose it**: at least 12 printable characters, no spaces. sealedstack cannot write to your secret source, so the new install is given exactly this password, and the next `up` logs in with it (D-061). |
+| Console password (optional) | secret source: `CONSOLE_PASSWORD_<NAME>` | What the Netcup console accepts for `root` once `up` has run, so the bootstrap password above stops being the key to the machine ([prerequisites](prerequisites.md)). |
 | Server IP | secret source: `SERVER_IP_<NAME>` | Unchanged by a reinstall. Used only to see when port 22 answers. |
 | Netcup refresh token | secret source: `NETCUP_REFRESH_TOKEN` | See below. |
 | Tailscale OAuth client | secret source (already there) | Needs the `devices:core` scope so the old tailnet node can be removed. Without it the run tells you to delete the node by hand. |
