@@ -18,7 +18,7 @@ surprised by it.
 | `.ansible-lint` | ansible-lint config | lint the playbooks/roles in CI |
 | `.pre-commit-config.yaml` | pre-commit hooks | run gitleaks + `tofu fmt` + YAML checks locally before commit |
 | `renovate.json` | Renovate bot config | opens PRs when pinned tools/providers/images go stale |
-| `.github/workflows/ci.yml` | CI | one job graph (D-083): lint + validate, pytest, `tofu fmt`/`validate`, docs build, reference app; resolves the toolbox once |
+| `.github/workflows/ci.yml` | CI | one job graph (D-083): lint + validate (+ Docker image checks), pytest, `tofu fmt`/`validate`, docs build; resolves the toolbox once |
 | `.github/workflows/drift.yml` | scheduled `tofu plan` | detects drift against the real accounts (needs repo secrets) |
 | `LICENSE` | Apache-2.0 | the open-source licence |
 
@@ -113,4 +113,4 @@ scripts/release.sh              # bump, test, push main and the tag, dispatch th
 
 `--minor` or `--version X.Y.Z` override the next patch number; `--yes` skips the confirmation. See D-080.
 
-The release workflow first waits for the `ci` run of that exact commit and refuses to build unless it succeeded (D-082). `scripts/release.sh` dispatches right after its push, so the gate waits for a run that is still going; a red run is fixed and the release dispatched again.
+The release workflow first waits for the `ci` run of that exact commit and refuses to build unless it succeeded (D-082). `scripts/release.sh` waits for that run itself after its push and only then tags and dispatches, so the gate normally finds it finished; a red run stops the script, is fixed, and the release is cut again.

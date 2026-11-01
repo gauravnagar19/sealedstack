@@ -10,13 +10,14 @@
 #   3. writes VERSION and commits "release: X.Y.Z";
 #   4. runs the tests, `tofu fmt -check` and `scripts/publish-check.sh --strict`;
 #   5. fetches again and refuses if origin/main moved meanwhile;
-#   6. pushes HEAD to main, pushes the lightweight tag vX.Y.Z, dispatches the release workflow and waits for it.
+#   6. pushes HEAD to main, waits for its ci run to pass, pushes the lightweight tag vX.Y.Z, dispatches the release
+#      workflow and waits for it.
 #
 # --dry-run prints the version and the commits that would ship, changing nothing.
 # --yes skips the confirmation before the push. --no-wait leaves the release run to finish on its own.
 #
 # Overrides (mostly for tests): RELEASE_TEST_CMD, RELEASE_FMT_CMD, RELEASE_CHECK_CMD, RELEASE_REMOTE (default origin),
-# RELEASE_WORKFLOW (default release.yml).
+# RELEASE_WORKFLOW (default release.yml), RELEASE_CI_WORKFLOW (default ci.yml), RELEASE_CI_START_TRIES (default 24), RELEASE_CI_POLL_SECONDS (default 5).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,7 +26,7 @@ remote="${RELEASE_REMOTE:-origin}"
 workflow="${RELEASE_WORKFLOW:-release.yml}"
 bump=patch version="" dry=0 yes=0 wait=1
 
-usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "release: $*" >&2; exit 1; }
 
 while [[ $# -gt 0 ]]; do
@@ -104,6 +105,22 @@ if (( yes == 0 )); then
 fi
 
 git push "$remote" HEAD:main
+
+# The release workflow refuses a commit whose ci run is not green (D-082) and would sit waiting for
+# a run still going, billing runner minutes while it does. Wait here instead, which costs nothing,
+# and tag and dispatch only once ci has passed. A red run leaves the release commit on main; fix it
+# and release again (the next number is taken from main).
+sha="$(git rev-parse HEAD)"
+ci_run=""
+for _ in $(seq 1 "${RELEASE_CI_START_TRIES:-24}"); do
+  ci_run="$(gh run list --workflow "${RELEASE_CI_WORKFLOW:-ci.yml}" --commit "$sha" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+  [[ -z "$ci_run" ]] || break
+  sleep "${RELEASE_CI_POLL_SECONDS:-5}"
+done
+[[ -n "$ci_run" ]] || die "no ci run started for $sha; main has the release commit. Check the Actions tab, then release again."
+echo "release: waiting for ci run $ci_run on $sha"
+gh run watch "$ci_run" --exit-status || die "ci failed for $sha; not tagging or dispatching. main has the release commit: fix ci, then release again."
+
 git tag "v$version"
 git push "$remote" "v$version"
 gh workflow run "$workflow" -f "version=$version"

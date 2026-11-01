@@ -45,13 +45,21 @@ def world(tmp_path):
     bin_dir.mkdir()
     log = tmp_path / "gh.log"
     gh = bin_dir / "gh"
-    gh.write_text(f'#!/bin/sh\necho "$@" >> {log}\n[ "$1 $2" = "run list" ] && echo 4242\nexit 0\n')
+    # GH_CI_FAILS makes `gh run watch` of the ci run fail; GH_NO_CI_RUN makes `gh run list --workflow ci.yml` find nothing.
+    gh.write_text(
+        f'#!/bin/sh\necho "$@" >> {log}\n'
+        '[ "$1 $2" = "run list" ] && [ -n "$GH_NO_CI_RUN" ] && [ "$4" = "ci.yml" ] && exit 0\n'
+        '[ "$1 $2" = "run list" ] && echo 4242\n'
+        '[ "$1 $2" = "run watch" ] && [ -n "$GH_CI_FAILS" ] && [ "$3" = "4242" ] && [ ! -f "$0.watched" ] && { touch "$0.watched"; exit 1; }\n'
+        'exit 0\n'
+    )
     gh.chmod(0o755)
     return {"origin": origin, "work": work, "log": log, "path": f"{bin_dir}:{os.environ['PATH']}", "tmp": tmp_path}
 
 
-def release(w, *args, tests="true", checks="true", fmt="true"):
-    env = {**os.environ, **IDENTITY, "PATH": w["path"], "RELEASE_TEST_CMD": tests, "RELEASE_FMT_CMD": fmt, "RELEASE_CHECK_CMD": checks}
+def release(w, *args, tests="true", checks="true", fmt="true", **extra_env):
+    env = {**os.environ, **IDENTITY, "PATH": w["path"], "RELEASE_TEST_CMD": tests, "RELEASE_FMT_CMD": fmt, "RELEASE_CHECK_CMD": checks,
+           "RELEASE_CI_START_TRIES": "1", "RELEASE_CI_POLL_SECONDS": "0", **extra_env}
     return subprocess.run(["bash", "scripts/release.sh", *args], cwd=w["work"], env=env, text=True, capture_output=True)
 
 
@@ -158,3 +166,28 @@ def test_the_confirmation_can_decline(world):
     out = subprocess.run(["bash", "scripts/release.sh", "--no-wait"], cwd=world["work"], env=env, input="n\n",
                          text=True, capture_output=True)
     assert out.returncode != 0 and "v0.6.15" not in origin_tags(world)
+
+
+def test_it_waits_for_ci_on_the_pushed_commit_before_tagging_and_dispatching(world):
+    out = release(world, "--yes", "--no-wait")
+    assert out.returncode == 0, out.stderr
+    calls = world["log"].read_text().splitlines()
+    sha = git(world["origin"], "rev-parse", "main").stdout.strip()
+    assert any(c.startswith("run list --workflow ci.yml --commit " + sha) for c in calls)
+    assert any(c.startswith("run watch 4242 --exit-status") for c in calls)
+    assert calls.index(next(c for c in calls if c.startswith("run watch"))) < calls.index(next(c for c in calls if c.startswith("workflow run")))
+
+
+def test_a_red_ci_run_stops_before_the_tag_and_the_dispatch(world):
+    out = release(world, "--yes", "--no-wait", GH_CI_FAILS="1")
+    assert out.returncode != 0 and "ci failed for" in out.stderr and "not tagging or dispatching" in out.stderr
+    assert "v0.6.15" not in origin_tags(world)
+    assert "workflow run" not in world["log"].read_text()
+    assert git(world["origin"], "show", "main:VERSION").stdout == "0.6.15\n"  # the release commit is on main, as the message says
+
+
+def test_no_ci_run_for_the_commit_stops_before_the_tag_and_the_dispatch(world):
+    out = release(world, "--yes", "--no-wait", GH_NO_CI_RUN="1")
+    assert out.returncode != 0 and "no ci run started for" in out.stderr
+    assert "v0.6.15" not in origin_tags(world)
+    assert "workflow run" not in world["log"].read_text()

@@ -18,7 +18,7 @@ def ci() -> dict:
 def test_the_pipeline_is_one_workflow_and_the_old_ones_are_gone():
     assert ci()["name"] == "ci"  # release.yml looks up the run by this file name (D-082)
     assert not (WORKFLOWS / "reference-app.yml").exists()
-    assert set(ci()["jobs"]) == {"prepare", "lint", "tests", "tofu", "docs", "reference-app"}
+    assert set(ci()["jobs"]) == {"prepare", "lint", "tests", "tofu", "docs"}
 
 
 def test_every_check_waits_for_prepare_and_toolbox_jobs_use_its_image():
@@ -74,7 +74,7 @@ def test_the_tofu_job_validates_in_the_toolbox_with_a_provider_cache_keyed_on_th
 
 
 # -- the change detection in `prepare` -------------------------------------------------------------
-def run_changes(tmp_path: Path, before_files: dict, after_files: dict, event="push", usable_base=True) -> dict:
+def run_changes(tmp_path: Path, before_files: dict, after_files: dict, event="push", usable_base=True, delete=()) -> dict:
     script = next(s for s in ci()["jobs"]["prepare"]["steps"] if s.get("id") == "changes")["run"]
     repo = tmp_path / "r"
     repo.mkdir(parents=True)
@@ -92,6 +92,8 @@ def run_changes(tmp_path: Path, before_files: dict, after_files: dict, event="pu
     for rel, text in after_files.items():
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
         (repo / rel).write_text(text)
+    for rel in delete:
+        (repo / rel).unlink()
     git("add", "-A")
     git("commit", "-q", "-m", "two")
     out = tmp_path / "out"
@@ -133,3 +135,21 @@ def test_lint_checks_out_the_pull_requests_own_commits_not_githubs_merge_commit(
     checkout = ci()["jobs"]["lint"]["steps"][0]
     assert checkout["with"]["fetch-depth"] == 0
     assert checkout["with"]["ref"] == "${{ github.event.pull_request.head.sha || github.sha }}"
+
+
+def test_the_docker_checks_are_steps_of_lint_gated_on_images_not_jobs_of_their_own():
+    steps = ci()["jobs"]["lint"]["steps"]
+    docker_steps = [st for st in steps if "docker " in st.get("run", "") and "in-toolbox" not in st.get("run", "")]
+    assert len(docker_steps) == 4  # tool image, reference app build, run, compose
+    for step in docker_steps:
+        assert step["if"] == "${{ needs.prepare.outputs.images == 'true' }}", step["name"]
+    # the tool image build is no longer part of `tests`
+    assert not any("docker build" in st.get("run", "") for st in ci()["jobs"]["tests"]["steps"])
+
+
+def test_removing_a_file_the_dockerfile_copies_still_runs_the_tool_image_build(tmp_path):
+    # editing a copied file cannot break COPY, so it does not run the Docker checks ...
+    assert run_changes(tmp_path, BASE, {"scripts/s.py": "t"})["images"] == "false"
+    # ... but deleting or renaming one can
+    assert run_changes(tmp_path / "d", BASE, {}, delete=["scripts/s.py"]) == {"docs": "false", "tofu": "true", "images": "true"}
+    assert run_changes(tmp_path / "e", BASE, {}, delete=["docs/a.md"])["images"] == "true"
