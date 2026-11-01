@@ -212,7 +212,9 @@ def render_deploy_compose(
         owner=registry.get("owner", ""),
         repo=slug,
     )
-    rendered = yaml.safe_dump(lint_compose.strip_build(compose), sort_keys=False)
+    rendered = yaml.safe_dump(
+        lint_compose.attach_platform_network(lint_compose.strip_build(compose), manifest), sort_keys=False
+    )
     return rendered, problems
 
 

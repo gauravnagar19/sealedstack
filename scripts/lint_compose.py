@@ -109,3 +109,39 @@ def strip_build(compose: dict | None) -> dict:
         if isinstance(spec, dict):
             spec.pop("build", None)
     return out
+
+
+PLATFORM_NETWORK = "dokploy-network"
+
+
+def attach_platform_network(compose: dict | None, manifest: dict | None) -> dict:
+    """Join every service that reads a platform-provided variable (``needs.*.env``, e.g. DATABASE_URL) to dokploy-network.
+
+    The managed database is a Swarm service on dokploy-network by name. Dokploy attaches only the service that has the
+    domain to that network, so an API that reads DATABASE_URL could not resolve the host (live run 2026-11-01:
+    ``getaddrinfo ENOTFOUND``). Services keep their default network too, so they still reach each other.
+    """
+    out = copy.deepcopy(compose or {})
+    names = {
+        str(spec["env"])
+        for spec in ((manifest or {}).get("needs") or {}).values()
+        if isinstance(spec, dict) and spec.get("env")
+    }
+    attached = False
+    for spec in _services(out).values():
+        if not isinstance(spec, dict) or not any(name in str(spec.get("environment") or "") + str(spec.get("env_file") or "") for name in names):
+            continue
+        nets = spec.get("networks")
+        if nets is None:
+            spec["networks"] = ["default", PLATFORM_NETWORK]
+        elif isinstance(nets, list):
+            if PLATFORM_NETWORK not in nets:
+                nets.append(PLATFORM_NETWORK)
+        elif isinstance(nets, dict):
+            nets.setdefault(PLATFORM_NETWORK, None)
+        attached = True
+    if attached:
+        top = out.setdefault("networks", {})
+        if isinstance(top, dict):
+            top.setdefault(PLATFORM_NETWORK, {"external": True})
+    return out
