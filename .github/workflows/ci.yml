@@ -137,6 +137,9 @@ jobs:
       - name: gitleaks (full history)
         # A direct full-history scan (no push-range logic, which breaks on a
         # rewritten root commit). publish-check --strict also scans the archive.
+        # The script fails when gitleaks could not read the repository or scanned
+        # fewer commits than exist: a bare `gitleaks detect` printed "no leaks
+        # found" and exited 0 on git's "dubious ownership" refusal.
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo sealedstack-toolbox:ci \
-            gitleaks detect --redact -v --no-banner
+            scripts/gitleaks-history.sh /repo
