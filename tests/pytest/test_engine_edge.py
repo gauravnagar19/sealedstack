@@ -185,3 +185,33 @@ def test_check_probes_zone_settings_permission():
     from sealedstack import preflight
 
     assert any(e[0] == "zone_settings_edit" and "Zone Settings: Edit" in e[1] for e in preflight.CF_PERMISSIONS)
+
+
+def _plan(tmp_path, monkeypatch, output_runner):
+    config = make_config(tmp_path)
+    monkeypatch.setattr(edge.tofu_mod, "ready", lambda *a, **k: None)
+    rc = edge.run(config, {"BWS_ACCESS_TOKEN": "t"}, "plan", source=FakeSource(REQUIRED),
+                  runner=lambda argv: 0, output_runner=output_runner)
+    return rc, tmp_path / ".build" / "edge-outputs.json"
+
+
+def test_edge_plan_hands_the_platform_plan_the_outputs_of_the_last_apply(tmp_path, monkeypatch):
+    """Live run 2026-11-01: a PR plan had no backup endpoint, so it listed the existing backup resources as destroyed."""
+    raw = json.dumps({"backup": {"value": {"bucket": "b", "endpoint": "https://e", "region": "auto"}, "type": "object", "sensitive": False}})
+    rc, path = _plan(tmp_path, monkeypatch, lambda argv: (0, raw))
+    assert rc == 0 and json.loads(path.read_text())["backup"]["endpoint"] == "https://e"
+
+
+def test_edge_plan_without_an_applied_edge_is_not_an_error_and_writes_nothing(tmp_path, monkeypatch):
+    for index, answer in enumerate(((0, "{}"), (1, ""))):
+        (tmp_path / str(index)).mkdir()
+        rc, path = _plan(tmp_path / str(index), monkeypatch, lambda argv, a=answer: a)
+        assert rc == 0 and not path.exists()
+
+
+def test_edge_apply_still_fails_when_the_outputs_cannot_be_read(tmp_path, monkeypatch):
+    config = make_config(tmp_path)
+    monkeypatch.setattr(edge.tofu_mod, "ready", lambda *a, **k: None)
+    rc = edge.run(config, {"BWS_ACCESS_TOKEN": "t"}, "apply", source=FakeSource(REQUIRED),
+                  runner=lambda argv: 0, output_runner=lambda argv: (1, ""))
+    assert rc == 1

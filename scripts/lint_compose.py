@@ -114,6 +114,33 @@ def strip_build(compose: dict | None) -> dict:
 PLATFORM_NETWORK = "dokploy-network"
 
 
+def database_consumers(compose: dict | None, manifest: dict | None) -> list[str]:
+    """Services that read a platform-provided variable (``needs.*.env``, e.g. DATABASE_URL)."""
+    names = {
+        str(spec["env"])
+        for spec in ((manifest or {}).get("needs") or {}).values()
+        if isinstance(spec, dict) and spec.get("env")
+    }
+    found = []
+    for service, spec in _services(compose or {}).items():
+        if isinstance(spec, dict) and any(n in str(spec.get("environment") or "") + str(spec.get("env_file") or "") for n in names):
+            found.append(service)
+    return found
+
+
+def shared_network_services(compose: dict | None, manifest: dict | None, web: dict | None = None) -> set[str]:
+    """Service names an app puts on dokploy-network: its web service (Dokploy joins it) and the database consumers.
+
+    Every container on that network answers to its service name, so two apps that both publish ``api`` there can be
+    resolved to each other's container.
+    """
+    names = set(database_consumers(compose, manifest))
+    service = str(((web or (manifest or {}).get("web")) or {}).get("service") or "")
+    if service:
+        names.add(service)
+    return names
+
+
 def attach_platform_network(compose: dict | None, manifest: dict | None) -> dict:
     """Join every service that reads a platform-provided variable (``needs.*.env``, e.g. DATABASE_URL) to dokploy-network.
 
@@ -122,14 +149,9 @@ def attach_platform_network(compose: dict | None, manifest: dict | None) -> dict
     ``getaddrinfo ENOTFOUND``). Services keep their default network too, so they still reach each other.
     """
     out = copy.deepcopy(compose or {})
-    names = {
-        str(spec["env"])
-        for spec in ((manifest or {}).get("needs") or {}).values()
-        if isinstance(spec, dict) and spec.get("env")
-    }
-    attached = False
-    for spec in _services(out).values():
-        if not isinstance(spec, dict) or not any(name in str(spec.get("environment") or "") + str(spec.get("env_file") or "") for name in names):
+    consumers = set(database_consumers(out, manifest))
+    for service, spec in _services(out).items():
+        if service not in consumers:
             continue
         nets = spec.get("networks")
         if nets is None:
@@ -139,8 +161,7 @@ def attach_platform_network(compose: dict | None, manifest: dict | None) -> dict
                 nets.append(PLATFORM_NETWORK)
         elif isinstance(nets, dict):
             nets.setdefault(PLATFORM_NETWORK, None)
-        attached = True
-    if attached:
+    if consumers:
         top = out.setdefault("networks", {})
         if isinstance(top, dict):
             top.setdefault(PLATFORM_NETWORK, {"external": True})

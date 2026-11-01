@@ -64,3 +64,20 @@ def test_the_release_job_renders_the_same_compose(tmp_path):
     release = yaml.safe_load((tmp_path / ".build" / "deploy-compose.yml").read_text())
     check(release)
     assert release == lint_compose.attach_platform_network(lint_compose.strip_build(COMPOSE), MANIFEST)
+
+
+def test_shared_network_names_are_the_web_service_and_the_database_consumers():
+    manifest = {**MANIFEST, "web": {"service": "ui", "port": 80}}
+    assert lint_compose.shared_network_services(COMPOSE, manifest) == {"ui", "api"}
+    assert lint_compose.shared_network_services(COMPOSE, {}) == set()
+
+
+def test_two_apps_publishing_the_same_name_on_one_server_are_warned_about():
+    from sealedstack import preflight
+
+    def app(servers):
+        return {"_compose": COMPOSE, "manifest": {**MANIFEST, "web": {"service": "ui"}}, "web": {"service": "ui"}, "servers": servers}
+
+    warnings = preflight._shared_network_collisions({"a": app(["s1"]), "b": app(["s1"]), "c": app(["s2"])})
+    assert len(warnings) == 2 and all("apps a, b" in w and "s1" in w for w in warnings)
+    assert preflight._shared_network_collisions({"a": app(["s1"]), "c": app(["s2"])}) == []
