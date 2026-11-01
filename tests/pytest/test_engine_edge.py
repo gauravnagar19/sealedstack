@@ -171,6 +171,16 @@ def test_schema_accepts_only_real_tls_versions_and_hsts_is_in_the_header_rule():
     assert "includeSubDomains" not in code and "preload" not in code
 
 
+def test_custom_ciphers_are_off_by_default_because_they_need_advanced_certificate_manager():
+    """0.6.17 applied `ciphers` by default: Cloudflare answered 400 / 1023 on a zone without the paid add-on and the whole apply stopped."""
+    assert re.search(r"restrict_ciphers\s*=\s*try\(local\.stack\.edge_security\.restrict_tls_ciphers, false\)", EDGE_TF)
+    schema = json.loads((Path(__file__).resolve().parents[2] / "schemas" / "stack.schema.json").read_text(encoding="utf-8"))
+    assert schema["properties"]["edge_security"]["properties"]["restrict_tls_ciphers"]["default"] is False
+    example = yaml.safe_load((Path(__file__).resolve().parents[2] / "config" / "stack.example.yaml").read_text(encoding="utf-8"))
+    assert example["edge_security"]["restrict_tls_ciphers"] is False
+    assert "min_tls_version" in EDGE_TF and 'setting_id = "min_tls_version"' in EDGE_TF  # the TLS floor stays on regardless
+
+
 def test_check_probes_zone_settings_permission():
     from sealedstack import preflight
 

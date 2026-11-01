@@ -145,7 +145,7 @@ Zone scope (`example.com`):
 - Bot Management: Edit
 - Single Redirect: Edit
 - Transform Rules: Edit (response security headers, D-078)
-- Zone Settings: Edit (minimum TLS version and ciphers, D-079)
+- Zone Settings: Edit (minimum TLS version, D-079; custom ciphers only if you turn on `restrict_tls_ciphers`, which also needs the paid Advanced Certificate Manager)
 
 `check` probes each permission and tells you which one is missing. The probes only read, so a token that can read a setting but not edit it still passes; the first `apply` is the real test. Your
 **Account ID** and **Zone** go into `config/stack.yaml`; they are not secrets.

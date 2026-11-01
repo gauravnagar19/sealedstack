@@ -178,8 +178,9 @@ locals {
   # Access login page (the team domain) is not ours to change.
   security_headers_on = try(local.stack.edge_security.security_headers, true)
   # TLS floor and cipher list for the zone (D-079). Qualys caps the grade at B while TLS 1.0/1.1 are on.
+  # Custom cipher suites need Cloudflare Advanced Certificate Manager (a paid add-on), so they are opt-in.
   min_tls_version  = try(local.stack.edge_security.min_tls_version, "1.2")
-  restrict_ciphers = try(local.stack.edge_security.restrict_tls_ciphers, true)
+  restrict_ciphers = try(local.stack.edge_security.restrict_tls_ciphers, false)
   tls_ciphers = [
     "ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-ECDSA-CHACHA20-POLY1305", "ECDHE-ECDSA-AES256-GCM-SHA384",
     "ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-CHACHA20-POLY1305", "ECDHE-RSA-AES256-GCM-SHA384",

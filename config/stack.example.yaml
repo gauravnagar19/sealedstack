@@ -44,7 +44,7 @@ edge_security:
   block_ai_bots: true
   blocked_paths: ["/.env", "/.git", "xmlrpc.php", "/wp-", "*.php"]
   min_tls_version: "1.2"        # Cloudflare accepts TLS 1.2 and newer only
-  restrict_tls_ciphers: true    # AEAD suites only (no CBC-SHA)
+  restrict_tls_ciphers: false   # true = AEAD suites only; needs Cloudflare Advanced Certificate Manager (paid)
   security_headers: true   # Permissions-Policy, nosniff, Referrer-Policy on your hostnames
 
 state:

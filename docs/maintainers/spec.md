@@ -362,7 +362,7 @@ The rule table, the same on every provider:
 | WAF | One custom rule, `block-scanner-paths`, built from `edge_security.blocked_paths` |
 | Bots | Bot Fight Mode and AI-bot blocking per `edge_security` |
 | Response headers | A response-header transform, `security-response-headers`, sets `Permissions-Policy`, `X-Content-Type-Options`, `Referrer-Policy` and HSTS on every app hostname; off with `edge_security.security_headers: false` (D-078) |
-| TLS | Zone settings `min_tls_version` (default 1.2) and `ciphers` (AEAD ECDHE suites only), from `edge_security.min_tls_version` / `restrict_tls_ciphers` (D-079) |
+| TLS | Zone settings `min_tls_version` (default 1.2) and `ciphers` (AEAD ECDHE suites only; opt-in, needs Advanced Certificate Manager), from `edge_security.min_tls_version` / `restrict_tls_ciphers` (D-079) |
 | Redirects | A single redirect rule for each `redirects:` entry (`www` → apex, 301) |
 | R2 | `sealedstack-backups` bucket, plus one scoped token for each app's prefix |
 

@@ -258,8 +258,8 @@
         },
         "restrict_tls_ciphers": {
           "type": "boolean",
-          "default": true,
-          "description": "Offer only AEAD (GCM/ChaCha20) ECDHE suites; drops CBC-SHA (D-079)."
+          "default": false,
+          "description": "Offer only AEAD (GCM/ChaCha20) ECDHE suites; drops CBC-SHA. Needs Cloudflare Advanced Certificate Manager (paid), so it is off by default (D-079)."
         },
         "security_headers": {
           "type": "boolean",
