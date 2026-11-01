@@ -54,6 +54,7 @@ RUN set -eux; \
         python3-venv \
         rsync \
         shellcheck \
+        sshpass \
         unzip; \
     rm -rf /var/lib/apt/lists/*
 

@@ -8,31 +8,33 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "this" {
 }
 
 locals {
+  # Every entry has the same shape (hostname, service, origin_request). `origin_request` is null unless the gate is
+  # cloudflare_access and supplied an audience tag for this hostname; a non-cloudflare gate (authentik, oauth2-proxy,
+  # ...) has no aud tag, so the lookup is guarded. The audience tags only exist after the Access apps are created, so
+  # the condition is unknown at plan time: choosing between "an object" and "an object with other attributes" made the
+  # whole entry unknown and the provider then reported `service` as missing (first live `up`). Object-or-null keeps
+  # `hostname` and `service` known.
   ingress = concat(
     [
-      for hostname in var.hostnames : merge(
-        {
-          hostname = hostname
-          service  = "http://dokploy-traefik:80"
-        },
-        # Only attach originRequest.access when the gate is cloudflare_access and
-        # supplied an audience tag for this hostname. A non-cloudflare gate
-        # (authentik, oauth2-proxy, ...) has no aud tag; `gated` is still true,
-        # so guard the lookup instead of indexing a missing key.
-        var.gated && var.team_name != "" && lookup(var.aud_by_hostname, hostname, "") != "" ? {
-          origin_request = {
-            access = {
-              required  = true
-              team_name = var.team_name
-              aud_tag   = [var.aud_by_hostname[hostname]]
-            }
+      for hostname in var.hostnames : {
+        hostname = hostname
+        service  = "http://dokploy-traefik:80"
+        origin_request = var.gated && var.team_name != "" && lookup(var.aud_by_hostname, hostname, "") != "" ? {
+          access = {
+            required  = true
+            team_name = var.team_name
+            aud_tag   = [var.aud_by_hostname[hostname]]
           }
-        } : {},
-      )
+        } : null
+      }
     ],
     [
       # Catch-all: anything not matched above is refused.
-      { service = "http_status:404" }
+      {
+        hostname       = null
+        service        = "http_status:404"
+        origin_request = null
+      }
     ],
   )
 }

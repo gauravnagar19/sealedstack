@@ -24,6 +24,10 @@ def run(env: Optional[Mapping[str, str]] = None) -> str:
     if not client_id or not client_secret:
         raise RuntimeError("TAILSCALE_OAUTH_CLIENT_ID/_SECRET must be set")
     tailnet = env.get("TAILSCALE_TAILNET", "-")
+    # Defaults mint the server key `up` needs. A maintainer's local run (scripts/dev-local.sh) joins the tailnet as
+    # `tag:ci` with an ephemeral key instead, the way the CI job does.
+    tags = [t.strip() for t in env.get("TAILSCALE_KEY_TAGS", "tag:server").split(",") if t.strip()] or ["tag:server"]
+    ephemeral = str(env.get("TAILSCALE_KEY_EPHEMERAL", "")).lower() in ("1", "true", "yes")
 
     basic = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("ascii")
     token_request = urllib.request.Request(
@@ -44,9 +48,9 @@ def run(env: Optional[Mapping[str, str]] = None) -> str:
                 "devices": {
                     "create": {
                         "reusable": False,
-                        "ephemeral": False,
+                        "ephemeral": ephemeral,
                         "preauthorized": True,
-                        "tags": ["tag:server"],
+                        "tags": tags,
                     }
                 }
             },
@@ -66,7 +70,12 @@ def run(env: Optional[Mapping[str, str]] = None) -> str:
 def main(argv: Optional[list[str]] = None) -> int:
     try:
         print(run(dict(os.environ)))
-    except (RuntimeError, urllib.error.URLError, urllib.error.HTTPError, KeyError) as exc:
+    except urllib.error.HTTPError as exc:
+        # Tailscale says why in the body (for example which tag the OAuth client may not use); show it, never the key.
+        detail = exc.read().decode("utf-8", "replace").strip().replace("\n", " ")[:300]
+        print(f"sealedstack: tailscale-key: HTTP {exc.code} {exc.reason}: {detail}", file=sys.stderr)
+        return 1
+    except (RuntimeError, urllib.error.URLError, KeyError) as exc:
         print(f"sealedstack: tailscale-key: {exc}", file=sys.stderr)
         return 1
     return 0

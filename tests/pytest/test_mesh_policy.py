@@ -89,11 +89,11 @@ def test_tag_ci_reaches_ssh_and_the_dokploy_api_and_nothing_else():
     ci_grants = [r for r in m.sealedstack_grants() if r["src"] == ["tag:ci"]]
     assert len(ci_grants) == 1 and ci_grants[0]["ip"] == ["tcp:22", "tcp:3000"]
     tests = m.sealedstack_tests()
-    assert {"src": ["tag:ci"], "accept": ["tag:server:22"]} in tests
-    assert {"src": ["tag:ci"], "accept": ["tag:server:3000"]} in tests
-    assert {"src": ["tag:ci"], "deny": ["tag:server:5432"]} in tests
+    assert {"src": "tag:ci", "accept": ["tag:server:22"]} in tests
+    assert {"src": "tag:ci", "accept": ["tag:server:3000"]} in tests
+    assert {"src": "tag:ci", "deny": ["tag:server:5432"]} in tests
     # never the old 'CI may not SSH' assertion
-    assert {"src": ["tag:ci"], "deny": ["tag:server:22"]} not in tests
+    assert {"src": "tag:ci", "deny": ["tag:server:22"]} not in tests
 
 
 def _reaches(rules: list[dict], form: str, src_tag: str, dst_tag: str, port: int) -> bool:
@@ -129,8 +129,8 @@ def test_tag_release_reaches_the_dokploy_api_only(tmp_path):
         assert _reaches(rules, form, "tag:ci", "tag:server", 3000), form
         assert not _reaches(rules, form, "tag:ci", "tag:server", 5432), form
     tests = m.sealedstack_tests()
-    assert {"src": ["tag:release"], "accept": ["tag:server:3000"]} in tests
-    assert {"src": ["tag:release"], "deny": ["tag:server:22", "tag:server:5432"]} in tests
+    assert {"src": "tag:release", "accept": ["tag:server:3000"]} in tests
+    assert {"src": "tag:release", "deny": ["tag:server:22", "tag:server:5432"]} in tests
 
 
 def test_merged_policy_carries_tag_release_in_both_forms():
@@ -144,3 +144,10 @@ def test_merged_policy_carries_tag_release_in_both_forms():
     custom, added = m.merge({"tagOwners": {"tag:release": ["group:ops"]}})
     assert custom["tagOwners"]["tag:release"] == ["group:ops"]
     assert "tag:release" not in added["tagOwners"]
+
+
+def test_policy_tests_have_one_string_source_each():
+    """Tailscale rejects a list as a test's `src` (HTTP 400, first live `up`)."""
+    for entry in load_mesh_policy().sealedstack_tests():
+        assert isinstance(entry["src"], str), entry
+        assert set(entry) <= {"src", "accept", "deny"}, entry

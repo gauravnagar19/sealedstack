@@ -87,15 +87,17 @@ def sealedstack_grants() -> list[dict]:
 
 
 def sealedstack_tests() -> list[dict]:
+    # Tailscale's policy tests take ONE source per entry (`src` is a string, `accept`/`deny` are lists); a list
+    # for `src` is rejected with HTTP 400 (first live `up`).
     return [
-        {"src": ["autogroup:admin"], "accept": ["tag:server:22"]},
-        {"src": ["tag:ci"], "accept": ["tag:server:22"]},
-        {"src": ["tag:ci"], "accept": ["tag:server:3000"]},
+        # No test for autogroup:admin: Tailscale does not accept an autogroup as a test source ("unknown user or host").
+        {"src": "tag:ci", "accept": ["tag:server:22"]},
+        {"src": "tag:ci", "accept": ["tag:server:3000"]},
         # CI must not reach anything else on a server (e.g. the database port).
-        {"src": ["tag:ci"], "deny": ["tag:server:5432"]},
+        {"src": "tag:ci", "deny": ["tag:server:5432"]},
         # D-057: a release job reaches the Dokploy API and nothing else.
-        {"src": ["tag:release"], "accept": ["tag:server:3000"]},
-        {"src": ["tag:release"], "deny": ["tag:server:22", "tag:server:5432"]},
+        {"src": "tag:release", "accept": ["tag:server:3000"]},
+        {"src": "tag:release", "deny": ["tag:server:22", "tag:server:5432"]},
     ]
 
 
@@ -235,7 +237,8 @@ def describe_rule(key: str, rule: dict) -> str:
 
 
 def describe_test(rule: dict) -> str:
-    src = "/".join(rule.get("src", []))
+    src = rule.get("src", "")
+    src = src if isinstance(src, str) else "/".join(src)
     if "deny" in rule:
         return f"deny   {src} -> {'/'.join(rule['deny'])}"
     return f"accept {src} -> {'/'.join(rule.get('accept', []))}"
