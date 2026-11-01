@@ -103,7 +103,7 @@ def run(
     child_env["TF_VAR_state_passphrase"] = passphrase
 
     run_tofu = runner or (lambda argv: subprocess.run(argv, env=child_env).returncode)
-    rc = run_tofu(["tofu", "-chdir", str(edge_dir), action])
+    rc = run_tofu(["tofu", "-chdir", str(edge_dir), action, *tofu_mod.action_args(action, env)])
     if rc != 0:
         return rc
 

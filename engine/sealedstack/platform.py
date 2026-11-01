@@ -113,7 +113,7 @@ def run(
     child_env["TF_VAR_state_passphrase"] = passphrase
 
     run_tofu = runner or (lambda argv: subprocess.run(argv, env=child_env).returncode)
-    return run_tofu(["tofu", "-chdir", str(platform_dir), action])
+    return run_tofu(["tofu", "-chdir", str(platform_dir), action, *tofu_mod.action_args(action, env)])
 
 
 def main(argv: Optional[list[str]] = None) -> int:

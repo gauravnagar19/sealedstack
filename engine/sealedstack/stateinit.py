@@ -62,7 +62,7 @@ def run(
     rc = run_tofu(["tofu", "-chdir", str(state_dir), "init"])
     if rc != 0:
         return rc
-    return run_tofu(["tofu", "-chdir", str(state_dir), "apply", *(extra_args or [])])
+    return run_tofu(["tofu", "-chdir", str(state_dir), "apply", *tofu_mod.action_args("apply", env), *(extra_args or [])])
 
 
 def main(argv: Optional[list[str]] = None) -> int:

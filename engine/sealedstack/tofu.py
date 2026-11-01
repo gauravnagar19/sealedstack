@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Sequence
 
@@ -19,6 +20,31 @@ from . import secrets as secrets_mod
 
 # A tofu runner takes (argv, env) and returns a return code.
 TofuRunner = Callable[[Sequence[str], Mapping[str, str]], int]
+
+
+def unattended(env: Mapping[str, str]) -> bool:
+    """True when no person can answer a prompt: CI, or no terminal on stdin."""
+    if str(env.get("CI", "")).lower() in ("1", "true") or env.get("GITHUB_ACTIONS"):
+        return True
+    try:
+        return not sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return True
+
+
+def action_args(action: str, env: Mapping[str, str]) -> list:
+    """Flags for ``tofu <action>``.
+
+    ``apply`` waits for a typed "yes" unless told not to, which in CI ends in "error asking for approval: EOF"
+    (the first live ``up`` died there). The approval that matters is sealedstack's own gate (D-052), which has
+    already passed by the time a phase runs, so unattended applies are automatic and never prompt. A person at a
+    terminal still gets OpenTofu's prompt. ``destroy`` is never made automatic.
+    """
+    if action == "apply" and unattended(env):
+        return ["-input=false", "-auto-approve"]
+    if action in ("plan", "apply") and unattended(env):
+        return ["-input=false"]
+    return []
 
 
 def default_runner(argv: Sequence[str], env: Mapping[str, str]) -> int:

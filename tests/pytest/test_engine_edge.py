@@ -86,6 +86,6 @@ def test_edge_apply_writes_outputs(tmp_path, monkeypatch):
     )
 
     assert rc == 0
-    assert ran[0][-1] == "apply"
+    assert ran[0][3] == "apply"  # tofu -chdir <dir> apply [flags]
     written = json.loads((tmp_path / ".build" / "edge-outputs.json").read_text())
     assert written["tunnel"]["edge"] == "connector-token"
