@@ -143,3 +143,26 @@ def test_gitleaks_config_only_uses_allowlist_syntax_the_pinned_gitleaks_reads():
     assert rule["id"] == "generic-api-key"
     (allow,) = rule["allowlists"]
     assert allow["condition"] == "AND" and allow["paths"] and allow["regexes"]
+
+
+def test_history_scan_does_not_expect_merge_commits_to_be_scanned(tmp_path):
+    # A pull request run checks out GitHub's merge commit; gitleaks shows no patch for merges.
+    repo = tmp_path / "h"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "f.txt").write_text("0\n")
+    _commit(repo, "octocat", NO_REPLY)
+    _git(repo, "checkout", "-q", "-b", "side")
+    (repo / "g.txt").write_text("1\n")
+    _commit(repo, "octocat", NO_REPLY)
+    _git(repo, "checkout", "-q", "main")
+    (repo / "h.txt").write_text("2\n")
+    _commit(repo, "octocat", NO_REPLY)
+    _git(repo, "-c", "user.name=octocat", "-c", f"user.email={NO_REPLY}", "merge", "-q", "--no-ff", "-m", "merge", "side")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gitleaks").write_text("#!/usr/bin/env bash\necho '3 commits scanned.'\n")
+    (bin_dir / "gitleaks").chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
+    result = subprocess.run(["bash", str(REPO / "scripts" / "gitleaks-history.sh"), str(repo)], capture_output=True, text=True, env=env)
+    assert result.returncode == 0, result.stdout + result.stderr

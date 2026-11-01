@@ -17,7 +17,8 @@ cd "${dir}"
 # Trust this directory for git without touching anyone's global git config.
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="${dir}"
 
-expected="$(git rev-list --count --all)"
+# gitleaks reads `git log -p`, which shows no patch for a merge commit, so merges are not counted.
+expected="$(git rev-list --count --all --no-merges)"
 [[ "${expected}" -gt 0 ]] || { echo "gitleaks-history: no commits to scan in ${dir}" >&2; exit 1; }
 
 rc=0

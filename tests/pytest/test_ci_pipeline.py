@@ -127,3 +127,9 @@ def test_a_change_to_ci_itself_runs_everything(tmp_path):
 def test_without_a_usable_base_everything_runs(tmp_path):
     assert run_changes(tmp_path, BASE, {"docs/a.md": "b"}, usable_base=False) == {"docs": "true", "tofu": "true", "images": "true"}
     assert run_changes(tmp_path / "w", BASE, {"docs/a.md": "b"}, event="workflow_dispatch") == {"docs": "true", "tofu": "true", "images": "true"}
+
+
+def test_lint_checks_out_the_pull_requests_own_commits_not_githubs_merge_commit():
+    checkout = ci()["jobs"]["lint"]["steps"][0]
+    assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["ref"] == "${{ github.event.pull_request.head.sha || github.sha }}"
