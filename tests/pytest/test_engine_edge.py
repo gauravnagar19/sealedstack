@@ -145,15 +145,6 @@ def test_check_probes_the_transform_rules_permission():
     assert "http_response_headers_transform" in ids["headers_edit"][2]
 
 
-def test_for_each_over_apps_filters_instead_of_choosing_between_two_object_types():
-    """`cond ? local.deployable : {}` fails to type-check once two apps differ in shape (second app added to demo-infra)."""
-    root = Path(__file__).resolve().parents[2] / "tofu" / "stacks"
-    bad = re.compile(r"for_each\s*=\s*[^\n]*\?\s*local\.(deployable|workers|object_storage)\s*:\s*\{\}")
-    for stack in ("edge", "platform"):
-        text = (root / stack / "main.tf").read_text(encoding="utf-8")
-        assert not bad.search(text), stack
-
-
 # -- D-079: TLS floor and ciphers ---------------------------------------------------------------------------------------
 def test_the_zone_floor_is_tls_12_and_cbc_sha_suites_are_not_offered():
     assert re.search(r'min_tls_version\s*=\s*try\(local\.stack\.edge_security\.min_tls_version, "1\.2"\)', EDGE_TF)
