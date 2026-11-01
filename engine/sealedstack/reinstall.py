@@ -136,12 +136,25 @@ def _flavour_label(flavour: dict) -> str:
     return f"{', '.join(parts)} (id {flavour.get('id')})"
 
 
-def pick_flavour(flavours: Sequence[dict], wanted: str, forced_id: str = "") -> dict:
-    """Choose the image flavour: an explicit id, an exact alias, or the single match on the OS name.
+def _words(flavour: dict) -> list:
+    return _image_name(flavour).lower().split()
 
-    Netcup lists one flavour per OS *variant* (``Minimal``, ``Standard``, ...) with the OS in ``image.name``,
-    so ``ubuntu-24.04`` is matched against the image name. When several variants match, the ``minimal`` one
-    is taken (sealedstack installs Docker and the rest itself); anything still ambiguous is listed.
+
+def pick_flavour(
+    flavours: Sequence[dict],
+    wanted: str,
+    forced_id: str = "",
+    *,
+    uefi: Optional[bool] = None,
+    arch: str = "",
+) -> dict:
+    """Choose the image flavour: an explicit id, an exact alias, or the one that fits the OS and the server.
+
+    Netcup lists one flavour per OS build with the OS in ``image.name`` (``Debian 13.7.0 UEFI amd64``) and
+    the variant in the flavour name (``Minimal``). ``debian-13`` is matched against the image name, then
+    narrowed in this order, each step only when it leaves something: a plain OS image (``Ubuntu cloudimg``
+    and ``Ubuntu openclaw`` are other products), the server's boot mode (UEFI or BIOS, from the server
+    itself), its architecture, and the ``minimal`` variant. Anything still ambiguous is listed.
     """
     if forced_id:
         for flavour in flavours:
@@ -158,11 +171,31 @@ def pick_flavour(flavours: Sequence[dict], wanted: str, forced_id: str = "") -> 
         haystack = f"{_image_name(flavour)} {flavour.get('alias')} {flavour.get('name')}".lower()
         return all(token in haystack for token in tokens)
 
+    def plain(flavour: dict) -> bool:
+        words = _words(flavour)
+        return len(words) >= 2 and len(tokens) >= 2 and words[0] == tokens[0] and words[1].startswith(tokens[1])
+
     found = [f for f in flavours if matches(f)]
-    if len(found) > 1:
-        minimal = [f for f in found if str(f.get("alias") or f.get("name") or "").lower() == "minimal"]
-        if len(minimal) == 1:
-            return minimal[0]
+    if uefi is not None and found:
+        # A BIOS image on a UEFI server (or the reverse) may not boot, so the boot mode is required, not preferred.
+        want_mode = "uefi" if uefi else "bios"
+        same_mode = [f for f in found if want_mode in _words(f)]
+        if not same_mode:
+            raise ReinstallError(
+                f"Netcup offers no {want_mode.upper()} image for '{wanted}' and this server boots {want_mode.upper()}. "
+                "Pick another OS, or change the server's boot mode in the Server Control Panel first. Matching images:\n"
+                + "\n".join(f"  - {_flavour_label(f)}" for f in found[:20])
+            )
+        found = same_mode
+    steps = [plain]
+    if arch:
+        steps.append(lambda f: arch.lower() in _words(f))
+    steps.append(lambda f: str(f.get("alias") or f.get("name") or "").lower() == "minimal")
+    for keep in steps:
+        if len(found) > 1:
+            narrowed = [f for f in found if keep(f)]
+            if narrowed:
+                found = narrowed
     if len(found) == 1:
         return found[0]
     listing = "\n".join(f"  - {_flavour_label(f)}" for f in (found or flavours)[:40])
@@ -296,7 +329,12 @@ def _run(config, env, argv, source, http, out, sleep, forget_progress, remove_no
     token = login(http, refresh_token)
     server = find_server(http, token, external_id)
     flavours = _json(_call(http, token, "GET", f"/servers/{server['id']}/imageflavours"), "listing images") or []
-    flavour = pick_flavour(flavours, str(spec.get("os") or spec.get("image") or ""), args.flavour)
+    live = server.get("serverLiveInfo") or {}
+    flavour = pick_flavour(
+        flavours, str(spec.get("os") or spec.get("image") or ""), args.flavour,
+        uefi=live.get("uefi") if isinstance(live.get("uefi"), bool) else None,
+        arch=str(server.get("architecture") or ""),
+    )
     plan = Plan(
         name=name,
         server_id=int(server["id"]),

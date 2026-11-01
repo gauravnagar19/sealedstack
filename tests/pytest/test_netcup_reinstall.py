@@ -327,3 +327,46 @@ def test_several_variants_without_a_minimal_one_ask_for_a_choice(tmp_path):
     env = Env(tmp_path)
     env.http = FakeNetcup(flavours=two)
     assert env.go("--name", "web-1", "--dry-run") == 1 and "--flavour" in env.text
+
+
+# -- Netcup's real list for an RS 2000 G12 (live run, 2026-11-01): the OS, boot mode and arch are in the image name ----------
+def _row(i, name, alias="Minimal"):
+    return {"id": i, "name": alias, "alias": alias, "text": "x", "image": {"id": i, "name": name}}
+
+
+LIVE = [
+    _row(111, "Debian 12.15.0 BIOS amd64"), _row(119, "Debian 13.7.0 BIOS amd64"), _row(128, "Debian 13.7.0 UEFI amd64"),
+    _row(10, "Debian (11) Bullseye"), _row(100, "Ubuntu 24.04.5 BIOS amd64"), _row(116, "Ubuntu 24.04.5 UEFI amd64"),
+    _row(117, "Ubuntu cloudimg 24.04.5 UEFI amd64"), _row(137, "Ubuntu openclaw 24.04.5 UEFI amd64"),
+    _row(131, "Ubuntu 22.04.5 BIOS amd64", "minimal"), _row(11, "Ubuntu 22.04.5 UEFI amd64"),
+]
+
+
+@pytest.mark.parametrize(
+    "os_name, uefi, expected",
+    [
+        ("debian-13", True, 128), ("debian-13", False, 119), ("debian-13", None, None),
+        ("ubuntu-24.04", True, 116), ("ubuntu-24.04", False, 100), ("debian-12", False, 111),
+    ],
+)
+def test_the_image_follows_the_servers_boot_mode_and_skips_other_ubuntu_products(os_name, uefi, expected):
+    if expected is None:
+        with pytest.raises(reinstall.ReinstallError, match="several"):
+            reinstall.pick_flavour(LIVE, os_name, uefi=uefi, arch="amd64")
+    else:
+        assert reinstall.pick_flavour(LIVE, os_name, uefi=uefi, arch="amd64")["id"] == expected
+
+
+def test_the_run_reads_boot_mode_and_architecture_from_the_server(tmp_path):
+    env = Env(tmp_path, spec={"os": "debian-13"})
+    env.http = FakeNetcup(
+        servers=[{**SERVER, "architecture": "AMD64", "serverLiveInfo": {"disks": [{"dev": "vda"}], "uefi": True}}],
+        flavours=LIVE,
+    )
+    assert env.go("--name", "web-1", "--dry-run") == 0
+    assert "Debian 13.7.0 UEFI amd64, Minimal (id 128)" in env.text
+
+
+def test_a_boot_mode_the_server_does_not_use_is_never_chosen():
+    with pytest.raises(reinstall.ReinstallError, match="no UEFI image for 'debian-12'"):
+        reinstall.pick_flavour(LIVE, "debian-12", uefi=True, arch="amd64")
