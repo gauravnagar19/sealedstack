@@ -89,3 +89,16 @@ def test_edge_apply_writes_outputs(tmp_path, monkeypatch):
     assert ran[0][3] == "apply"  # tofu -chdir <dir> apply [flags]
     written = json.loads((tmp_path / ".build" / "edge-outputs.json").read_text())
     assert written["tunnel"]["edge"] == "connector-token"
+
+
+def test_tofu_output_wrappers_are_unwrapped_for_the_platform_stack():
+    """Live run 2026-11-01: platform read edge.backup and got {value, type, sensitive} instead of {bucket, endpoint, region}."""
+    raw = json.dumps({
+        "backup": {"value": {"bucket": "b", "endpoint": "https://e", "region": "auto"}, "type": ["object", {}], "sensitive": False},
+        "ingress_type": {"value": "cloudflare", "type": "string", "sensitive": False},
+        "connector_tokens": {"value": {"hello": "tok"}, "type": ["map", "string"], "sensitive": True},
+    })
+    plain = edge.plain_outputs(raw)
+    assert plain["backup"]["bucket"] == "b" and plain["ingress_type"] == "cloudflare" and plain["connector_tokens"] == {"hello": "tok"}
+    assert edge.plain_outputs("") == {} and edge.plain_outputs("{}") == {}
+    assert edge.plain_outputs(json.dumps({"x": {"edge": "t"}})) == {"x": {"edge": "t"}}  # an already plain value stays

@@ -68,7 +68,12 @@ for name in "${allow[@]}"; do
 done
 
 commit="$(git -C "$infra" rev-parse HEAD 2>/dev/null || true)"
-args=(run --rm -v "$here:/opt/sealedstack" -v "$infra:/infra" -w /infra --env-file "$tmp"
+# The engine renders into <code>/.build and keeps run progress in <code>/.sealedstack. The test suite renders the EXAMPLE
+# config into the same folders, which once made an edge plan target example.com. Keep this run's own, per infra repo.
+cache="${SEALEDSTACK_DEV_CACHE:-$HOME/.cache/sealedstack-dev}/$(basename "$infra")"
+mkdir -p "$cache/build" "$cache/workdir"
+args=(run --rm -v "$here:/opt/sealedstack" -v "$cache/build:/opt/sealedstack/.build" -v "$cache/workdir:/opt/sealedstack/.sealedstack"
+  -v "$infra:/infra" -w /infra --env-file "$tmp"
   -e PYTHONPATH=/opt/sealedstack/engine -e SEALEDSTACK_CODE=/opt/sealedstack -e SEALEDSTACK_CONFIG=/infra/config
   -e SEALEDSTACK_COMMIT="$commit"
   -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*')

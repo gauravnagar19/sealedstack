@@ -183,3 +183,11 @@ def test_default_prompt_does_not_crash_without_a_terminal(monkeypatch, capsys):
     monkeypatch.setattr(server.sys, "stdin", stdio.StringIO(""))  # not a tty, EOF on read
     assert server._default_io().prompt("Press Enter when done… ") == ""
     assert "non-interactive" in capsys.readouterr().out
+
+
+def test_ansible_is_pointed_at_the_engines_roles_and_config(tmp_path):
+    """Live run 2026-11-01: the role 'mesh_tailscale' was not found because the engine runs from the infra repo."""
+    env = server.ansible_env({"PATH": "/bin"}, REPO)
+    assert env["ANSIBLE_ROLES_PATH"] == str(REPO / "ansible" / "roles") and env["ANSIBLE_CONFIG"] == str(REPO / "ansible.cfg")
+    assert server.ansible_env({"ANSIBLE_ROLES_PATH": "/mine"}, REPO)["ANSIBLE_ROLES_PATH"] == "/mine"  # a caller's choice wins
+    assert (REPO / "ansible" / "roles" / "mesh_tailscale").is_dir()

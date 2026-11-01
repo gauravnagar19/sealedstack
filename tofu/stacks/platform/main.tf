@@ -54,12 +54,14 @@ locals {
     for name, app in local.apps : name => app if !app._unresolved
   }
 
-  edge_path   = "${local.build_dir}/edge-outputs.json"
-  edge        = fileexists(local.edge_path) ? jsondecode(file(local.edge_path)) : { connector_tokens = {} }
+  edge_path = "${local.build_dir}/edge-outputs.json"
+  # Choose between two STRINGS and decode once: `cond ? jsondecode(file) : {}` mixes object types and OpenTofu refuses it
+  # ("Inconsistent conditional result types") as soon as the file exists and has content (first live `up`).
+  edge        = jsondecode(fileexists(local.edge_path) ? file(local.edge_path) : "{\"connector_tokens\":{}}")
   edge_backup = try(local.edge.backup, { bucket = "", endpoint = "", region = "auto" })
 
   env_path = "${local.build_dir}/env.json"
-  env      = fileexists(local.env_path) ? jsondecode(file(local.env_path)) : {}
+  env      = jsondecode(fileexists(local.env_path) ? file(local.env_path) : "{}")
 
   # `local.stack` (the rendered stack model) is read above; used here for
   # backup.secondary.
@@ -357,7 +359,7 @@ module "app" {
 # and the read-only pull token from infra.REGISTRY_PULL_TOKEN.
 locals {
   registry_path    = "${local.build_dir}/registry.json"
-  registry         = fileexists(local.registry_path) ? jsondecode(file(local.registry_path)) : {}
+  registry         = jsondecode(fileexists(local.registry_path) ? file(local.registry_path) : "{}")
   registry_enabled = try(local.registry.image_prefix, "") != "" && var.registry_pull_token != ""
 }
 

@@ -370,3 +370,12 @@ def test_the_run_reads_boot_mode_and_architecture_from_the_server(tmp_path):
 def test_a_boot_mode_the_server_does_not_use_is_never_chosen():
     with pytest.raises(reinstall.ReinstallError, match="no UEFI image for 'debian-12'"):
         reinstall.pick_flavour(LIVE, "debian-12", uefi=True, arch="amd64")
+
+
+def test_the_bootstrap_play_removes_the_first_boot_sshd_drop_in_before_hardening():
+    """Live run 2026-11-01: 00-sealedstack-bootstrap.conf sorts before 00-sealedstack.conf, so sshd kept password login on."""
+    play = (REPO / "ansible" / "playbooks" / "bootstrap.yml").read_text(encoding="utf-8")
+    assert reinstall.BOOTSTRAP_DROPIN in reinstall.root_script("Correct-Horse-9-Battery")
+    assert reinstall.BOOTSTRAP_DROPIN in play
+    remove, harden = play.index("Remove the first-boot sshd drop-in"), play.index("Harden sshd before anything else")
+    assert remove < harden

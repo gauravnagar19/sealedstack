@@ -61,6 +61,8 @@ class FakeDokploy(HttpClient):
             return ok({"user": {"id": "u1"}, "session": {"activeOrganizationId": "org1"}})
         if path == "/api/user.createApiKey":
             assert "Cookie" in headers and json_body["metadata"] == {"organizationId": "org1"}
+            # Dokploy v0.30.8 answers 401 to a default key after about five calls (first live `up`)
+            assert json_body.get("rateLimitEnabled") is False
             self.keys.add(NEW_KEY)
             return ok({"id": "k1", "key": NEW_KEY, "name": json_body["name"]})
         if path == "/api/project.all":

@@ -84,6 +84,8 @@
         state: present
       loop: "{{ admin_ssh_keys }}"
 
+    # `delegate_to: localhost` makes a bare `ansible_host` mean localhost's, so the target's address is read from
+    # its own hostvars (the first live bootstrap tried to SSH to its own container: "Connection refused").
     # C4: prove the key actually works over a fresh connection BEFORE we turn
     # password auth off, so a malformed/absent key cannot lock us out. If this
     # fails, hardening never runs and the server keeps its password window.
@@ -97,8 +99,8 @@
                 if bootstrap_known_hosts | length > 0
                 else ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=/dev/null'])
              + (['-o', 'IdentitiesOnly=yes', '-i', admin_ssh_identity] if (admin_ssh_identity | default('')) | length > 0 else [])
-             + ['-p', (ansible_port | default(22)) | string,
-                admin_user ~ '@' ~ (ansible_host | default(inventory_hostname)), 'true'] }}
+             + ['-p', (hostvars[inventory_hostname].ansible_port | default(22)) | string,
+                admin_user ~ '@' ~ (hostvars[inventory_hostname].ansible_host | default(inventory_hostname)), 'true'] }}
       delegate_to: localhost
       become: false
       changed_when: false
@@ -123,6 +125,14 @@
           # Neutralised by sealedstack bootstrap: the hardening lives in
           # 00-sealedstack.conf, which sshd reads first (alphabetical order).
       when: bootstrap_cloud_init.stat.exists
+      notify: Reload sshd
+
+    # `reinstall` (D-070) leaves /etc/ssh/sshd_config.d/00-sealedstack-bootstrap.conf to allow the first root password
+    # login. It sorts BEFORE 00-sealedstack.conf, and sshd keeps the first value it reads, so it must go before hardening.
+    - name: Remove the first-boot sshd drop-in written by reinstall
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d/00-sealedstack-bootstrap.conf
+        state: absent
       notify: Reload sshd
 
     - name: Harden sshd before anything else

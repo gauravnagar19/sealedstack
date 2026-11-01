@@ -116,9 +116,21 @@ def run(
         rc, stdout = capture(["tofu", "-chdir", str(edge_dir), "output", "-json"])
         if rc != 0:
             return rc
-        out.write_text(stdout or "{}", encoding="utf-8")
+        out.write_text(json.dumps(plain_outputs(stdout)), encoding="utf-8")
         print(f"edge outputs -> {out.relative_to(Path(config.code_root))}")
     return 0
+
+
+def plain_outputs(stdout: str) -> dict:
+    """``tofu output -json`` wraps every output as ``{"value": ..., "type": ..., "sensitive": ...}``.
+
+    The platform stack reads ``edge.backup.bucket`` and ``edge.connector_tokens`` directly, so the file it reads must hold the
+    plain values (the first live ``up`` handed it the wrappers: "This object does not have an attribute named bucket")."""
+    data = json.loads(stdout) if (stdout or "").strip() else {}
+    return {
+        name: item["value"] if isinstance(item, dict) and "value" in item and "type" in item else item
+        for name, item in data.items()
+    }
 
 
 def _capture(argv: list[str], child_env: Mapping[str, str]) -> tuple[int, str]:

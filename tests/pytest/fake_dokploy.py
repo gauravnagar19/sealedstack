@@ -79,6 +79,7 @@ class FakeDokploy(HttpClient):
             if "Cookie" not in headers:
                 return self._reply(401)
             assert json_body["metadata"] == {"organizationId": "org1"}
+            assert json_body.get("rateLimitEnabled") is False  # a default key is rejected after ~5 calls (live, v0.30.8)
             key = f"dk_member_{next(self._ids)}"
             self.keys[key] = caller
             return self._reply(200, {"id": "k", "key": key, "name": json_body["name"]})

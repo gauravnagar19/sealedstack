@@ -39,6 +39,7 @@ API = "https://www.servercontrolpanel.de/scp-core/api/v1"
 TOKEN_URL = "https://www.servercontrolpanel.de/realms/scp/protocol/openid-connect/token"
 CLIENT_ID = "scp"
 DEFAULT_IMAGE = "ubuntu-24.04"
+BOOTSTRAP_DROPIN = "/etc/ssh/sshd_config.d/00-sealedstack-bootstrap.conf"  # removed by ansible/playbooks/bootstrap.yml
 DOCS = "docs/netcup-reinstall.md"
 
 POLL_SECONDS = 10
@@ -217,7 +218,7 @@ def root_script(password: str) -> str:
         "set -eu\n"
         f"echo '{encoded}' | base64 -d | chpasswd\n"
         "install -d -m 755 /etc/ssh/sshd_config.d\n"
-        "printf 'PermitRootLogin yes\\nPasswordAuthentication yes\\n' > /etc/ssh/sshd_config.d/00-sealedstack-bootstrap.conf\n"
+        f"printf 'PermitRootLogin yes\\nPasswordAuthentication yes\\n' > {BOOTSTRAP_DROPIN}\n"
         "systemctl restart ssh 2>/dev/null || systemctl restart sshd\n"
     )
 

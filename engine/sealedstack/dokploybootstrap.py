@@ -11,7 +11,7 @@ the endpoints below were read from that tag's source (``packages/server/src/lib/
 2. ``POST /api/auth/sign-in/email`` {email, password} for a panel whose admin we
    created in an earlier, interrupted run.
 3. ``GET /api/user.session`` (cookie) -> ``session.activeOrganizationId``.
-4. ``POST /api/user.createApiKey`` (cookie) {name, metadata: {organizationId}} -> the
+4. ``POST /api/user.createApiKey`` (cookie) {name, metadata: {organizationId}, rateLimitEnabled: false} -> the
    key (``key``), shown by Dokploy only once, so it is stored immediately.
 5. ``GET /api/project.all`` with ``x-api-key`` proves the key works.
 
@@ -142,7 +142,9 @@ class Bootstrapper:
             raise BootstrapError("could not read the Dokploy organisation of the admin (user.session)")
         created = self.http.request(
             "POST", f"{self.base}/api/user.createApiKey", headers=self._headers(cookie),
-            json_body={"name": KEY_NAME, "metadata": {"organizationId": org}},
+            # Without rateLimitEnabled=false Dokploy rejects the key with 401 after about five calls (measured on v0.30.8
+            # in the first live `up`: the platform stack makes dozens), so every key is created with limiting off.
+            json_body={"name": KEY_NAME, "metadata": {"organizationId": org}, "rateLimitEnabled": False},
         )
         data = _data(created) if created.status == 200 else None
         key = str((data or {}).get("key") or "") if isinstance(data, dict) else ""

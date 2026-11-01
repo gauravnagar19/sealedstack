@@ -64,6 +64,19 @@ def _default_io() -> ServerIO:
     return ServerIO(run=run, capture=capture, prompt=prompt, tailnet_node=tailnet_node)
 
 
+def ansible_env(env: Mapping[str, str], code_root: Path) -> dict:
+    """``env`` plus the Ansible settings that point at the engine's own tree.
+
+    ``ansible.cfg`` and its relative ``roles_path`` are only found when the working directory is the engine's tree, but
+    the engine runs from the infra repo (``/infra``), so ``include_role`` could not find ``mesh_tailscale`` (first live
+    bootstrap). Both are set explicitly unless the caller already chose them.
+    """
+    out = dict(env)
+    out.setdefault("ANSIBLE_CONFIG", str(Path(code_root) / "ansible.cfg"))
+    out.setdefault("ANSIBLE_ROLES_PATH", str(Path(code_root) / "ansible" / "roles"))
+    return out
+
+
 def write_vars(path: Path, values: Mapping[str, str]) -> None:
     """Write a 0600 JSON vars file (valid ``-e @file``); empty values dropped."""
     data = {k: v for k, v in values.items() if v}
@@ -224,7 +237,7 @@ def up(
             print(f"==> bootstrap {name}", file=out)
             rc = io.run(
                 ["ansible-playbook", "-i", f"{ip},", "-u", "root", str(code_root / "ansible" / "playbooks" / "bootstrap.yml"), *bootstrap_args],
-                env,
+                ansible_env(env, code_root),
             )
             if rc != 0:
                 raise config_mod.ConfigError(f"bootstrap failed for {name} (exit {rc})")
@@ -249,7 +262,7 @@ def up(
                 name,
                 str(code_root / "ansible" / "playbooks" / "site.yml"),
             ],
-            env,
+            ansible_env(env, code_root),
         )
         if rc != 0:
             hint = (
@@ -320,7 +333,7 @@ def sync(
         if name:
             argv += ["--limit", name]
         argv += ["-e", f"@{vars_file}", str(Path(config.code_root) / "ansible" / "playbooks" / "site.yml")]
-        return io.run(argv, env)
+        return io.run(argv, ansible_env(env, Path(config.code_root)))
     finally:
         vars_file.unlink(missing_ok=True)
         Path(identity).unlink(missing_ok=True)

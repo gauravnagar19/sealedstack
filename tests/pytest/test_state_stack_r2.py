@@ -45,3 +45,17 @@ def test_a_failed_init_or_apply_still_fails_the_run(tmp_path):
     source = EnvSource({"R2_ACCESS_KEY_ID": "a", "R2_SECRET_ACCESS_KEY": "b", "state_passphrase": "0123456789abcdef"})
     assert stateinit.run(config, {}, source=source, runner=lambda argv: 1 if argv[3] == "init" else 0) == 1
     assert stateinit.run(config, {}, source=source, runner=lambda argv: 1 if argv[3] == "apply" else 0) == 1
+
+
+def test_no_stack_chooses_between_differently_typed_decoded_files():
+    """Live run 2026-11-01: `fileexists(f) ? jsondecode(file(f)) : {}` fails with "Inconsistent conditional result types"
+    once the file has content; decode one chosen STRING instead (the same shape bug broke the tunnel ingress)."""
+    import re
+
+    offenders = []
+    for path in (REPO / "tofu").rglob("*.tf"):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if re.search(r"\?\s*(json|yaml)decode\(", code):
+                offenders.append(f"{path.relative_to(REPO)}:{number}")
+    assert offenders == []

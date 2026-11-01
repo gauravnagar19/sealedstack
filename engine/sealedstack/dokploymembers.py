@@ -157,7 +157,7 @@ class Members:
             raise MemberError(f"could not read the Dokploy organisation of {email} (user.session)")
         created = self.http.request(
             "POST", f"{self.base}/api/user.createApiKey", headers=self._headers(cookie=cookie),
-            json_body={"name": MEMBER_KEY_NAME, "metadata": {"organizationId": org}},
+            json_body={"name": MEMBER_KEY_NAME, "metadata": {"organizationId": org}, "rateLimitEnabled": False},  # see dokploybootstrap
         )
         data = _data(created) if created.status == 200 else None
         key = str((data or {}).get("key") or "") if isinstance(data, dict) else ""
