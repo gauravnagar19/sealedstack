@@ -101,3 +101,14 @@ Ansible roles and are bumped by a maintainer in a reviewed PR:
 
 The Coolify role (not on the golden path) refuses to run without a recorded
 `platform_coolify_install_sha256`.
+
+## Cutting a release
+
+From a checkout rebased onto `origin/main`:
+
+```
+scripts/release.sh --dry-run    # the next version and the commits that would ship
+scripts/release.sh              # bump, test, push main and the tag, dispatch the release, wait
+```
+
+`--minor` or `--version X.Y.Z` override the next patch number; `--yes` skips the confirmation. See D-080.
