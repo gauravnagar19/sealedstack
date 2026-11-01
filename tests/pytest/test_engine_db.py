@@ -168,3 +168,11 @@ def test_the_primary_server_comes_from_apps_yaml_when_nothing_was_rendered(tmp_p
     db.config.apps["apps"] = {"shop": {"servers": ["web-1", "web-2"]}}
     assert db.primary_server("shop") == "web-1"
     assert db.primary_server("unknown") == ""
+
+
+def test_ssh_names_the_admin_user_and_the_ci_key_when_it_has_an_identity():
+    """Live run 2026-11-01: `ssh server-1` has no ssh config in CI; the drill could not write its env file."""
+    ci = dbmod.Transport(ssh_user="admin", ssh_identity="/tmp/key").ssh_argv("server-1", "true")
+    assert ci[:3] == ["ssh", "-i", "/tmp/key"] and ["-l", "admin"] == ci[ci.index("-l"):ci.index("-l") + 2]
+    assert ci[-2:] == ["server-1", "true"] and "BatchMode=yes" in ci and "IdentitiesOnly=yes" in ci
+    assert dbmod.Transport().ssh_argv("server-1", "true") == ["ssh", "server-1", "true"]

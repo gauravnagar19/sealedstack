@@ -56,13 +56,29 @@ def pg_env_content(url: str) -> str:
 class Transport:
     """The remote side effects (ssh, aws s3), injectable for tests."""
 
-    def __init__(self, endpoint: str = "", access_key: str = "", secret_key: str = ""):
+    def __init__(
+        self, endpoint: str = "", access_key: str = "", secret_key: str = "",
+        ssh_user: str = "", ssh_identity: str = "",
+    ):
         self.endpoint = endpoint
         self.access_key = access_key
         self.secret_key = secret_key
+        self.ssh_user = ssh_user
+        self.ssh_identity = ssh_identity
+
+    def ssh_argv(self, server: str, remote_cmd: str) -> list:
+        """``ssh`` for the server. With an identity (CI has no ssh config) it names the admin user and the CI key; without
+        one it is the plain ``ssh <server>`` that relies on the operator's own ssh config."""
+        if not self.ssh_identity:
+            return ["ssh", server, remote_cmd]
+        argv = ["ssh", "-i", self.ssh_identity, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=accept-new"]
+        if self.ssh_user:
+            argv += ["-l", self.ssh_user]
+        return argv + [server, remote_cmd]
 
     def ssh(self, server: str, remote_cmd: str, stdin: Optional[bytes] = None) -> tuple[int, bytes]:
-        proc = subprocess.run(["ssh", server, remote_cmd], input=stdin, capture_output=True)
+        proc = subprocess.run(self.ssh_argv(server, remote_cmd), input=stdin, capture_output=True)
         return proc.returncode, proc.stdout
 
     def aws(self, args: list, stdin: Optional[bytes] = None) -> tuple[int, bytes]:
@@ -106,15 +122,36 @@ class Db:
                 creds = r2_mod.resolve(self.source, self.config, self.env)
             except r2_mod.R2Error as exc:
                 raise DbError(str(exc)) from exc
+            ssh_user, ssh_identity = str(config.stack.get("admin_user") or ""), self._ssh_identity()
             transport = Transport(
                 endpoint=endpoint,
                 access_key=creds.access_key_id,
                 secret_key=creds.secret_access_key,
+                ssh_user=ssh_user,
+                ssh_identity=ssh_identity,
             )
         self.t = transport
         self._urls: Optional[dict] = None
         self._names: Optional[dict] = None
         self._compose_ids: Optional[dict] = None
+
+    def _ssh_identity(self) -> str:
+        """A 0600 file with the CI private key from the encrypted state, or "" when it is not there (then plain ssh)."""
+        import tempfile
+
+        from . import generated as generated_mod
+
+        try:
+            key = str(generated_mod.shared(self.config, self.env, self.source).ensure().get("ci_ssh_private_key") or "")
+        except Exception:  # noqa: BLE001 - fall back to the operator's own ssh config
+            return ""
+        if not key:
+            return ""
+        fd, path = tempfile.mkstemp(prefix="sealedstack-db-key-")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(key if key.endswith("\n") else key + "\n")
+        os.chmod(path, 0o600)
+        return path
 
     # -- secrets/config -----------------------------------------------------
     def _secret(self, name: str) -> str:
