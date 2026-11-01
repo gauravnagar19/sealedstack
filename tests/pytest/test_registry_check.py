@@ -77,3 +77,31 @@ def test_a_configured_owner_wins_and_image_apps_do_not_set_one():
     stack = {"slots": {"registry": "ghcr"}, "providers": {"registry_ghcr": {"owner": "Configured"}}}
     assert render.resolve_registry(stack, REPO_APPS)["owner"] == "Configured"
     assert render.resolve_registry({"slots": {"registry": "ghcr"}}, APPS)["owner"] == ""
+
+
+# -- the exact OIDC subject (live run 2026-11-01: GitHub's subject carries numeric ids) -------------------------------------
+REPO_JSON = {"id": 1441299511, "full_name": "gauravnagar19/demo-app", "default_branch": "main", "owner": {"id": 19661833, "login": "gauravnagar19"}}
+
+
+def subject_ctx(tmp_path, route):
+    config = make_config(tmp_path, apps={"apps": {"demo-app": {"source": {"repo": "gauravnagar19/demo-app", "ref": "main"},
+                                                              "servers": ["web-1"], "hostnames": ["demo.example.com"], "access": "owner-only"}}})
+    return make_ctx(tmp_path, config, http=StubClient().add("api.github.com/repos/gauravnagar19/demo-app", route))
+
+
+def test_the_exact_subject_comes_from_the_github_ids(tmp_path):
+    subjects = preflight.release_subjects(subject_ctx(tmp_path, Route(200, json_body=REPO_JSON)))
+    assert subjects == [("demo-app", "repo:gauravnagar19@19661833/demo-app@1441299511:ref:refs/heads/main")]
+
+
+def test_a_missing_release_credential_names_the_subject_and_the_wildcard(tmp_path):
+    result = preflight._check_release_identity(subject_ctx(tmp_path, Route(200, json_body=REPO_JSON)))
+    assert result.status == "fail"
+    assert "repo:gauravnagar19@19661833/demo-app@1441299511:ref:refs/heads/main" in result.fix
+    assert "`repo:gauravnagar19@19661833/*:ref:refs/heads/main`" in result.fix
+
+
+def test_a_failed_lookup_leaves_the_hint_out_instead_of_guessing(tmp_path):
+    ctx = subject_ctx(tmp_path, Route(404, json_body={}))
+    assert preflight.release_subjects(ctx) == []
+    assert "Subject to enter" not in preflight._check_release_identity(ctx).fix

@@ -810,6 +810,43 @@ def release_identity_settings(ctx: CheckContext) -> tuple[str, str]:
     return client_id, audience
 
 
+def release_subjects(ctx: CheckContext) -> list[tuple[str, str]]:
+    """The exact OIDC subject GitHub sends for each app repository's release job (D-057).
+
+    GitHub puts the numeric account and repository ids in the subject (``repo:owner@123/app@456:ref:refs/heads/main``), so
+    the value cannot be typed from the names alone (live run 2026-11-01: Tailscale answered 403). The ids come from the
+    GitHub API; a lookup that fails is left out rather than guessed.
+    """
+    token = ctx.env.get("GH_TOKEN") or ctx.env.get("GITHUB_TOKEN") or ""
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    found: list[tuple[str, str]] = []
+    for name, repo in _app_repos(ctx.config.apps):
+        try:
+            response = ctx.http.request("GET", f"{GITHUB_API}/repos/{repo}", headers=headers)
+            data = _json_or_none(response) if response.status == 200 else None
+        except Exception:  # noqa: BLE001 - a hint, never a failure
+            data = None
+        if not data or not data.get("id") or not (data.get("owner") or {}).get("id"):
+            continue
+        full = str(data.get("full_name") or repo)
+        owner, _slash, short = full.partition("/")
+        branch = str(data.get("default_branch") or "main")
+        found.append((name, f"repo:{owner}@{data['owner']['id']}/{short}@{data['id']}:ref:refs/heads/{branch}"))
+    return found
+
+
+def _subject_hint(ctx: CheckContext) -> str:
+    subjects = release_subjects(ctx)
+    if not subjects:
+        return ""
+    lines = "; ".join(f"{name}: Subject `{subject}`" for name, subject in subjects)
+    first = subjects[0][1]
+    wildcard = first.split("/", 1)[0] + "/*:" + first.split(":", 2)[2]
+    return f" Subject to enter ({lines}); one credential for every app of that owner: `{wildcard}`."
+
+
 def _check_release_identity(ctx: CheckContext) -> Result:
     """The infra repo knows the ``tag:release`` OIDC trust credential (D-057).
 
@@ -832,7 +869,7 @@ def _check_release_identity(ctx: CheckContext) -> Result:
         "tailscale.release_identity", "tailscale", "fail",
         detail=f"providers.mesh_tailscale.{' and '.join(missing)} not set, but {len(repo_apps)} app(s) have a release workflow "
                f"({', '.join(name for name, _repo in repo_apps)})",
-        fix=RELEASE_CREDENTIAL_HOWTO,
+        fix=RELEASE_CREDENTIAL_HOWTO + _subject_hint(ctx),
         docs=DOCS_RELEASE_IDENTITY,
     )
 
