@@ -18,7 +18,8 @@ cd "${dir}"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="${dir}"
 
 # gitleaks reads `git log -p`, which shows no patch for a merge commit, so merges are not counted.
-expected="$(git rev-list --count --all --no-merges)"
+# An empty commit (no changed file) has no patch either, so it is not counted.
+expected="$(git log --all --no-merges --root --name-only --format='tformat:@' | awk '/^@$/ { if (n) c++; n = 0; next } NF { n = 1 } END { if (n) c++; print c + 0 }')"
 [[ "${expected}" -gt 0 ]] || { echo "gitleaks-history: no commits to scan in ${dir}" >&2; exit 1; }
 
 rc=0
