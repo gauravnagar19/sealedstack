@@ -22,3 +22,12 @@ def test_no_stack_picks_an_app_map_with_a_typed_conditional():
             if not line.lstrip().startswith("#") and TYPED.search(line):
                 offenders.append(f"{path.relative_to(REPO)}:{number}: {line.strip()}")
     assert not offenders, "use `{ for k, v in MAP : k => v if COND }` instead:\n" + "\n".join(offenders)
+
+
+def test_no_count_or_for_each_depends_on_a_destination_id():
+    """Live run 2026-11-01: the first database app failed `Invalid count argument` because `count` compared a destination id
+    that only exists after the destination is created. Gate on the plan-time booleans instead."""
+    module = (REPO / "tofu" / "modules" / "platform_dokploy" / "main.tf").read_text(encoding="utf-8")
+    code = "\n".join(line for line in module.splitlines() if not line.lstrip().startswith("#"))
+    assert 'destination_id != ""' not in code
+    assert "var.db_backup_enabled" in code and "var.secondary_backup_enabled" in code

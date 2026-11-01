@@ -158,7 +158,7 @@ resource "dokploy_postgres" "this" {
 }
 
 resource "dokploy_backup" "this" {
-  count = local.has_db && var.db_destination_id != "" ? 1 : 0
+  count = local.has_db && var.db_backup_enabled ? 1 : 0
 
   service_type      = "postgres"
   service_id        = dokploy_postgres.this[0].id
@@ -172,7 +172,7 @@ resource "dokploy_backup" "this" {
 
 # 3-2-1: a second copy of every database backup to a second destination.
 resource "dokploy_backup" "secondary" {
-  count = local.has_db && var.secondary_destination_id != "" ? 1 : 0
+  count = local.has_db && var.secondary_backup_enabled ? 1 : 0
 
   service_type      = "postgres"
   service_id        = dokploy_postgres.this[0].id
@@ -189,7 +189,7 @@ resource "dokploy_backup" "secondary" {
 # stateful service a logical dump cannot. The manifest names the volume.
 
 resource "dokploy_volume_backup" "this" {
-  for_each = { for v in var.volumes : v.volume => v if var.db_destination_id != "" }
+  for_each = { for v in var.volumes : v.volume => v if var.db_backup_enabled }
 
   name              = "${var.name}-${each.value.volume}"
   service_type      = "compose"

@@ -29,6 +29,18 @@ variable "db_destination_id" {
   default     = ""
 }
 
+variable "db_backup_enabled" {
+  description = "Whether a backup destination exists. A plain bool, known at plan time: the destination id is not known until the destination is created, and a count or for_each cannot depend on it."
+  type        = bool
+  default     = false
+}
+
+variable "secondary_backup_enabled" {
+  description = "Whether the second (3-2-1) destination exists; known at plan time like db_backup_enabled."
+  type        = bool
+  default     = false
+}
+
 variable "db_destination_prefix" {
   description = "Backup object prefix, usually <app>/<db>/."
   type        = string

@@ -345,6 +345,8 @@ module "app" {
   external_database        = local.external_databases[each.key]
   volumes                  = local.volumes[each.key]
   db_destination_id        = length(dokploy_destination.backups) > 0 ? dokploy_destination.backups[0].id : ""
+  db_backup_enabled        = length(dokploy_destination.backups) > 0
+  secondary_backup_enabled = length(dokploy_destination.secondary) > 0
   db_destination_prefix    = "${each.key}/${try(local.databases[each.key].database, "db")}/"
   secondary_destination_id = length(dokploy_destination.secondary) > 0 ? dokploy_destination.secondary[0].id : ""
   db_secondary_prefix      = "${each.key}/${try(local.databases[each.key].database, "db")}/"
