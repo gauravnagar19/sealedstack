@@ -432,13 +432,20 @@ def execute(
     if lock is not None:
         try:
             held = lock.acquire()
+        except lock_mod.LockUnavailable as exc:
+            # First run: `up` creates the state bucket, so there is nothing to lock before it. Nothing else
+            # can hold a lock that cannot exist yet; the next write command locks as usual.
+            print(f"sealedstack ci: warning: no state lock yet ({exc}); the first `up` creates the state bucket. "
+                  "Running without a lock.", file=out)
+            lock = None
         except lock_mod.LockHeld as exc:
             print(f"sealedstack ci: refused — {exc}", file=out)
             target = pr or _merged_pr(forge, event)
             if target and event.name != "push":
                 forge.upsert_comment(event.repo, target, f"❌ `{res.command}` refused: {exc}")
             return 1
-        print(f"sealedstack ci: state lock taken (id {held['id']}, expires {held['expires']})", file=out)
+        if held is not None:
+            print(f"sealedstack ci: state lock taken (id {held['id']}, expires {held['expires']})", file=out)
     try:
         rc, output = _run_one(res.command, res.args, pr, event, forge, run, status_fn=status_fn, env=env, config=config,
                               http=http, secrets=secrets, lock_fn=lock_fn)

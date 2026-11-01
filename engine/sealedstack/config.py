@@ -360,12 +360,17 @@ class Runtime:
         # same time. Prefer the remote R2 lock (shared with CI); fall back to a
         # local file lock when no R2 credentials are available.
         if lock is not None:
+            from .lock import LockUnavailable
+
             try:
                 info = lock.acquire()
+            except LockUnavailable:
+                lock = None  # no state bucket yet (before the first `up`): use the local file lock below
             except Exception as exc:  # noqa: BLE001 - LockHeld
                 raise BreakGlassError(f"{command}: {exc} Wait for the other run to finish first.") from exc
-            atexit.register(lambda: lock.release(info))
-        else:
+            else:
+                atexit.register(lambda: lock.release(info))
+        if lock is None:
             workdir = Path(self.env.get("SEALEDSTACK_WORKDIR") or (self.code_root / ".sealedstack"))
             workdir.mkdir(parents=True, exist_ok=True)
             lock_file = workdir / "state.lock"

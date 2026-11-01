@@ -276,3 +276,59 @@ def test_the_run_container_gets_the_run_identity_for_the_lock_body():
     step = next(s for s in workflow["jobs"]["run"]["steps"] if str(s.get("name", "")).startswith("sealedstack "))
     assert "-e GITHUB_SERVER_URL" in step["run"] and "-e GITHUB_RUN_ID" in step["run"]
     assert step["run"].rstrip().endswith("ci exec")  # writes take the lock inside `ci exec`, behind the approval gate
+
+
+# -- before the first `up` there is no state bucket, so there is nothing to lock (live run, 2026-11-01) ----
+@pytest.fixture
+def no_bucket_r2(monkeypatch):
+    from fake_s3 import ACCESS_KEY, SECRET_KEY, FakeS3
+    from sealedstack import cli, r2
+
+    with FakeS3(buckets=()) as server:
+        monkeypatch.setattr(cli, "r2_endpoint", lambda account: server.endpoint)
+        monkeypatch.setattr(r2, "resolve", lambda source, config, env, http=None, required=True: r2.R2Credentials(ACCESS_KEY, SECRET_KEY, True))
+        yield server
+
+
+def test_the_s3_client_names_a_missing_bucket_as_such(no_bucket_r2, tmp_path):
+    from sealedstack import cli, s3
+
+    client = cli._r2_client(_config(tmp_path), ENV)
+    with pytest.raises(s3.S3BucketMissing):
+        client.put_if_absent("k", b"{}")
+
+
+def test_a_ci_write_runs_without_a_lock_when_the_state_bucket_does_not_exist_yet(tmp_path, no_bucket_r2, capsys):
+    f, c = make_forge(), make_config(tmp_path)
+    event = apply_event(f)
+    ran = []
+    rc = infraci.execute(
+        infraci.resolve(event, f, c), event, f, c,
+        lambda argv: (ran.append(argv), (0, "ok"))[1],
+        lock_fn=infraci._default_lock_fn(_config(tmp_path), ENV),
+    )
+    assert rc == 0 and ran
+    err = capsys.readouterr().err
+    assert "no state lock yet" in err and "first `up` creates the state bucket" in err
+    assert "Traceback" not in err
+
+
+def test_other_storage_errors_still_fail_the_run(tmp_path):
+    class Broken:
+        def acquire(self):
+            from sealedstack.s3 import S3Error
+
+            raise S3Error("conditional put k failed (HTTP 403)")
+
+    f, c = make_forge(), make_config(tmp_path)
+    event = apply_event(f)
+    with pytest.raises(Exception, match="HTTP 403"):
+        infraci.execute(infraci.resolve(event, f, c), event, f, c, runner_for(), lock_fn=lambda: Broken())
+
+
+def test_break_glass_falls_back_to_the_local_file_lock_without_a_bucket(tmp_path, no_bucket_r2):
+    from sealedstack import cli
+
+    state = cli._state_lock(_config(tmp_path), {**ENV, "USER": "alice"}, kind="break-glass")
+    with pytest.raises(lock.LockUnavailable):
+        state.acquire()

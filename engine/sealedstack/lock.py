@@ -98,13 +98,22 @@ class MemoryBackend:
         self.store.pop(key, None)
 
 
+class LockUnavailable(RuntimeError):
+    """There is nowhere to keep the lock yet: the state bucket does not exist (first run, before `up`)."""
+
+
 class S3LockBackend:
     def __init__(self, client, key: str = LOCK_KEY):
         self.client = client
         self.key = key
 
     def create(self, key: str, body: bytes) -> bool:
-        return self.client.put_if_absent(key, body)
+        from .s3 import S3BucketMissing
+
+        try:
+            return self.client.put_if_absent(key, body)
+        except S3BucketMissing as exc:
+            raise LockUnavailable(str(exc)) from exc
 
     def read(self, key: str) -> Optional[bytes]:
         return self.client.get(key)

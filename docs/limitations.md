@@ -91,7 +91,7 @@ it touches Dokploy. Know what this is and is not:
 
 ## The state lock (D-062)
 
-CI write commands (`apply`, `up`, `restore`, `add-server`, `server sync`) and
+CI write commands (`apply`, `up`, `restore`, `add-server`, `server sync`, `reinstall`) and
 `--break-glass` runs take **one lock**, the object `sealedstack/<infra name>/state.lock`
 in your R2 state bucket, with a conditional write, so they exclude each other.
 It records the holder, the CI run URL and an expiry (2 hours). Reads (`check`,
@@ -106,6 +106,9 @@ It records the holder, the CI run URL and an expiry (2 hours). Reads (`check`,
   proceed; the previous holder is dead by then and the window is a few requests.
 - The Status issue gets a problem comment when a lock has been held for more than an hour.
 - OpenTofu's own state lock still protects the tofu phases on top of this.
+- **Before the first `up` there is no lock.** The state bucket does not exist until `up` creates it, so a write command that
+  finds no bucket warns ("no state lock yet") and runs without the remote lock; break-glass uses a local file lock then. Any other
+  storage error (for example HTTP 403) still stops the run.
 
 ## No config ships in this repository
 

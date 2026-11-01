@@ -35,6 +35,10 @@ class S3Error(RuntimeError):
     pass
 
 
+class S3BucketMissing(S3Error):
+    """The bucket itself does not exist (R2 answers 404 NoSuchBucket), e.g. before the first ``up``."""
+
+
 def default_sender(method: str, url: str, headers: Mapping[str, str], body: bytes) -> Response:
     import urllib.request
 
@@ -148,6 +152,8 @@ class S3Client:
             return True
         if response.status == 412:
             return False
+        if response.status == 404:
+            raise S3BucketMissing(f"bucket '{self.bucket}' does not exist (conditional put {key}: HTTP 404)")
         raise S3Error(f"conditional put {key} failed (HTTP {response.status})")
 
     def get(self, key: str) -> Optional[bytes]:
