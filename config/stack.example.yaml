@@ -43,6 +43,7 @@ edge_security:
   bot_fight_mode: true
   block_ai_bots: true
   blocked_paths: ["/.env", "/.git", "xmlrpc.php", "/wp-", "*.php"]
+  security_headers: true   # Permissions-Policy, nosniff, Referrer-Policy on your hostnames
 
 state:
   backend: r2

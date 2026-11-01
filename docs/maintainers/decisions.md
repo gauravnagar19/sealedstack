@@ -345,3 +345,9 @@ GitHub environments with required reviewers are still used where the plan suppor
 **Why:** The bootstrap password sits in the secret source for the whole first run and works at the console afterwards. The owner wanted it rotated after configuration. A value the operator chooses and rotates by editing the secret source needs no write access to it.
 **Rejected:** writing a generated password back to the secret source (a write token in CI, D-038); locking root (no console login at all: the admin user has no password, so a broken tailnet would leave only the provider's rescue system); a generated password shown once (the trap D-076 removed for Dokploy).
 
+
+### D-078 — Security response headers are set on the app hostnames at the Cloudflare edge · 2026-11-01 · accepted
+**Decision:** The edge stack adds one zone ruleset, `sealedstack-security-headers` (phase `http_response_headers_transform`), that sets `Permissions-Policy` (camera, microphone, geolocation, payment, USB and interest-cohort off), `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` on every hostname of every deployable app. It is on by default and turned off with `edge_security.security_headers: false`. The Cloudflare token needs `Zone · Transform Rules: Edit`; `check` probes it.
+**Why:** A header scan of a gated app showed `Permissions-Policy` missing. The `unsafe-inline` CSP warning in the same scan belongs to Cloudflare's Access login page on the team domain, which a scanner reaches by following the redirect; it cannot be changed from the zone and is not ours to fix.
+**Rejected:** a default `Content-Security-Policy` (a policy that suits one app breaks another's inline scripts, CDNs or frames; apps send their own); `X-Frame-Options` (same reason, embedding is a legitimate use); HSTS (Cloudflare has its own zone setting for it).
+**Open:** whether the Access 302 itself carries the headers is checked against the live zone after the first apply.

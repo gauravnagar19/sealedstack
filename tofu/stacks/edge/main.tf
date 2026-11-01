@@ -174,6 +174,15 @@ locals {
   ]
   waf_expression = length(local.waf_terms) > 0 ? "(${join(" or ", local.waf_terms)})" : ""
 
+  # Response security headers on every app hostname (D-078). Cloudflare's own
+  # Access login page (the team domain) is not ours to change.
+  security_headers_on = try(local.stack.edge_security.security_headers, true)
+  app_hostnames       = sort(distinct(flatten([for name, app in local.deployable : app.hostnames])))
+  security_headers_expression = format(
+    "(http.host in {%s})",
+    join(" ", [for hostname in local.app_hostnames : "\"${hostname}\""]),
+  )
+
   backup_bucket = (
     local.backup_is_r2 ? one(module.backup_r2[*].bucket) :
     local.backup_is_s3 ? one(module.backup_s3[*].bucket) :
@@ -340,6 +349,32 @@ resource "cloudflare_ruleset" "redirects" {
       }
     }
   ]
+}
+
+# Headers only: no Content-Security-Policy, because a policy that is right for
+# one app (inline scripts, CDNs, frames) breaks another. Apps send their own.
+resource "cloudflare_ruleset" "security_headers" {
+  count    = local.use_cloudflare && local.security_headers_on && length(local.app_hostnames) > 0 ? 1 : 0
+  provider = cloudflare.this["default"]
+
+  zone_id = local.cloudflare_zone_id
+  name    = "sealedstack-security-headers"
+  kind    = "zone"
+  phase   = "http_response_headers_transform"
+
+  rules = [{
+    action      = "rewrite"
+    description = "security-response-headers"
+    enabled     = true
+    expression  = local.security_headers_expression
+    action_parameters = {
+      headers = {
+        "Permissions-Policy"     = { operation = "set", value = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()" }
+        "X-Content-Type-Options" = { operation = "set", value = "nosniff" }
+        "Referrer-Policy"        = { operation = "set", value = "strict-origin-when-cross-origin" }
+      }
+    }
+  }]
 }
 
 # --- backup slot ------------------------------------------------------------

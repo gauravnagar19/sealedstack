@@ -449,7 +449,7 @@ def checklist_items(
         add("fail", cf_label, "not found",
             link("Create the token with exactly these permissions", "prerequisites.md#cloudflare-api-token-permissions")
             + ": Account · Cloudflare Tunnel: Edit · Access: Apps and Policies: Edit · Workers R2 Storage: Edit · "
-              "Zone · DNS: Edit · Zone WAF: Edit · Bot Management: Edit · Single Redirect: Edit")
+              "Zone · DNS: Edit · Zone WAF: Edit · Bot Management: Edit · Single Redirect: Edit · Transform Rules: Edit")
 
     # 6. the Tailscale OAuth client
     cid, csec = by_id.get("secrets.tailscale_oauth_client_id"), by_id.get("secrets.tailscale_oauth_client_secret")

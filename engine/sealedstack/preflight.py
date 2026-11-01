@@ -67,6 +67,7 @@ CF_PERMISSIONS: list[tuple[str, str, str]] = [
     ("waf_edit", "Zone · WAF: Edit", "/zones/{zone_id}/rulesets?per_page=1"),
     ("bot_edit", "Zone · Bot Management: Edit", "/zones/{zone_id}/bot_management"),
     ("redirect_edit", "Zone · Single Redirect: Edit", "/zones/{zone_id}/rulesets/phases/http_request_dynamic_redirect/entrypoint"),
+    ("headers_edit", "Zone · Transform Rules: Edit", "/zones/{zone_id}/rulesets/phases/http_response_headers_transform/entrypoint"),
 ]
 
 

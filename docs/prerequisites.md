@@ -144,6 +144,7 @@ Zone scope (`example.com`):
 - Zone WAF: Edit
 - Bot Management: Edit
 - Single Redirect: Edit
+- Transform Rules: Edit (response security headers, D-078)
 
 `check` probes each permission and tells you exactly which one is missing. Your
 **Account ID** and **Zone** go into `config/stack.yaml`; they are not secrets.

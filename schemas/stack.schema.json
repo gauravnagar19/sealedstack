@@ -249,6 +249,11 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "security_headers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Set Permissions-Policy, X-Content-Type-Options and Referrer-Policy on every app hostname (D-078)."
         }
       }
     },

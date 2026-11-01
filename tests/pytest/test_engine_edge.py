@@ -102,3 +102,53 @@ def test_tofu_output_wrappers_are_unwrapped_for_the_platform_stack():
     assert plain["backup"]["bucket"] == "b" and plain["ingress_type"] == "cloudflare" and plain["connector_tokens"] == {"hello": "tok"}
     assert edge.plain_outputs("") == {} and edge.plain_outputs("{}") == {}
     assert edge.plain_outputs(json.dumps({"x": {"edge": "t"}})) == {"x": {"edge": "t"}}  # an already plain value stays
+
+
+# -- D-078: security response headers on the app hostnames ---------------------------------------------------------------
+import re  # noqa: E402
+
+EDGE_TF = (Path(__file__).resolve().parents[2] / "tofu" / "stacks" / "edge" / "main.tf").read_text(encoding="utf-8")
+
+
+def _block(name: str) -> str:
+    text = EDGE_TF[EDGE_TF.index(f'resource "cloudflare_ruleset" "{name}"'):]
+    return text[: text.index("\n}\n") + 3]
+
+
+def test_the_edge_stack_sets_permissions_policy_on_the_app_hostnames_only():
+    block = _block("security_headers")
+    assert 'phase   = "http_response_headers_transform"' in block
+    assert '"Permissions-Policy"' in block and "camera=()" in block
+    assert "local.security_headers_expression" in block and "http.host in" in EDGE_TF
+    assert "local.security_headers_on" in block  # the opt-out
+
+
+def test_no_default_content_security_policy_or_frame_options():
+    """A policy that fits one app breaks another's inline scripts or embedding; apps send their own."""
+    code = "\n".join(line for line in _block("security_headers").splitlines() if not line.lstrip().startswith("#"))
+    assert "Content-Security-Policy" not in code and "X-Frame-Options" not in code
+
+
+def test_the_switch_is_optional_in_the_schema_and_on_by_default():
+    schema = json.loads((Path(__file__).resolve().parents[2] / "schemas" / "stack.schema.json").read_text(encoding="utf-8"))
+    edge_security = schema["properties"]["edge_security"]
+    assert edge_security["properties"]["security_headers"]["default"] is True
+    assert "security_headers" not in edge_security["required"]  # existing stack.yaml files stay valid
+    assert re.search(r"security_headers_on\s*=\s*try\(local\.stack\.edge_security\.security_headers, true\)", EDGE_TF)
+
+
+def test_check_probes_the_transform_rules_permission():
+    from sealedstack import preflight
+
+    ids = {entry[0]: entry for entry in preflight.CF_PERMISSIONS}
+    assert ids["headers_edit"][1] == "Zone · Transform Rules: Edit"
+    assert "http_response_headers_transform" in ids["headers_edit"][2]
+
+
+def test_for_each_over_apps_filters_instead_of_choosing_between_two_object_types():
+    """`cond ? local.deployable : {}` fails to type-check once two apps differ in shape (second app added to demo-infra)."""
+    root = Path(__file__).resolve().parents[2] / "tofu" / "stacks"
+    bad = re.compile(r"for_each\s*=\s*[^\n]*\?\s*local\.(deployable|workers|object_storage)\s*:\s*\{\}")
+    for stack in ("edge", "platform"):
+        text = (root / stack / "main.tf").read_text(encoding="utf-8")
+        assert not bad.search(text), stack
