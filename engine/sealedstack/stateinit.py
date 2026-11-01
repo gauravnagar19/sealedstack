@@ -17,6 +17,9 @@ from . import secrets as secrets_mod
 from . import tofu as tofu_mod
 
 
+DEFAULT_BUCKET = "sealedstack-state"
+
+
 def _require(source: secrets_mod.SecretSource, config: config_mod.Config, name: str) -> str:
     return tofu_mod.require(source, config, name)
 
@@ -62,6 +65,11 @@ def run(
     rc = run_tofu(["tofu", "-chdir", str(state_dir), "init"])
     if rc != 0:
         return rc
+    # This stack keeps its state locally and a CI runner starts empty, so a bucket made by an earlier (possibly
+    # interrupted) run is unknown to it. Adopt the bucket if it exists; if it does not, the import fails harmlessly
+    # and the apply below creates it.
+    bucket = child_env_map.get("TF_VAR_bucket") or DEFAULT_BUCKET
+    run_tofu(["tofu", "-chdir", str(state_dir), "import", "-input=false", "aws_s3_bucket.state", bucket])
     return run_tofu(["tofu", "-chdir", str(state_dir), "apply", *tofu_mod.action_args("apply", env), *(extra_args or [])])
 
 

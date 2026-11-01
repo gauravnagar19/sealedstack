@@ -48,10 +48,7 @@ resource "aws_s3_bucket" "state" {
   }
 }
 
-resource "aws_s3_bucket_versioning" "state" {
-  bucket = aws_s3_bucket.state.id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
+# No bucket versioning: Cloudflare R2 does not implement PutBucketVersioning (HTTP 501, first live run), so asking
+# for it made state-init fail after the bucket was already created. The state is encrypted (above) and the
+# remote state lock protects it from concurrent writes; keep a copy of it with your own backup routine if you
+# need history.

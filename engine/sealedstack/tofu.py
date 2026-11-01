@@ -112,6 +112,8 @@ def backend_config(
         "skip_region_validation = true\n"
         "skip_requesting_account_id = true\n"
         "use_path_style = true\n"
+        # R2 rejects the checksum trailers newer S3 clients add to uploads (HTTP 501), so state writes need this off.
+        "skip_s3_checksum = true\n"
         "use_lockfile = true\n"
     )
 

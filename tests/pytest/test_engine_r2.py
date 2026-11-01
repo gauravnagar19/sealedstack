@@ -241,7 +241,7 @@ def test_stateinit_passes_derived_keys_to_tofu(tmp_path):
     assert stateinit.run(config, {}, source=EnvSource({"R2_ACCESS_KEY_ID": "a", "R2_SECRET_ACCESS_KEY": "b",
                                                       "state_passphrase": "0123456789abcdef"}),
                          runner=lambda argv: calls.append(argv) or 0) == 0
-    assert len(calls) == 2
+    assert [c[3] for c in calls] == ["init", "import", "apply"]  # adopt an existing bucket, then converge
 
 
 def test_edge_and_platform_tfvars_use_derived_keys(tmp_path):
