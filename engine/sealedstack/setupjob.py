@@ -490,9 +490,10 @@ def checklist_items(
         owner_name = repo.split("/", 1)[0] if "/" in repo else "<owner>"
         steps = (
             "Manual step in the Tailscale admin console, Settings → Trust credentials → Credential → **OpenID Connect**: "
-            "Issuer **GitHub**; Subject `repo:" + owner_name + "/<app>:ref:refs/heads/main` "
-            "(the release job has no `environment:`, so the subject is the branch it runs from; a `*` wildcard works, "
-            "e.g. `repo:" + owner_name + "/*:ref:refs/heads/main`); Scope **auth_keys: write**; "
+            "Issuer **GitHub**; Subject `repo:" + owner_name + "@<owner-id>/<app>@<repo-id>:ref:refs/heads/main` "
+            "(GitHub puts the numeric account and repository ids into the subject, and the release job has no `environment:`, "
+            "so the rest is the branch it runs from; the console shows the exact value it received, and a `*` wildcard works, "
+            "e.g. `repo:" + owner_name + "@<owner-id>/*:ref:refs/heads/main`); Scope **auth_keys: write**; "
             "Tag **`tag:release`** (not `tag:ci`: that tag can SSH, `tag:release` reaches only the Dokploy API). "
             "Create it as a second credential, separate from the infra repo's own. Then put its Client ID and Audience in "
             "`config/stack.yaml` as `providers.mesh_tailscale.release_oauth_client_id` and `release_audience` (in this PR). "
