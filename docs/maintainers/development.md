@@ -18,7 +18,7 @@ surprised by it.
 | `.ansible-lint` | ansible-lint config | lint the playbooks/roles in CI |
 | `.pre-commit-config.yaml` | pre-commit hooks | run gitleaks + `tofu fmt` + YAML checks locally before commit |
 | `renovate.json` | Renovate bot config | opens PRs when pinned tools/providers/images go stale |
-| `.github/workflows/ci.yml` | CI | config+registry check, `tofu fmt`/`validate`, ansible-lint, gitleaks |
+| `.github/workflows/ci.yml` | CI | one job graph (D-083): lint + validate (+ Docker image checks), pytest, `tofu fmt`/`validate`, docs build; resolves the toolbox once |
 | `.github/workflows/drift.yml` | scheduled `tofu plan` | detects drift against the real accounts (needs repo secrets) |
 | `LICENSE` | Apache-2.0 | the open-source licence |
 
@@ -51,7 +51,7 @@ just doctor          # what's missing for your selected providers
 pre-commit install   # optional: run gitleaks/tofu-fmt on commit
 ```
 
-CI runs the same checks. `just validate` requires a rendered `.build/`; the CI
+CI runs the same checks (the toolbox is pulled by the digest of its content, so a change under `toolbox/` is built once in the run that changes it). `just validate` requires a rendered `.build/`; the CI
 job and `just plan/apply` run `scripts/render.py` first (needs `GH_TOKEN` for
 repo apps, but tolerates unresolved manifests).
 
@@ -112,3 +112,5 @@ scripts/release.sh              # bump, test, push main and the tag, dispatch th
 ```
 
 `--minor` or `--version X.Y.Z` override the next patch number; `--yes` skips the confirmation. See D-080.
+
+The release workflow first waits for the `ci` run of that exact commit and refuses to build unless it succeeded (D-082). `scripts/release.sh` waits for that run itself after its push and only then tags and dispatches, so the gate normally finds it finished; a red run stops the script, is fixed, and the release is cut again.

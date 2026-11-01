@@ -1,23 +1,18 @@
 name: docs
 
-# Build the documentation site (mkdocs-material). Deploying to GitHub Pages is
-# gated twice (D-053): the repository must be public AND the owner must have set
-# the repository variable PUBLIC_RELEASE_CONFIRMED to 'true'. Until both hold,
-# this workflow only builds. tests/pytest/test_public_guard.py enforces it.
+# Build the documentation site (mkdocs-material). ci.yml calls this workflow when
+# docs/**, mkdocs.yml or the CI files change, so the site is built once per run and
+# that same build is the Pages artifact (D-083); a manual dispatch also works.
+# Deploying to GitHub Pages is gated twice (D-053): the repository must be public
+# AND the owner must have set the repository variable PUBLIC_RELEASE_CONFIRMED to
+# 'true'. Until both hold, this workflow only builds. A pull request never uploads
+# or deploys. tests/pytest/test_public_guard.py enforces it.
 on:
-  push:
-    branches: [main]
-    paths: ["docs/**", "mkdocs.yml"]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -29,7 +24,9 @@ jobs:
           python-version: "3.12"
       - run: pip install "mkdocs-material==9.5.42"
       - run: mkdocs build --strict
-      - uses: actions/upload-pages-artifact@v3
+      # In a called workflow github.event_name is the caller's event.
+      - if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
@@ -37,8 +34,16 @@ jobs:
     needs: build
     # D-053: nothing is published until the owner confirms. Both conditions are
     # required: a public repository and the owner-set PUBLIC_RELEASE_CONFIRMED.
-    if: ${{ !github.event.repository.private && vars.PUBLIC_RELEASE_CONFIRMED == 'true' }}
+    # A pull request run (ci.yml calls this too) never deploys.
+    if: ${{ !github.event.repository.private && vars.PUBLIC_RELEASE_CONFIRMED == 'true' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

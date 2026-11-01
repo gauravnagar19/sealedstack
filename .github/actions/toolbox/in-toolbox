@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Run a command inside the CI toolbox image on the current directory.
+#
+#   in-toolbox <command> [args...]
+#
+# The image is the one the sibling action.yml made available as sealedstack-toolbox:ci
+# (pulled by digest, or built when the toolbox changed). The checkout is mounted at
+# /work, and $RUNNER_TEMP at the same path so a config directory made there is
+# visible under the same name. These variables pass through when they are set.
+set -euo pipefail
+
+exec docker run --rm --init \
+  -v "${PWD}:/work" -v "${RUNNER_TEMP}:${RUNNER_TEMP}" -w /work \
+  -e TF_VAR_state_passphrase -e SEALEDSTACK_CONFIG -e TF_PLUGIN_CACHE_DIR \
+  sealedstack-toolbox:ci "$@"

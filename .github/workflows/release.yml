@@ -15,7 +15,9 @@ name: release
 # `vars.PUBLIC_RELEASE_CONFIRMED == 'true'`.
 #
 # On a manual dispatch (the only trigger — D-052/B2) it:
-#   0. checks the dispatcher is in the repo variable `RELEASE_APPROVERS`,
+#   0. checks the dispatcher is in the repo variable `RELEASE_APPROVERS`, and that the
+#      `ci` workflow succeeded for the dispatched commit (D-082; it waits for a run
+#      that is still going, because scripts/release.sh dispatches right after its push),
 #   1. builds the toolbox and captures its manifest digest,
 #   2. builds the tool image FROM that toolbox digest (amd64 + arm64),
 #   3. waits for approval in the `release` environment (where supported) and
@@ -57,8 +59,53 @@ jobs:
             echo "not authorized: '${ACTOR}' is not in RELEASE_APPROVERS" >&2
           fi
 
-  toolbox:
+  ci-gate:
+    # D-082: a release must not ship a commit whose `ci` run is red, unfinished or
+    # missing (0.6.15 went out with a failed ci run). Fails closed: any API error,
+    # no run, or a run that did not succeed stops the release before anything is built.
     needs: authorize
+    if: ${{ needs.authorize.outputs.ok == 'true' && !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Require a successful ci run for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          started=${SECONDS}
+          while true; do
+            # The newest ci run for exactly this commit decides (a re-run replaces the failed one).
+            row="$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=30" \
+              --jq '.workflow_runs | sort_by(.created_at) | last | select(. != null) | [.status, (.conclusion // "none"), .html_url] | @tsv')"
+            if [ -z "${row}" ]; then
+              if [ $((SECONDS - started)) -ge 300 ]; then
+                echo "::error::no ci run found for ${SHA}; push it to main (or re-run ci) and dispatch the release again"
+                exit 1
+              fi
+              echo "no ci run for ${SHA} yet; waiting"
+            else
+              IFS=$'\t' read -r status conclusion url <<<"${row}"
+              if [ "${status}" = "completed" ]; then
+                if [ "${conclusion}" = "success" ]; then
+                  echo "ci succeeded for ${SHA}: ${url}"
+                  exit 0
+                fi
+                echo "::error::ci finished '${conclusion}' for ${SHA}, so it is not released: ${url}"
+                exit 1
+              fi
+              echo "ci is ${status} for ${SHA}: ${url}"
+            fi
+            sleep 20
+          done
+
+  toolbox:
+    needs: [authorize, ci-gate]
     if: ${{ needs.authorize.outputs.ok == 'true' && !inputs.dry_run }}
     uses: ./.github/workflows/toolbox.yml
     permissions:
@@ -66,8 +113,9 @@ jobs:
       packages: write
 
   release:
-    needs: [authorize, toolbox]
-    if: ${{ always() && needs.authorize.outputs.ok == 'true' && !inputs.dry_run }}
+    needs: [authorize, ci-gate, toolbox]
+    # No bare always(): it would let this job run after a failed ci-gate or toolbox.
+    if: ${{ !inputs.dry_run && needs.authorize.outputs.ok == 'true' && needs.ci-gate.result == 'success' && needs.toolbox.result == 'success' }}
     runs-on: ubuntu-latest
     # The owner approves every push to GHCR (where GitHub supports environment
     # reviewers; on Free private repos the D-052 check is the gate).

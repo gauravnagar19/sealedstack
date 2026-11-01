@@ -1,142 +1,296 @@
 name: ci
 
+# One job graph (D-083):
+#
+#   prepare ─┬─ lint + validate (+ the Docker image checks when they apply)
+#            ├─ tests
+#            ├─ tofu fmt + validate
+#            └─ docs (docs.yml, called)
+#
+# Every job that needs the toolbox pulls the image `prepare` resolved instead of building
+# it again. Each job is billed in whole minutes, so small checks are steps of a job that
+# already runs, not jobs of their own.
+#
+# `prepare` works out what changed (a docs-only commit skips tofu and the Docker
+# jobs; the tests and hygiene checks still run because they read docs/) and finds the
+# published toolbox for this exact toolbox/ content. Skipped jobs show as skipped and
+# the run still succeeds: the release workflow gates on this run's conclusion (D-082).
+#
+# Nothing here publishes anything (D-053): the toolbox is only pulled, never pushed,
+# so a pull request cannot put an image in GHCR. toolbox.yml publishes on main and in
+# a release; release.yml, app.yml, infra.yml and drift.yml have other triggers and
+# permissions and stay separate.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+# A newer push to a pull request replaces the older run. Pushes to main each get their
+# own group and are never cancelled: the release gate waits for the run of one commit.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Everything runs in the toolbox image so local and CI use the same tools (M12).
-  toolbox:
-    name: validate (toolbox)
+  prepare:
+    name: prepare (changes + toolbox)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      docs: ${{ steps.changes.outputs.docs }}
+      tofu: ${{ steps.changes.outputs.tofu }}
+      images: ${{ steps.changes.outputs.images }}
+      image: ${{ steps.toolbox.outputs.image }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # the publication-hygiene step checks history identities
-      - uses: docker/setup-buildx-action@v3
-      - name: Build the toolbox
-        # Layer-cached: the toolbox rarely changes, so most runs reuse every layer.
+          fetch-depth: 0   # the diff against the base needs it
+      - id: changes
+        name: What changed
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base=""
+          [ "${EVENT}" = pull_request ] && base="${PR_BASE}"
+          [ "${EVENT}" = push ] && base="${PUSH_BEFORE}"
+          docs=true tofu=true images=true
+          # No usable base (manual run, new branch, force push) or an empty diff: run everything.
+          if [ -n "${base}" ] && git cat-file -e "${base}^{commit}" 2>/dev/null \
+             && files="$(git diff --name-only "${base}" HEAD)" && [ -n "${files}" ]; then
+            any() { grep -Eq "$1" <<<"${files}"; }
+            any '^(docs/|mkdocs\.yml$|\.github/workflows/(ci|docs)\.yml$)' || docs=false
+            any '^(tofu/|config/|registry/|schemas/|scripts/|engine/|toolbox/|\.github/(workflows/ci\.yml|actions/))' || tofu=false
+            any '^(examples/|Dockerfile$|\.dockerignore$|toolbox/|\.github/(workflows/ci\.yml|actions/))' || images=false
+            # The tool image build (F2) guards the Dockerfile's FROM and COPY lines. Editing a file
+            # under a copied path cannot break them; removing or renaming one can.
+            if [ "${images}" = false ] \
+               && git diff --name-only --diff-filter=DR "${base}" HEAD \
+                  | grep -Eq '^((scripts|tests|engine|registry|schemas|tofu|ansible|examples|docs|config)/|(VERSION|README\.md|AGENTS\.md|ansible\.cfg)$)'; then
+              images=true
+            fi
+            while IFS= read -r f; do echo "changed: ${f}"; done <<<"${files}"
+          else
+            echo "no usable base: running everything"
+          fi
+          echo "docs=${docs} tofu=${tofu} images=${images}"
+          { echo "docs=${docs}"; echo "tofu=${tofu}"; echo "images=${images}"; } >> "${GITHUB_OUTPUT}"
+      - uses: docker/login-action@v3
+        continue-on-error: true   # without it the lookup below just finds nothing and the toolbox is built
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: toolbox
+        name: Find the published toolbox for this toolbox/ content
+        # Read-only on purpose. toolbox.yml (workflow_call) would build and PUSH the image
+        # when the tag is missing, which would let a pull request publish to GHCR (D-053).
+        # The same `tree-<hash of toolbox/>` tag toolbox.yml writes on main.
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          repo_image="ghcr.io/${OWNER,,}/sealedstack-toolbox"
+          tree="$(git rev-parse HEAD:toolbox)"
+          if digest="$(docker buildx imagetools inspect "${repo_image}:tree-${tree}" --format '{{.Manifest.Digest}}' 2>/dev/null)" \
+             && [ -n "${digest}" ]; then
+            echo "image=${repo_image}@${digest}" >> "${GITHUB_OUTPUT}"
+            echo "Using ${repo_image}:tree-${tree} (${digest})"
+          else
+            echo "image=" >> "${GITHUB_OUTPUT}"
+            echo "No published toolbox for toolbox/ content ${tree}: building it here"
+          fi
+      - if: ${{ steps.toolbox.outputs.image == '' }}
+        uses: docker/setup-buildx-action@v3
+      - name: Build the toolbox once and cache its layers
+        # Only when toolbox/ changed and is not published yet. The jobs below import this cache.
+        if: ${{ steps.toolbox.outputs.image == '' }}
         uses: docker/build-push-action@v6
         with:
           context: toolbox
-          load: true
-          tags: sealedstack-toolbox:ci
+          push: false
           cache-from: type=gha,scope=toolbox-ci
           cache-to: type=gha,scope=toolbox-ci,mode=max
+
+  lint:
+    name: lint + validate (+ images)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Offline render: repo apps may be unresolvable; validate reports them.
+      TF_VAR_state_passphrase: ci-dummy
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # publication hygiene checks history identities; gitleaks scans all of it
+          # The PR's own commits, not GitHub's synthetic merge commit, whose committer is the
+          # GitHub web-flow identity that the publication identity check calls non-neutral.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/toolbox
+        with:
+          image: ${{ needs.prepare.outputs.image }}
       - name: Build the tool image
         # F2: the root Dockerfile is never otherwise built in CI, so a broken
-        # FROM/COPY would only surface at release time.
-        # `buildx use default`: the container builder cannot see the image loaded above.
-        run: |
-          docker buildx use default
-          docker build -f Dockerfile --build-arg TOOLBOX_IMAGE=sealedstack-toolbox:ci .
+        # FROM/COPY would only surface at release time. Built, never pushed (D-053).
+        # Before any in-toolbox step: those run as root and leave a root-only .build/ in the
+        # checkout, which the Docker client cannot read to send the build context.
+        if: ${{ needs.prepare.outputs.images == 'true' }}
+        run: docker build -f Dockerfile --build-arg TOOLBOX_IMAGE=sealedstack-toolbox:ci .
       - name: config from examples
         # The repo ships no real config (D-022/F4); validate against the samples.
         run: |
-          mkdir -p "$RUNNER_TEMP/cfg"
-          cp config/stack.example.yaml "$RUNNER_TEMP/cfg/stack.yaml"
-          cp config/servers.example.yaml "$RUNNER_TEMP/cfg/servers.yaml"
-          cp config/apps.example.yaml "$RUNNER_TEMP/cfg/apps.yaml"
-      - name: config + registry + render + compose lint
-        env:
-          # Offline render: repo apps may be unresolvable; validate reports them.
-          TF_VAR_state_passphrase: ci-dummy
-        run: |
-          docker run --rm -v "$PWD:/work" -v "$RUNNER_TEMP/cfg:/cfg" -w /work \
-            -e TF_VAR_state_passphrase -e SEALEDSTACK_CONFIG=/cfg \
-            sealedstack-toolbox:ci bash -lc \
-            "python3 scripts/registry.py check && python3 scripts/render.py --allow-unresolved && python3 scripts/validate.py"
+          # in-toolbox mounts $RUNNER_TEMP at the same path, so the engine finds it there.
+          echo "SEALEDSTACK_CONFIG=${RUNNER_TEMP}/cfg" >> "${GITHUB_ENV}"
+          export SEALEDSTACK_CONFIG="${RUNNER_TEMP}/cfg"
+          mkdir -p "${SEALEDSTACK_CONFIG}"
+          cp config/stack.example.yaml "${SEALEDSTACK_CONFIG}/stack.yaml"
+          cp config/servers.example.yaml "${SEALEDSTACK_CONFIG}/servers.yaml"
+          cp config/apps.example.yaml "${SEALEDSTACK_CONFIG}/apps.yaml"
+      - name: registry check
+        run: in-toolbox python3 scripts/registry.py check
+      - name: render (offline)
+        run: in-toolbox python3 scripts/render.py --allow-unresolved
+      - name: validate (config, compose lint)
+        run: in-toolbox python3 scripts/validate.py
       - name: ansible-lint
-        run: |
-          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
-            ansible-lint
+        run: in-toolbox ansible-lint
       - name: ansible-playbook --syntax-check
         run: |
-          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
-            bash -lc "ansible-playbook -i localhost, --syntax-check \
-              ansible/playbooks/site.yml ansible/playbooks/bootstrap.yml"
+          in-toolbox bash -lc "ansible-playbook -i localhost, --syntax-check \
+            ansible/playbooks/site.yml ansible/playbooks/bootstrap.yml"
       - name: shellcheck
-        run: |
-          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
-            bash -lc "shellcheck scripts/*.sh"
+        run: in-toolbox bash -lc "shellcheck scripts/*.sh .github/actions/toolbox/in-toolbox"
       - name: publication hygiene
         # Deny-list (if present), personal patterns, git identity/metadata and
-        # gitleaks (A7, D-051).
+        # gitleaks over the archive (A7, D-051).
+        run: in-toolbox bash -lc "scripts/publish-check.sh --strict --metadata"
+      - name: gitleaks (full history)
+        # Runs even when an earlier check failed, so one run shows everything. A direct
+        # full-history scan (no push-range logic, which breaks on a rewritten root commit);
+        # publish-check --strict above scans the archive. The script fails when gitleaks
+        # could not read the repository or scanned fewer commits than exist: a bare
+        # `gitleaks detect` printed "no leaks found" and exited 0 on git's "dubious
+        # ownership" refusal, so this job used to scan nothing.
+        if: ${{ !cancelled() }}
+        run: in-toolbox scripts/gitleaks-history.sh /work
+      # The Docker checks run only when something they read changed (`images` from prepare).
+      # They are steps here, not a job: a 13s job still bills a minute.
+      - name: Build the reference app image once
+        # M3: the reference app (examples/app-template) is built, run and checked with no live
+        # accounts. Nothing is pushed anywhere (D-053). Its unit tests, the registry check and
+        # the validate run against the sample infra config are in `tests` and above
+        # (tests/pytest/test_reference_app.py runs scripts/validate.py against it).
+        # Tagged exactly as docker compose will look for it (the override file's default
+        # APP_VERSION), so the compose step below can run it without building again.
+        if: ${{ needs.prepare.outputs.images == 'true' }}
+        working-directory: examples/app-template
         run: |
-          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
-            bash -lc "scripts/publish-check.sh --strict --metadata"
+          set -euo pipefail
+          image="$(docker compose config --images)"
+          echo "building ${image}"
+          docker build --tag "${image}" .
+      - name: Run the reference app image and check /api/health
+        if: ${{ needs.prepare.outputs.images == 'true' }}
+        run: |
+          set -euo pipefail
+          image="$(cd examples/app-template && docker compose config --images)"
+          docker run -d --name ref -p 3000:3000 "${image}"
+          for _ in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:3000/api/health; then echo; break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/api/health | grep -q '"status": "ok"'
+          docker rm -f ref
+      - name: docker compose up (the developer flow, same image)
+        # --no-build fails if the image is not the one built above. No --wait: the compose
+        # healthcheck's first probe comes 30s after start, so waiting for it took 30s; run
+        # the healthcheck's own command by hand instead.
+        if: ${{ needs.prepare.outputs.images == 'true' }}
+        working-directory: examples/app-template
+        run: |
+          set -euo pipefail
+          docker compose up -d --no-build
+          for _ in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:3000/api/health; then echo; break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/api/health | grep -q '"status": "ok"'
+          docker compose exec -T web wget -qO- http://127.0.0.1:3000/api/health
+          echo
+          docker compose down
+
+  tests:
+    name: tests (pytest)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/toolbox
+        with:
+          image: ${{ needs.prepare.outputs.image }}
       - name: tests (pytest, incl. the engine)
-        run: |
-          docker run --rm -v "$PWD:/work" -w /work sealedstack-toolbox:ci \
-            bash -lc "tests/run.sh"
+        # tests/run.sh adds -n auto: the toolbox has pytest-xdist.
+        run: in-toolbox tests/run.sh
 
   tofu:
     name: tofu fmt + validate
+    needs: prepare
+    if: ${{ needs.prepare.outputs.tofu == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Encryption needs a value even for -backend=false validation (H8).
+      TF_VAR_state_passphrase: ci-dummy
     steps:
       - uses: actions/checkout@v4
-      - uses: opentofu/setup-opentofu@v1
+      - uses: ./.github/actions/toolbox
         with:
-          tofu_version: "1.13.1"
-      - uses: actions/setup-python@v5
+          image: ${{ needs.prepare.outputs.image }}
+      - name: Provider cache location
+        run: echo "TF_PLUGIN_CACHE_DIR=${RUNNER_TEMP}/tf-plugin-cache" >> "${GITHUB_ENV}"
+      - name: Provider cache
+        # The five stacks pull ~1.8 GB of providers (about 380 MB compressed). Downloading them was
+        # most of this job; with the cache restored `init` takes seconds. Keyed on the lock files.
+        uses: actions/cache@v4
         with:
-          python-version: "3.12"
-      - run: pip install "pyyaml==6.0.2" "jsonschema==4.23.0"
+          path: ${{ runner.temp }}/tf-plugin-cache
+          key: tofu-plugins-${{ hashFiles('tofu/stacks/*/.terraform.lock.hcl') }}
+          restore-keys: tofu-plugins-
       - name: config from examples
         run: |
-          mkdir -p cfg
-          cp config/stack.example.yaml cfg/stack.yaml
-          cp config/servers.example.yaml cfg/servers.yaml
-          cp config/apps.example.yaml cfg/apps.yaml
+          # in-toolbox mounts $RUNNER_TEMP at the same path, so the engine finds it there.
+          echo "SEALEDSTACK_CONFIG=${RUNNER_TEMP}/cfg" >> "${GITHUB_ENV}"
+          export SEALEDSTACK_CONFIG="${RUNNER_TEMP}/cfg"
+          mkdir -p "${SEALEDSTACK_CONFIG}"
+          cp config/stack.example.yaml "${SEALEDSTACK_CONFIG}/stack.yaml"
+          cp config/servers.example.yaml "${SEALEDSTACK_CONFIG}/servers.yaml"
+          cp config/apps.example.yaml "${SEALEDSTACK_CONFIG}/apps.yaml"
       - name: render (offline)
-        env:
-          SEALEDSTACK_CONFIG: ${{ github.workspace }}/cfg
-        run: python scripts/render.py --allow-unresolved
-      - run: tofu fmt -check -recursive tofu
-      - name: tofu validate
-        env:
-          # Encryption needs a value even for -backend=false validation (H8).
-          TF_VAR_state_passphrase: ci-dummy
-        run: |
-          for stack in state generated edge platform compute; do
-            tofu -chdir="tofu/stacks/${stack}" init -backend=false -input=false >/dev/null
-            tofu -chdir="tofu/stacks/${stack}" validate
-          done
+        run: in-toolbox python3 scripts/render.py --allow-unresolved
+      # The toolbox pins the same OpenTofu as the engine uses, so there is no second pin here.
+      - name: tofu fmt
+        run: in-toolbox tofu fmt -check -recursive tofu
+      - name: tofu init + validate (all stacks)
+        run: in-toolbox scripts/tofu-validate.sh
 
   docs:
-    name: docs build (strict)
-    # Builds only; deploying is gated separately (D-053). Broken links and anchors
-    # fail the build.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install "mkdocs-material==9.5.42"
-      - run: mkdocs build --strict
-
-  secrets:
-    name: gitleaks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # scan the whole history
-      - uses: docker/setup-buildx-action@v3
-      - name: Build the toolbox
-        # Layer-cached: the toolbox rarely changes, so most runs reuse every layer.
-        uses: docker/build-push-action@v6
-        with:
-          context: toolbox
-          load: true
-          tags: sealedstack-toolbox:ci
-          cache-from: type=gha,scope=toolbox-ci
-          cache-to: type=gha,scope=toolbox-ci,mode=max
-      - name: gitleaks (full history)
-        # A direct full-history scan (no push-range logic, which breaks on a
-        # rewritten root commit). publish-check --strict also scans the archive.
-        run: |
-          docker run --rm -v "$PWD:/repo" -w /repo sealedstack-toolbox:ci \
-            gitleaks detect --redact -v --no-banner
+    name: docs
+    needs: prepare
+    if: ${{ needs.prepare.outputs.docs == 'true' }}
+    # docs.yml builds the site once (strict: broken links and anchors fail) and, on main,
+    # uploads that build as the Pages artifact for its gated deploy (D-053). It asks for
+    # the Pages permissions so its deploy job can have them; on a pull request it only builds.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml

@@ -70,7 +70,8 @@ RUN set -eux; \
         "json5==0.9.25" \
         "pynacl==1.5.0" \
         "pyyaml==6.0.2" \
-        "pytest==8.3.3"; \
+        "pytest==8.3.3" \
+        "pytest-xdist==3.6.1"; \
     "${VIRTUAL_ENV}/bin/ansible-galaxy" collection install \
         "ansible.posix:==${ANSIBLE_POSIX_VERSION}"; \
     printf '%s\n' 'export PATH="/opt/venv/bin:$PATH"' > /etc/profile.d/venv.sh; \

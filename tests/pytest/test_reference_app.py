@@ -31,7 +31,8 @@ def load_server():
 def server():
     module = load_server()
     httpd = module.make_server(0, "127.0.0.1")
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    # poll_interval: shutdown() waits for the next poll, 0.5s by default, per test.
+    thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     yield module, httpd.server_address[1]
     httpd.shutdown()

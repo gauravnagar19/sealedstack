@@ -368,3 +368,16 @@ def test_scan_repo_finds_a_planted_violation(tmp_path):
     problems = scan_repo(tmp_path)
     assert any("docs.yml" in p for p in problems)
     assert any("scripts/publish.sh" in p for p in problems)
+
+
+def test_docs_workflow_is_only_called_or_dispatched_and_a_pull_request_never_deploys():
+    # ci.yml calls docs.yml (D-083); it has no trigger of its own that a PR or a push could use.
+    data = yaml.safe_load((REPO / ".github" / "workflows" / "docs.yml").read_text(encoding="utf-8"))
+    triggers = data.get("on", data.get(True))
+    assert set(triggers) == {"workflow_dispatch", "workflow_call"}
+    condition = str(data["jobs"]["deploy"]["if"])
+    assert "github.event_name != 'pull_request'" in condition
+    assert gated(condition)
+    steps = data["jobs"]["build"]["steps"]
+    upload = next(s for s in steps if str(s.get("uses", "")).startswith("actions/upload-pages-artifact"))
+    assert "github.event_name != 'pull_request'" in str(upload.get("if"))

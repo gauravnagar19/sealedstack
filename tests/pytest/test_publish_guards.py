@@ -80,3 +80,89 @@ def test_hook_refuses_main_with_personal_email(tmp_path):
     result = _run_hook(repo, f"refs/heads/main {head} refs/heads/main {ZERO}\n")
     assert result.returncode != 0
     assert "no-reply" in result.stderr
+
+
+# -- scripts/gitleaks-history.sh: a scan that could not read the repository must not pass ---------
+def _history_scan(tmp_path: Path, stub_body: str, commits: int = 2):
+    """Run the wrapper in a throwaway repo with a stub `gitleaks` first on PATH."""
+    repo = tmp_path / "h"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    for i in range(commits):
+        (repo / "f.txt").write_text(f"{i}\n")
+        _commit(repo, "octocat", NO_REPLY)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "gitleaks"
+    stub.write_text("#!/usr/bin/env bash\n" + stub_body)
+    stub.chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
+    return subprocess.run(["bash", str(REPO / "scripts" / "gitleaks-history.sh"), str(repo)], capture_output=True, text=True, env=env)
+
+
+def test_history_scan_passes_when_every_commit_was_scanned(tmp_path):
+    result = _history_scan(tmp_path, "echo '2 commits scanned.'; echo 'no leaks found'\n")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_history_scan_fails_when_gitleaks_could_not_read_the_repository(tmp_path):
+    # What the old CI job logged while still printing "no leaks found" and exiting 0.
+    stub = "echo \"ERR [git] fatal: detected dubious ownership\"; echo 'ERR failed to scan Git repository'; echo 'no leaks found'\n"
+    result = _history_scan(tmp_path, stub)
+    assert result.returncode != 0
+    assert "reported an error" in result.stderr
+
+
+def test_history_scan_fails_when_fewer_commits_were_scanned_than_exist(tmp_path):
+    result = _history_scan(tmp_path, "echo '1 commits scanned.'; echo 'no leaks found'\n")
+    assert result.returncode != 0
+    assert "scanned '1' commits but the repository has 2" in result.stderr
+
+
+def test_history_scan_fails_when_gitleaks_finds_a_leak(tmp_path):
+    result = _history_scan(tmp_path, "echo '2 commits scanned.'; echo 'leaks found: 1'; exit 1\n")
+    assert result.returncode != 0
+
+
+def test_history_scan_trusts_the_checkout_for_git_without_changing_global_config(tmp_path):
+    stub = 'echo "$GIT_CONFIG_KEY_0=$GIT_CONFIG_VALUE_0"; echo \'2 commits scanned.\'\n'
+    result = _history_scan(tmp_path, stub)
+    assert result.returncode == 0
+    assert f"safe.directory={tmp_path / 'h'}" in result.stdout
+
+
+def test_gitleaks_config_only_uses_allowlist_syntax_the_pinned_gitleaks_reads():
+    # gitleaks 8.21.2 (toolbox/Dockerfile) silently ignores a global `[[allowlists]]` table (that arrived in
+    # 8.25), which made the history scan fail on two reviewed false positives. A rule-level allowlist works.
+    import tomllib
+
+    config = tomllib.loads((REPO / ".gitleaks.toml").read_text(encoding="utf-8"))
+    assert config["extend"] == {"useDefault": True}
+    assert "allowlists" not in config
+    (rule,) = config["rules"]
+    assert rule["id"] == "generic-api-key"
+    (allow,) = rule["allowlists"]
+    assert allow["condition"] == "AND" and allow["paths"] and allow["regexes"]
+
+
+def test_history_scan_does_not_expect_merge_commits_to_be_scanned(tmp_path):
+    # A pull request run checks out GitHub's merge commit; gitleaks shows no patch for merges.
+    repo = tmp_path / "h"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "f.txt").write_text("0\n")
+    _commit(repo, "octocat", NO_REPLY)
+    _git(repo, "checkout", "-q", "-b", "side")
+    (repo / "g.txt").write_text("1\n")
+    _commit(repo, "octocat", NO_REPLY)
+    _git(repo, "checkout", "-q", "main")
+    (repo / "h.txt").write_text("2\n")
+    _commit(repo, "octocat", NO_REPLY)
+    _git(repo, "-c", "user.name=octocat", "-c", f"user.email={NO_REPLY}", "merge", "-q", "--no-ff", "-m", "merge", "side")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gitleaks").write_text("#!/usr/bin/env bash\necho '3 commits scanned.'\n")
+    (bin_dir / "gitleaks").chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
+    result = subprocess.run(["bash", str(REPO / "scripts" / "gitleaks-history.sh"), str(repo)], capture_output=True, text=True, env=env)
+    assert result.returncode == 0, result.stdout + result.stderr

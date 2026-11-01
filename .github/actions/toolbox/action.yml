@@ -1,0 +1,48 @@
+name: sealedstack toolbox
+description: >
+  Make the toolbox image available as sealedstack-toolbox:ci and put `in-toolbox` on PATH.
+  Pulls the published image by digest when the prepare job found one for the
+  current toolbox/ content, otherwise builds it from toolbox/ (layer-cached).
+
+inputs:
+  image:
+    description: "ghcr.io/<owner>/sealedstack-toolbox@sha256:... from the prepare job; empty means build"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - if: ${{ inputs.image != '' }}
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    - if: ${{ inputs.image != '' }}
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        docker pull --quiet "${IMAGE}"
+        docker tag "${IMAGE}" sealedstack-toolbox:ci
+    # No published image for this toolbox/ content (a pull request that changes it): build
+    # it. The prepare job warmed the layer cache, so this is a cache import and a load.
+    - if: ${{ inputs.image == '' }}
+      uses: docker/setup-buildx-action@v3
+    - if: ${{ inputs.image == '' }}
+      uses: docker/build-push-action@v6
+      with:
+        context: toolbox
+        load: true
+        tags: sealedstack-toolbox:ci
+        cache-from: type=gha,scope=toolbox-ci
+    - if: ${{ inputs.image == '' }}
+      # The container builder cannot see the image loaded above; plain `docker build`
+      # (the tool image) needs the default one.
+      shell: bash
+      run: docker buildx use default
+    - shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: echo "${ACTION_PATH}" >> "${GITHUB_PATH}"

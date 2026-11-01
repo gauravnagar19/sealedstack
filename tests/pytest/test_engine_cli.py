@@ -169,7 +169,7 @@ def test_break_glass_allows_write_when_clean_and_confirmed(tmp_path):
     rc = cli.run(
         ["apply", "--break-glass"],
         code_root=REPO,
-        env={"SEALEDSTACK_CONFIG": str(config_dir)},
+        env={"SEALEDSTACK_CONFIG": str(config_dir), "SEALEDSTACK_WORKDIR": str(tmp_path / "wd")},
         git=clean_git(),
         runner=lambda a, c: calls.append(" ".join(a)) or 0,
         confirm_fn=lambda prompt: "example-infra",

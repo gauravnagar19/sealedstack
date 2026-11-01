@@ -1,0 +1,24 @@
+# gitleaks configuration (the default rules, plus two reviewed false positives).
+#
+# The full-history scan (scripts/gitleaks-history.sh) reports these two values in
+# old commits. Neither is a secret, so they are allowed by value AND path for the one
+# rule that matched them: the same text anywhere else still fails the scan.
+title = "sealedstack"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "A public signing-key fingerprint and a made-up test id that were reported as generic API keys"
+condition = "AND"
+paths = [
+  '''ansible/roles/mesh_tailscale/defaults/main\.yml''',
+  '''tests/pytest/test_engine_r2\.py''',
+]
+regexes = [
+  '''2596A99EAAB33821893C0A79458CA832957F5868''',  # Tailscale's apt signing-key fingerprint (a public digest), under a variable renamed in 9585334
+  '''(0123456789abcdef){2}''',                      # a made-up token id in a test fixture, since changed
+]
