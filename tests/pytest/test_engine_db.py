@@ -127,3 +127,36 @@ def test_restore_refuses_nonempty_without_force(tmp_path):
 def test_restore_on_create_skips_nonempty(tmp_path):
     db = make_db(tmp_path, psql_value="3")
     assert db.restore("shop", restore_on_create=True) == 0
+
+
+LISTING = (
+    b"2026-11-01 06:00:01        397 demo-app-db-ztqktn/demo-app/demoapp/2026-11-01T06-00-00-059Z.sql.gz\n"
+    b"2026-11-01 08:53:45       1058 demo-app-db-lxunsb/demo-app/demoapp/2026-11-01T08-53-44-451Z.sql.gz\n"
+    b"2026-11-01 07:00:00         90 other-db-abc/other/otherdb/2026-11-01T07-00-00-000Z.sql.gz\n"
+    b"2026-10-31 01:00:00         10 demo-app/demoapp/move-20261031T010000Z.dump\n"
+)
+
+
+def test_latest_backup_finds_dokploys_layout_under_any_database_name(tmp_path):
+    """Live run 2026-11-01: Dokploy stores <database name>/<prefix><time>.sql.gz; the drill looked under <prefix> only."""
+    db = make_db(tmp_path)
+    db._names = {"demo-app": "demoapp"}
+    db.t.aws = lambda args, stdin=None: (0, LISTING)
+    assert db.latest_backup("demo-app") == "demo-app-db-lxunsb/demo-app/demoapp/2026-11-01T08-53-44-451Z.sql.gz"
+
+
+def test_the_dump_of_a_replaced_database_is_still_found_after_a_rebuild(tmp_path):
+    db = make_db(tmp_path)
+    db._names = {"demo-app": "demoapp"}
+    old_only = LISTING.split(b"\n")[0] + b"\n" + LISTING.split(b"\n")[3] + b"\n"
+    db.t.aws = lambda args, stdin=None: (0, old_only)
+    assert db.latest_backup("demo-app").startswith("demo-app-db-ztqktn/")
+
+
+def test_no_matching_dump_or_a_failed_listing_gives_nothing(tmp_path):
+    db = make_db(tmp_path)
+    db._names = {"demo-app": "demoapp"}
+    db.t.aws = lambda args, stdin=None: (0, b"2026-11-01 07:00:00  90 other-db-abc/other/otherdb/x.sql.gz\n")
+    assert db.latest_backup("demo-app") == ""
+    db.t.aws = lambda args, stdin=None: (1, b"")
+    assert db.latest_backup("demo-app") == ""

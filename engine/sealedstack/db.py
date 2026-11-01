@@ -187,6 +187,30 @@ class Db:
         lines.sort(key=lambda parts: parts[:2])
         return lines[-1][3] if lines and len(lines[-1]) >= 4 else ""
 
+    def latest_backup(self, app: str) -> str:
+        """The full key of the newest dump of the app's database, or "".
+
+        Dokploy writes a scheduled backup to ``<its database name>/<prefix><time>.sql.gz`` (live run 2026-11-01:
+        ``demo-app-db-lxunsb/demo-app/demoapp/2026-11-01T08-53-44-451Z.sql.gz``), and a rebuild gives the database a new
+        name, so the dumps that matter after a rebuild sit under the *old* name. Looking only under ``<app>/<db>/`` never
+        found one (the first restore drill failed with "no backups"). Dumps are matched by their ``<app>/<db>/`` directory
+        under any first-level name, and the newest by the listing's date and time wins."""
+        wanted = f"{app}/{self.db_name(app)}/"
+        rc, out = self.t.aws(["s3", "ls", f"s3://{self.bucket}/", "--recursive"])
+        if rc != 0:
+            return ""
+        best: tuple = ()
+        for line in out.decode("utf-8", "replace").splitlines():
+            parts = line.split(None, 3)
+            if len(parts) < 4:
+                continue
+            directory, _slash, name = parts[3].rpartition("/")
+            if not name or not (f"{directory}/" == wanted or f"{directory}/".endswith("/" + wanted)):
+                continue
+            candidate = (parts[0], parts[1], parts[3])
+            best = max(best, candidate) if best else candidate
+        return best[2] if best else ""
+
     def s3_download(self, key: str) -> bytes:
         rc, out = self.t.aws(["s3", "cp", f"s3://{self.bucket}/{key}", "-"])
         if rc != 0:
@@ -310,11 +334,9 @@ class Db:
                 )
 
         if not key:
-            prefix = self.backup_prefix(app)
-            name = self.latest_backup_key(prefix)
-            if not name:
-                raise DbError(f"no backups under s3://{self.bucket}/{prefix}")
-            key = f"{prefix}{name}"
+            key = self.latest_backup(app)
+            if not key:
+                raise DbError(f"no backups of '{app}' under s3://{self.bucket}/ (looked for */{app}/{self.db_name(app)}/)")
         elif "/" not in key:
             key = f"{self.backup_prefix(app)}{key}"
 
@@ -347,11 +369,9 @@ class Db:
             raise DbError(f"'{app}' has no managed database")
         drill_db = "sealedstack_drill"
         drill_url = f"{url.rsplit('/', 1)[0]}/{drill_db}"
-        prefix = self.backup_prefix(app)
-        name = self.latest_backup_key(prefix)
-        if not name:
-            raise DbError(f"no backups under s3://{self.bucket}/{prefix}")
-        key = f"{prefix}{name}"
+        key = self.latest_backup(app)
+        if not key:
+            raise DbError(f"no backups of '{app}' under s3://{self.bucket}/ (looked for */{app}/{self.db_name(app)}/)")
 
         try:
             print(f"==> recreating {drill_db} on {self.primary_server(app)}", file=self.out)
