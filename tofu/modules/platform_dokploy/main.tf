@@ -63,6 +63,9 @@ resource "dokploy_compose" "app" {
   compose_type   = "docker-compose"
   compose_path   = var.build_mode == "server" ? var.compose_path : null
   auto_deploy    = false # releases are owned by the app's CI (D-015)
+  # The provider deploys a new compose by default. A repo app's image does not exist before its first release (ci mode),
+  # so that deploy fails and the whole apply with it; the release (or deploy-apps in server mode) starts it.
+  deploy_on_change = false
   # ci mode: Dokploy never clones or builds; it pulls the rendered deploy compose.
   raw = var.build_mode == "ci" && var.deploy_compose != "" ? { compose_file = var.deploy_compose } : null
   # server mode: Dokploy clones the repo at ref and builds.
