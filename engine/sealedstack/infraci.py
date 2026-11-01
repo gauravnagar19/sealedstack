@@ -41,7 +41,7 @@ from . import setupjob
 from . import statusissue
 
 # Comment commands (`/sealedstack <cmd>`).
-COMMENT_READ = ("check", "plan", "status", "drill", "drift")
+COMMENT_READ = ("check", "plan", "status", "drill", "drift", "verify")
 COMMENT_WRITE = ("up", "apply")
 
 # Commands that never touch a server or Dokploy, so the runner needs no tailnet.

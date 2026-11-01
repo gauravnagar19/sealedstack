@@ -123,3 +123,10 @@ def test_a_failed_edge_answer_is_asked_again_once_and_a_good_one_is_not(tmp_path
 
 def test_the_timeouts_are_short():
     assert verify.HTTP_TIMEOUT <= 5 and verify.CONNECT_TIMEOUT <= 2 and verify.DEPLOY_TIMEOUT <= 10
+
+
+def test_verify_is_a_cli_command_and_a_comment_command():
+    from sealedstack import cli, commands, infraci
+
+    assert "verify" in commands.COMMANDS and "verify" in infraci.COMMENT_READ
+    assert cli.build_parser().parse_args(["verify"]).noun == "verify"

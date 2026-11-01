@@ -185,7 +185,8 @@ def _shared_network_collisions(rendered: dict, lint: Any = None) -> list[str]:
                 claims.setdefault((server, service), []).append(name)
     return [
         f"apps {', '.join(sorted(apps))} both have a service named '{service}' on dokploy-network of {server}: "
-        "Docker may resolve the name to the other app's container; rename the service in one of them"
+        "Docker may resolve the name to the other app's container; rename the service in one of them "
+        "(for example to <app>-<service>) and change the references to it, such as web.service in sealedstack.yaml"
         for (server, service), apps in sorted(claims.items()) if len(apps) > 1
     ]
 
@@ -399,7 +400,20 @@ def _secret_result(ctx: "CheckContext", logical: str, why: str, *, min_length: i
             fix=f"rename '{result.name}' to {key} in the secret source (or set secrets.keys.{logical}: {result.name})",
             docs=DOCS_SECRETS,
         )
+    if _wrapped_in_quotes(result.value):
+        return Result(
+            result_id, "secrets", "warn",
+            detail=f"{why}: {label} starts and ends with a quote character; the quotes are part of the value the engine uses",
+            fix=f"if the quotes are not part of the secret, remove them from {key} in the {ctx.secrets.kind} source (or from "
+                "the local .env: some tools strip them and some, like docker's --env-file, do not)",
+            docs=DOCS_SECRETS,
+        )
     return Result(result_id, "secrets", "ok", detail=f"{why}: {label} present")
+
+
+def _wrapped_in_quotes(value: str) -> bool:
+    """True for ``"abc"`` and ``'abc'``: a copy from a quoted .env line. A password that merely contains a quote is fine."""
+    return len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'"
 
 
 def _check_secret_source(ctx: CheckContext) -> Result:

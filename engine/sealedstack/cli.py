@@ -99,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("apply", "apply the merged config"),
         ("status", "show health, versions, apps and drift"),
         ("drift", "read-only plan: report changes made outside git"),
+        ("verify", "probe the running system: edge, public ports, deploys (read-only, seconds)"),
     ):
         _leaf(sub, name, help).add_argument("extras", nargs="*")
 
@@ -331,6 +332,15 @@ def _drift_handler(config, env, code_root, json_output, runner):
     return drift_mod.run(code_root=code_root, env=env, forge=forge_obj, repo=repo)
 
 
+def _verify_handler(config, env, code_root, json_output, runner):
+    from . import verify as verify_mod
+
+    if config is None:
+        print(f"{PROG}: no config found", file=sys.stderr)
+        return 2
+    return verify_mod.run(config, env)
+
+
 def _status_handler(config, env, code_root, json_output, runner):
     return status_mod.run(code_root=code_root, env=env, json_output=json_output)
 
@@ -432,6 +442,8 @@ def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
         return Action(command, handler=_status_handler)
     if command == "drift":
         return Action(command, handler=_drift_handler)
+    if command == "verify":
+        return Action(command, handler=_verify_handler)
     if command == "approve-check":
         return Action(command, handler=_approve_handler(getattr(args, "command", "")))
     if command == "server add":

@@ -27,6 +27,7 @@ COMMANDS = {
     "restore",
     "drill",
     "drift",
+    "verify",
     "approve",
 }
 

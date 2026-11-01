@@ -319,3 +319,13 @@ These are tracked in status (private) and verification log (private):
 - **Nothing has run live.** The end-to-end apply, the backup/restore drill and
   the Ansible roles have not executed against a real server or account. See
   status (private).
+
+## Two apps with the same service name on one server
+
+A service that reads the managed database, and the web service Dokploy publishes, join Dokploy's shared network
+`dokploy-network`. Every container on it answers to its service name, so two apps on one server that both have an `api` (or
+both a `web`) can have a lookup of that name answered with the other app's container. `sealedstack check` warns
+(`config.compose`) when it sees the same name twice for one server. The fix is by hand: give the services distinct names, for
+example `<app>-api`, and update everything that refers to them (`web.service` in `sealedstack.yaml`, the other services'
+URLs). sealedstack does not rename services for you because the names are referenced from the app's own code.
+

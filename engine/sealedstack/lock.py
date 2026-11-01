@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,8 @@ from typing import Callable, Mapping, Optional
 
 DEFAULT_TTL = timedelta(hours=2)
 STALE_AFTER = timedelta(hours=1)  # the Status issue reports a lock held longer than this
+CREATE_ATTEMPTS = 3  # tries to create the lock object when the storage answers with an error
+CREATE_BACKOFF = 2.0  # seconds, times the attempt number
 _TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -133,8 +136,10 @@ class StateLock:
         run_url: str = "",
         clock: Optional[Callable[[], datetime]] = None,
         warn: Optional[Callable[[str], None]] = None,
+        sleep: Optional[Callable[[float], None]] = None,
     ):
         self.backend = backend
+        self._sleep = sleep or time.sleep
         self.owner = owner
         self.key = key
         self.ttl = ttl
@@ -170,9 +175,33 @@ class StateLock:
             "run_url": self.run_url,
         }
 
+    def _create(self, info: Mapping[str, str]) -> bool:
+        """Create the lock object, riding out a transient storage error (live run 2026-11-01: R2 answered HTTP 500).
+
+        A 5xx may mean the object was written and the answer lost, so before trying again the lock is read: if it already
+        carries our id, we hold it. Only the storage's own errors are retried; a missing bucket is not."""
+        from .s3 import S3Error
+
+        body = json.dumps(info).encode("utf-8")
+        for attempt in range(CREATE_ATTEMPTS):
+            try:
+                return self.backend.create(self.key, body)
+            except S3Error as exc:
+                if attempt == CREATE_ATTEMPTS - 1:
+                    raise
+                self._warn(f"state lock: {exc}; retrying ({attempt + 2} of {CREATE_ATTEMPTS})")
+                self._sleep(CREATE_BACKOFF * (attempt + 1))
+                try:
+                    current = self.holder()
+                except S3Error:
+                    current = None
+                if current is not None and current.get("id") == info.get("id"):
+                    return True
+        return False
+
     def acquire(self) -> dict:
         info = self._new_info()
-        if self.backend.create(self.key, json.dumps(info).encode("utf-8")):
+        if self._create(info):
             return info
         current = self.holder()
         if current is not None and self.expired(current):
@@ -190,7 +219,7 @@ class StateLock:
             again = self.holder()
             if again is not None and again.get("id") == current.get("id"):
                 self.backend.delete(self.key)
-            if self.backend.create(self.key, json.dumps(info).encode("utf-8")):
+            if self._create(info):
                 return info
             current = self.holder()
         raise LockHeld(current, now=self._clock())

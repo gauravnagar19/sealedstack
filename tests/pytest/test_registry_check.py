@@ -105,3 +105,20 @@ def test_a_failed_lookup_leaves_the_hint_out_instead_of_guessing(tmp_path):
     ctx = subject_ctx(tmp_path, Route(404, json_body={}))
     assert preflight.release_subjects(ctx) == []
     assert "Subject to enter" not in preflight._check_release_identity(ctx).fix
+
+
+# -- quote-wrapped secret values (live run 2026-11-01: the .env line was "...", the panel password has no quotes) --------------
+def test_a_secret_wrapped_in_quotes_is_flagged_but_still_present(tmp_path):
+    config = make_config(tmp_path)
+    for value in ('"abcdefghijklmnopqrstuvwxyz0123456789"', "'abcdefghijklmnopqrstuvwxyz0123456789'"):
+        ctx = make_ctx(tmp_path, config, env={"STATE_PASSPHRASE": value})
+        result = preflight._secret_result(ctx, "state_passphrase", "state encryption", min_length=16)
+        assert result.status == "warn" and "quote" in result.detail and value not in result.detail + result.fix
+
+
+def test_a_value_that_only_contains_a_quote_is_fine(tmp_path):
+    config = make_config(tmp_path)
+    for value in ("abc'defghijklmnopqrstuvwxyz0123", "'half-quoted-value-0123456789abc", '"'):
+        ctx = make_ctx(tmp_path, config, env={"STATE_PASSPHRASE": value})
+        assert preflight._secret_result(ctx, "state_passphrase", "x").status in ("ok", "fail")
+        assert "quote" not in preflight._secret_result(ctx, "state_passphrase", "x").detail
