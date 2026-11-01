@@ -196,3 +196,14 @@ def test_the_engine_release_workflow_takes_its_input_through_env_and_validates_i
     step = next(s for job in data["jobs"].values() for s in job.get("steps", []) if s.get("id") == "version")
     assert step["env"]["INPUT_VERSION"] == "${{ github.event.inputs.version }}" and "github.event" not in step["run"]
     assert "*[!0-9A-Za-z.+-]*" in step["run"]  # only a plain version reaches later scripts and image tags
+
+
+def test_the_documented_oidc_subject_matches_a_job_without_an_environment():
+    """The release job declares no `environment:` (production is only a GitHub Deployment name), so GitHub's subject for it is
+    repo:<owner>/<app>:ref:refs/heads/<branch>. The docs once said `…:environment:production`, which never matches."""
+    import re
+
+    workflow = (REPO / ".github" / "workflows" / "app.yml").read_text(encoding="utf-8")
+    assert not re.search(r"^\s{4}environment:", workflow, re.M)  # no job-level environment
+    for doc in ("docs/ci-cd.md", "docs/user-experience.md", "engine/sealedstack/setupjob.py"):
+        assert ":environment:production" not in (REPO / doc).read_text(encoding="utf-8"), doc

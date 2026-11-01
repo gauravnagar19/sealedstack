@@ -404,7 +404,7 @@ def test_setup_checklist_has_the_manual_tag_release_credential_row_with_the_cons
     for field in (
         "Settings → Trust credentials → Credential → **OpenID Connect**",
         "Issuer **GitHub**",
-        "Subject `repo:you/<app>:environment:production`",
+        "Subject `repo:you/<app>:ref:refs/heads/main`",
         "Scope **auth_keys: write**",
         "Tag **`tag:release`**",
         "`providers.mesh_tailscale.release_oauth_client_id`",

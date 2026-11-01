@@ -93,7 +93,7 @@ owned by them. Create this credential **separately** from the infra repo's
 to servers. The policy already declares `tag:release` in `tagOwners`. Only an
 Owner or Admin of the tailnet can create a credential with that tag. For GitHub
 Actions use an OpenID Connect credential (issuer GitHub) whose subject matches
-your app repos, e.g. `repo:<owner>/<app>:environment:production`; put its
+your app repos, e.g. `repo:<owner>/<app>:ref:refs/heads/main` (the release job declares no `environment:`, so the subject is the branch the run was started from; `production` is only the name of the GitHub Deployment it records); put its
 client id and audience in the infra repo's `config/stack.yaml` as
 `providers.mesh_tailscale.release_oauth_client_id` and `release_audience`, and
 sealedstack publishes them to every app repo as `SEALEDSTACK_TS_RELEASE_CLIENT_ID`
