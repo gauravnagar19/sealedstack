@@ -71,3 +71,113 @@ def test_no_legacy_tailscale_api_key_anywhere():
             if "TAILSCALE_API_KEY" in text:
                 hits.append(path)
     assert hits == [], f"TAILSCALE_API_KEY still present in {hits}"
+
+
+# -- D-081: the release waits for, and requires, a green ci run for the dispatched commit ---------
+def _gate_script() -> str:
+    step = _release()["jobs"]["ci-gate"]["steps"][0]
+    return step["run"]
+
+
+def test_release_builds_nothing_until_ci_has_succeeded_for_the_commit():
+    jobs = _release()["jobs"]
+    gate = jobs["ci-gate"]
+    assert gate["permissions"] == {"actions": "read", "contents": "read"}
+    assert "authorize" in gate["needs"] and "dry_run" in gate["if"]
+    assert gate["steps"][0]["env"]["SHA"] == "${{ github.sha }}"
+    # everything that builds or pushes is downstream of the gate, and runs only if it succeeded
+    assert "ci-gate" in jobs["toolbox"]["needs"]
+    release = jobs["release"]
+    assert "ci-gate" in release["needs"] and "toolbox" in release["needs"]
+    assert "needs.ci-gate.result == 'success'" in release["if"] and "needs.toolbox.result == 'success'" in release["if"]
+    # a bare always() would run the push after a failed gate
+    assert "always()" not in release["if"]
+    # the dry run pushes nothing and is not gated
+    assert "ci-gate" not in jobs["dry-run"].get("needs", [])
+
+
+def test_the_gate_reads_the_ci_workflow_runs_of_exactly_this_commit_through_env():
+    script = _gate_script()
+    assert "actions/workflows/ci.yml/runs?head_sha=${SHA}" in script
+    assert "${{" not in script  # no expression is interpolated into the shell
+
+
+def _run_gate(tmp_path: Path, answers: list[str]):
+    """Run the gate with a stub `gh` that answers from a list (one answer per poll) and a no-op sleep."""
+    import os
+    import subprocess
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    answers_file = tmp_path / "answers"
+    answers_file.write_text("\n".join(answers) + "\n")
+    counter = tmp_path / "n"
+    counter.write_text("0")
+    (bin_dir / "gh").write_text(
+        "#!/usr/bin/env bash\n"
+        f'n=$(cat "{counter}"); echo $((n+1)) > "{counter}"\n'
+        f'line=$(sed -n "$((n+1))p" "{answers_file}")\n'
+        f'[ -n "$line" ] || line=$(tail -n 1 "{answers_file}")\n'
+        'if [ "$line" = "ERROR" ]; then echo "gh: HTTP 403" >&2; exit 1; fi\n'
+        'printf "%b" "$line"\n'
+    )
+    (bin_dir / "sleep").write_text("#!/usr/bin/env bash\nexit 0\n")
+    for f in bin_dir.iterdir():
+        f.chmod(0o755)
+    # SECONDS cannot be faked from outside, so the 5-minute wait for a first run is shortened by editing the script text.
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "REPO": "o/r", "SHA": "abc123", "GH_TOKEN": "x"}
+    script = _gate_script().replace("-ge 300", "-ge -1")  # deadline reached at once: "no run" fails on the first empty poll
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env)
+
+
+def test_the_gate_passes_on_a_successful_run(tmp_path):
+    result = _run_gate(tmp_path, ["completed\\tsuccess\\thttps://example/run/1"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ci succeeded for abc123" in result.stdout
+
+
+def test_the_gate_waits_for_an_unfinished_run_then_passes(tmp_path):
+    result = _run_gate(tmp_path, ["in_progress\\tnone\\thttps://example/run/1", "completed\\tsuccess\\thttps://example/run/1"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ci is in_progress for abc123" in result.stdout
+
+
+def test_the_gate_refuses_a_red_run_and_says_which(tmp_path):
+    for conclusion in ("failure", "cancelled", "skipped", "timed_out"):
+        (tmp_path / conclusion).mkdir()
+        result = _run_gate(tmp_path / conclusion, [f"completed\\t{conclusion}\\thttps://example/run/2"])
+        assert result.returncode == 1
+        assert f"ci finished '{conclusion}' for abc123" in result.stdout and "https://example/run/2" in result.stdout
+
+
+def test_the_gate_refuses_when_there_is_no_ci_run_for_the_commit(tmp_path):
+    result = _run_gate(tmp_path, [""])
+    assert result.returncode == 1
+    assert "no ci run found for abc123" in result.stdout
+
+
+def test_the_gate_fails_closed_when_the_api_call_fails(tmp_path):
+    result = _run_gate(tmp_path, ["ERROR"])
+    assert result.returncode != 0 and "ci succeeded" not in result.stdout
+
+
+def test_the_gate_query_picks_the_newest_run_and_ignores_none(tmp_path):
+    import shutil
+    import subprocess
+
+    if shutil.which("jq") is None:
+        import pytest
+
+        pytest.skip("jq is not installed here; the runner has it")
+    script = _gate_script()
+    jq = script.split("--jq '", 1)[1].split("')\"", 1)[0]
+    runs = {
+        "workflow_runs": [
+            {"created_at": "2026-01-01T00:00:00Z", "status": "completed", "conclusion": "failure", "html_url": "old"},
+            {"created_at": "2026-01-01T00:05:00Z", "status": "in_progress", "conclusion": None, "html_url": "new"},
+        ]
+    }
+    out = subprocess.run(["jq", "-r", jq], input=json.dumps(runs), capture_output=True, text=True, check=True).stdout
+    assert out == "in_progress\tnone\tnew\n"
+    empty = subprocess.run(["jq", "-r", jq], input='{"workflow_runs": []}', capture_output=True, text=True, check=True).stdout
+    assert empty == ""

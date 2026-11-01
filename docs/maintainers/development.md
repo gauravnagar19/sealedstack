@@ -112,3 +112,5 @@ scripts/release.sh              # bump, test, push main and the tag, dispatch th
 ```
 
 `--minor` or `--version X.Y.Z` override the next patch number; `--yes` skips the confirmation. See D-080.
+
+The release workflow first waits for the `ci` run of that exact commit and refuses to build unless it succeeded (D-081). `scripts/release.sh` dispatches right after its push, so the gate waits for a run that is still going; a red run is fixed and the release dispatched again.
