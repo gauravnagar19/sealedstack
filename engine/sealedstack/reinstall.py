@@ -126,12 +126,23 @@ def pick_disk(server: dict, wanted: str) -> str:
     raise ReinstallError(f"the server has several disks ({', '.join(disks)}); pass --disk to choose the one to wipe")
 
 
+def _image_name(flavour: dict) -> str:
+    return str((flavour.get("image") or {}).get("name") or "")
+
+
 def _flavour_label(flavour: dict) -> str:
-    return f"{flavour.get('name')} (alias {flavour.get('alias')}, id {flavour.get('id')})"
+    """``Ubuntu 24.04, Minimal (id 123)``: Netcup's flavour is only the variant, the OS is on its ``image``."""
+    parts = [p for p in (_image_name(flavour), str(flavour.get("name") or "")) if p]
+    return f"{', '.join(parts)} (id {flavour.get('id')})"
 
 
 def pick_flavour(flavours: Sequence[dict], wanted: str, forced_id: str = "") -> dict:
-    """Choose the image flavour: an explicit id, an exact alias, or the single name match."""
+    """Choose the image flavour: an explicit id, an exact alias, or the single match on the OS name.
+
+    Netcup lists one flavour per OS *variant* (``Minimal``, ``Standard``, ...) with the OS in ``image.name``,
+    so ``ubuntu-24.04`` is matched against the image name. When several variants match, the ``minimal`` one
+    is taken (sealedstack installs Docker and the rest itself); anything still ambiguous is listed.
+    """
     if forced_id:
         for flavour in flavours:
             if str(flavour.get("id")) == str(forced_id):
@@ -144,13 +155,17 @@ def pick_flavour(flavours: Sequence[dict], wanted: str, forced_id: str = "") -> 
     tokens = [t for t in re.split(r"[-\s]+", wanted.lower()) if t]
 
     def matches(flavour: dict) -> bool:
-        haystack = f"{flavour.get('alias')} {flavour.get('name')}".lower()
+        haystack = f"{_image_name(flavour)} {flavour.get('alias')} {flavour.get('name')}".lower()
         return all(token in haystack for token in tokens)
 
     found = [f for f in flavours if matches(f)]
+    if len(found) > 1:
+        minimal = [f for f in found if str(f.get("alias") or f.get("name") or "").lower() == "minimal"]
+        if len(minimal) == 1:
+            return minimal[0]
     if len(found) == 1:
         return found[0]
-    listing = "\n".join(f"  - {_flavour_label(f)}" for f in (found or flavours)[:12])
+    listing = "\n".join(f"  - {_flavour_label(f)}" for f in (found or flavours)[:40])
     why = "matches several images" if found else "matches no image"
     raise ReinstallError(
         f"image '{wanted}' {why}; pass --flavour <id> or set `os` in servers.yaml. Available:\n{listing}"

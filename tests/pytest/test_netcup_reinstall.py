@@ -195,7 +195,7 @@ def test_a_numeric_external_id_matches_the_server_id(tmp_path):
 def test_an_unknown_or_ambiguous_image_lists_the_choices(tmp_path):
     env = Env(tmp_path, spec={"os": "rocky-9"})
     assert env.go("--name", "web-1", "--confirm", "web-1") == 1
-    assert "ubuntu-24.04" in env.text and env.http.posted() == []
+    assert "Ubuntu 24.04" in env.text and env.http.posted() == []
     twin = FLAVOURS + [{"id": 14, "name": "Debian 12 minimal", "alias": "debian-12-min", "text": "x"}]
     env = Env(tmp_path / "b", spec={"os": "debian-12"})
     env.http = FakeNetcup(flavours=[f for f in twin if f["id"] != 13] + [{"id": 15, "name": "Debian 12 desktop", "alias": "debian-12-desktop", "text": "x"}])
@@ -290,3 +290,40 @@ def test_the_cli_parses_both_spellings_and_passes_flags_through():
 def test_a_local_session_refuses_without_break_glass(tmp_path, capsys):
     rc = cli.run(["reinstall", "--name", "web-1", "--confirm", "web-1"], code_root=REPO, env={"SEALEDSTACK_CONFIG": str(make_config(tmp_path).config_dir)})
     assert rc == 2 and "break-glass" in capsys.readouterr().err.lower()
+
+
+# -- Netcup's real shape: the flavour is a variant, the OS is on `image` (live run 2026-11-01) ------------------
+REAL = [
+    {"id": 123, "name": "Minimal", "alias": "Minimal", "text": "x", "image": {"id": 1, "name": "Debian 12"}},
+    {"id": 52, "name": "Standard", "alias": "Standard", "text": "x", "image": {"id": 2, "name": "Ubuntu 24.04"}},
+    {"id": 22, "name": "Minimal", "alias": "Minimal", "text": "x", "image": {"id": 2, "name": "Ubuntu 24.04"}},
+    {"id": 126, "name": "Minimal", "alias": "Minimal", "text": "x", "image": {"id": 3, "name": "Ubuntu 22.04"}},
+]
+
+
+def test_the_os_is_matched_on_the_image_name_and_the_minimal_variant_wins(tmp_path):
+    env = Env(tmp_path)
+    env.http = FakeNetcup(flavours=REAL)
+    assert env.go("--name", "web-1", "--confirm", "web-1") == 0
+    assert env.http.posted()[0][3]["imageFlavourId"] == 22
+
+
+def test_the_dry_run_names_the_os_not_just_the_variant(tmp_path):
+    env = Env(tmp_path)
+    env.http = FakeNetcup(flavours=REAL)
+    assert env.go("--name", "web-1", "--dry-run") == 0
+    assert "Ubuntu 24.04, Minimal (id 22)" in env.text
+
+
+def test_an_unknown_os_lists_images_with_their_os_names(tmp_path):
+    env = Env(tmp_path, spec={"os": "rocky-9"})
+    env.http = FakeNetcup(flavours=REAL)
+    assert env.go("--name", "web-1", "--dry-run") == 1
+    assert "Debian 12, Minimal (id 123)" in env.text and "Ubuntu 22.04" in env.text
+
+
+def test_several_variants_without_a_minimal_one_ask_for_a_choice(tmp_path):
+    two = [f for f in REAL if f["id"] != 22] + [{"id": 53, "name": "Docker", "alias": "Docker", "text": "x", "image": {"id": 2, "name": "Ubuntu 24.04"}}]
+    env = Env(tmp_path)
+    env.http = FakeNetcup(flavours=two)
+    assert env.go("--name", "web-1", "--dry-run") == 1 and "--flavour" in env.text
