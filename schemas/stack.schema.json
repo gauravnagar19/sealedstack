@@ -4,10 +4,22 @@
   "allOf": [
     {
       "if": {
-        "required": ["slots"],
-        "properties": { "slots": { "required": ["ci"] } }
+        "required": [
+          "slots"
+        ],
+        "properties": {
+          "slots": {
+            "required": [
+              "ci"
+            ]
+          }
+        }
       },
-      "then": { "required": ["approvers"] }
+      "then": {
+        "required": [
+          "approvers"
+        ]
+      }
     }
   ],
   "title": "sealedstack stack.yaml",
@@ -27,7 +39,7 @@
     "name": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]*$",
-      "description": "Infra repo name; namespaces the remote state key (sealedstack/<name>/<stack>.tfstate, spec \u00a76.3a)."
+      "description": "Infra repo name; namespaces the remote state key (sealedstack/<name>/<stack>.tfstate, spec §6.3a)."
     },
     "domain": {
       "type": "string",
@@ -252,7 +264,12 @@
         },
         "min_tls_version": {
           "type": "string",
-          "enum": ["1.0", "1.1", "1.2", "1.3"],
+          "enum": [
+            "1.0",
+            "1.1",
+            "1.2",
+            "1.3"
+          ],
           "default": "1.2",
           "description": "Lowest TLS version the Cloudflare zone accepts (D-079)."
         },
@@ -346,6 +363,40 @@
             "type": "string"
           },
           "description": "Operator SSH public keys to trust on every server."
+        }
+      }
+    },
+    "drill": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Restore drills (D-084): a rehearsal of restoring the newest database backup.",
+      "properties": {
+        "scheduled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run the drill on the weekly cron of the workflow. Off by default: drills then run only when asked."
+        },
+        "level": {
+          "enum": [
+            "verify",
+            "schema",
+            "sample",
+            "tables",
+            "full"
+          ],
+          "default": "tables",
+          "description": "How much a drill restores: verify < schema < sample < tables < full."
+        },
+        "min_free_ratio": {
+          "type": "number",
+          "minimum": 1,
+          "default": 1.2,
+          "description": "Data levels need this many times the live database size free on the server, else they are skipped."
+        },
+        "memory": {
+          "type": "string",
+          "default": "1g",
+          "description": "Memory limit of the throwaway Postgres container."
         }
       }
     }

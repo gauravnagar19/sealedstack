@@ -109,6 +109,46 @@
                 "type": "string"
               },
               "description": "Per-app secret key overrides (D-050): secret NAME -> source key (default <app>.<NAME>)."
+            },
+            "drill": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "false: skip this app in `drill all` and the scheduled drill."
+                },
+                "level": {
+                  "enum": [
+                    "verify",
+                    "schema",
+                    "sample",
+                    "tables",
+                    "full"
+                  ]
+                },
+                "tables": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Tables whose full data the `tables` level restores and counts."
+                },
+                "min_rows": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 1,
+                  "description": "Each named table must hold at least this many rows."
+                },
+                "sample_rows": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 1,
+                  "description": "Rows per table for the `sample` level."
+                }
+              }
             }
           }
         }

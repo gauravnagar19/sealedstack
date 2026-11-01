@@ -81,6 +81,11 @@ class Transport:
         proc = subprocess.run(self.ssh_argv(server, remote_cmd), input=stdin, capture_output=True)
         return proc.returncode, proc.stdout
 
+    def ssh_full(self, server: str, remote_cmd: str, stdin: Optional[bytes] = None) -> tuple[int, bytes, bytes]:
+        """Like ``ssh`` but also returns stderr, for the drill's error messages."""
+        proc = subprocess.run(self.ssh_argv(server, remote_cmd), input=stdin, capture_output=True)
+        return proc.returncode, proc.stdout, proc.stderr
+
     def aws(self, args: list, stdin: Optional[bytes] = None) -> tuple[int, bytes]:
         env = dict(os.environ)
         if self.access_key:
@@ -231,7 +236,11 @@ class Db:
         return lines[-1][3] if lines and len(lines[-1]) >= 4 else ""
 
     def latest_backup(self, app: str) -> str:
-        """The full key of the newest dump of the app's database, or "".
+        """The full key of the newest dump of the app's database, or "" (see ``latest_backup_entry``)."""
+        return self.latest_backup_entry(app)[0]
+
+    def latest_backup_entry(self, app: str) -> tuple:
+        """``(key, size in bytes)`` of the newest dump of the app's database, or ``("", 0)``.
 
         Dokploy writes a scheduled backup to ``<its database name>/<prefix><time>.sql.gz`` (live run 2026-11-01:
         ``demo-app-db-lxunsb/demo-app/demoapp/2026-11-01T08-53-44-451Z.sql.gz``), and a rebuild gives the database a new
@@ -241,7 +250,7 @@ class Db:
         wanted = f"{app}/{self.db_name(app)}/"
         rc, out = self.t.aws(["s3", "ls", f"s3://{self.bucket}/", "--recursive"])
         if rc != 0:
-            return ""
+            return "", 0
         best: tuple = ()
         for line in out.decode("utf-8", "replace").splitlines():
             parts = line.split(None, 3)
@@ -250,9 +259,13 @@ class Db:
             directory, _slash, name = parts[3].rpartition("/")
             if not name or not (f"{directory}/" == wanted or f"{directory}/".endswith("/" + wanted)):
                 continue
-            candidate = (parts[0], parts[1], parts[3])
+            try:
+                size = int(parts[2])
+            except ValueError:
+                size = 0
+            candidate = (parts[0], parts[1], parts[3], size)
             best = max(best, candidate) if best else candidate
-        return best[2] if best else ""
+        return (best[2], best[3]) if best else ("", 0)
 
     def s3_download(self, key: str) -> bytes:
         rc, out = self.t.aws(["s3", "cp", f"s3://{self.bucket}/{key}", "-"])
@@ -406,47 +419,27 @@ class Db:
         print("==> done", file=self.out)
         return 0
 
-    def drill(self, app: str, table: str = "") -> int:
-        url = self.db_url(app)
-        if not url:
-            raise DbError(f"'{app}' has no managed database")
-        drill_db = "sealedstack_drill"
-        drill_url = f"{url.rsplit('/', 1)[0]}/{drill_db}"
-        key = self.latest_backup(app)
-        if not key:
-            raise DbError(f"no backups of '{app}' under s3://{self.bucket}/ (looked for */{app}/{self.db_name(app)}/)")
+    def drill(self, app: str, table: str = "", level: str = "") -> int:
+        """Rehearse restoring the newest backup (see ``drill.py``)."""
+        from . import drill as drill_mod
 
         try:
-            print(f"==> recreating {drill_db} on {self.primary_server(app)}", file=self.out)
-            self.psql(app, url, f"DROP DATABASE IF EXISTS {drill_db};")
-            self.psql(app, url, f"CREATE DATABASE {drill_db};")
-            print(f"==> restoring {key} into {drill_db}", file=self.out)
-            dump = gzip.decompress(self.s3_download(key))
-            self.pg_restore(app, drill_url, drill_db, dump)
-            print("==> checking", file=self.out)
-            self.psql(app, drill_url, "SELECT 1;")
-            if table:
-                rows = self.psql(app, drill_url, f"SELECT count(*) FROM {table};", value=True)
-                print(f"    {table}: {rows} rows", file=self.out)
-        finally:
-            try:
-                self.psql(app, url, f"DROP DATABASE IF EXISTS {drill_db};")
-            except DbError:
-                pass
-        print(f"==> drill ok for {app}", file=self.out)
-        return 0
+            return drill_mod.Drill(self, self.out, self.sleep).run(app, level=level, tables=[table] if table else [])
+        except drill_mod.DrillError as exc:
+            raise DbError(str(exc)) from exc
 
-    def drill_all(self, table: str = "") -> int:
-        """Drill every app that has a managed database; non-zero when any of them fails (the weekly scheduled drill)."""
-        apps = sorted(self._output("database_urls"))
+    def drill_all(self, table: str = "", level: str = "") -> int:
+        """Drill every app with a managed database (not those with ``drill.enabled: false``); non-zero if any fails."""
+        entries = (self.config.apps.get("apps") or {})
+        apps = [a for a in sorted(self._output("database_urls")) if (entries.get(a) or {}).get("drill", {}).get("enabled", True)]
         if not apps:
-            print("==> no app has a managed database; nothing to drill", file=self.out)
+            print("==> no app has a managed database to drill", file=self.out)
             return 0
         failed = []
         for app in apps:
             print(f"==> drill {app}", file=self.out)
             try:
-                self.drill(app, table)
+                self.drill(app, table, level)
             except DbError as exc:
                 print(f"sealedstack: {app}: {exc}", file=self.out)
                 failed.append(app)
@@ -531,11 +524,20 @@ def main(argv: Optional[list[str]] = None) -> int:
             return db.restore(app, key, force=force, restore_on_create=restore_on_create)
         if action == "drill":
             if not rest:
-                raise DbError("usage: db drill <app> [table]")
-            table = rest[1] if len(rest) > 1 else ""
-            if rest[0] == "all" and "all" not in (config.apps.get("apps") or {}):
-                return db.drill_all(table)  # `drill all`: every app with a managed database
-            return db.drill(rest[0], table)
+                raise DbError("usage: db drill <app|all> [table] [--level verify|schema|sample|tables|full]")
+            level, words = "", []
+            it = iter(rest)
+            for word in it:
+                if word == "--level":
+                    level = next(it, "")
+                elif word.startswith("--level="):
+                    level = word.split("=", 1)[1]
+                else:
+                    words.append(word)
+            table = words[1] if len(words) > 1 else ""
+            if words[0] == "all" and "all" not in (config.apps.get("apps") or {}):
+                return db.drill_all(table, level)  # `drill all`: every app with a managed database
+            return db.drill(words[0], table, level)
         if action == "move":
             if len(rest) < 3:
                 raise DbError("usage: db move <app> <from-server> <to-server>")

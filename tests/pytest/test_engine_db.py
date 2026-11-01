@@ -183,7 +183,7 @@ def _drill_all_db(tmp_path, urls, failing=()):
     db._urls = urls
     ran = []
 
-    def fake_drill(app, table=""):
+    def fake_drill(app, table="", level=""):
         ran.append((app, table))
         if app in failing:
             raise dbmod.DbError("no backups")

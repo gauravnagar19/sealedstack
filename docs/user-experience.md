@@ -360,7 +360,7 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 | `status` | Hourly + after every apply | — | Updates the Status issue |
 | `drift` | Run workflow / `/sealedstack drift` any time; hourly right after `status` only when the repository variable `SEALEDSTACK_DRIFT_ENABLED` is `true` (D-059) | — | No: a problem becomes a Status-issue comment |
 | `restore` | Run workflow | `production` + typed name | Yes |
-| `drill` | Weekly + Run workflow | — | Throwaway DB only |
+| `drill` | Run workflow; weekly only if `drill.scheduled: true` ([restore drills](restore-drill.md)) | — | Throwaway container only |
 
 **Comment commands** run only for users with **write** access to the repo; others get a polite refusal.
 

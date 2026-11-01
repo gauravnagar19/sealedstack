@@ -24,6 +24,7 @@ nav:
   - Operations:
       - Netcup firewall: netcup-firewall.md
       - Netcup reinstall: netcup-reinstall.md
+      - Restore drills: restore-drill.md
   - Maintainers (not needed to use sealedstack):
       - Overview: maintainers/README.md
       - Architecture: maintainers/architecture.md

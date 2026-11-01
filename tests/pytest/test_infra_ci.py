@@ -527,11 +527,14 @@ def test_the_caller_workflows_offer_plan_and_apply_and_every_trigger():
             assert trigger in text, (rel, trigger)
 
 
-def test_the_weekly_cron_runs_the_restore_drill_for_every_database(tmp_path):
-    """The docs promised a weekly drill; the workflow only had the hourly status cron (2026-11-01)."""
+def test_the_weekly_cron_runs_the_restore_drill_only_when_the_user_turned_it_on(tmp_path):
+    """Drills run only when asked: `drill.scheduled` is off by default, so the Sunday cron is a no-op until it is set."""
     f, c = make_forge(), make_config(tmp_path)
     event = ev("schedule")
     event.payload = {"schedule": infraci.DRILL_CRON}
+    off = infraci.resolve(event, f, c)
+    assert not off.proceed and "drill.scheduled" in off.note
+    c.stack["drill"] = {"scheduled": True}
     res = infraci.resolve(event, f, c)
     assert (res.command, res.args, res.write) == ("drill", "all", False)
     event.payload = {"schedule": "17 * * * *"}

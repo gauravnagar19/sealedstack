@@ -242,6 +242,8 @@ def resolve(
         if config is None:
             return _skip("no config/ yet")
         if (event.payload or {}).get("schedule") == DRILL_CRON:
+            if not (config.stack.get("drill") or {}).get("scheduled"):
+                return _skip("the weekly restore drill is off (drill.scheduled in stack.yaml); run `drill` by hand when you want it")
             return Resolution(command="drill", args="all", note="scheduled: weekly restore drill of every managed database")
         if drift:
             return Resolution(command="status", follow=["drift"], note="scheduled: status, then drift detection")
