@@ -23,7 +23,12 @@ mkdir -p /run/tailscale
 tailscaled --state=mem: --socket=/run/tailscale/tailscaled.sock >"$work/tailscaled.log" 2>&1 &
 for _ in $(seq 1 30); do [[ -S /run/tailscale/tailscaled.sock ]] && break; sleep 1; done
 
-key="$(TAILSCALE_KEY_TAGS=tag:ci TAILSCALE_KEY_EPHEMERAL=true python3 -m sealedstack.tailscalekey)"
+# The CI join uses its own OAuth client (tags exactly [tag:ci], D-072); the engine's own client mints tag:server keys.
+[[ -n "${TAILSCALE_CI_OAUTH_CLIENT_ID:-}" && -n "${TAILSCALE_CI_OAUTH_CLIENT_SECRET:-}" ]] \
+  || { echo "dev-tailnet: TAILSCALE_CI_OAUTH_CLIENT_ID/_SECRET are not set (an OAuth client whose tags are exactly tag:ci)" >&2; exit 2; }
+key="$(TAILSCALE_OAUTH_CLIENT_ID="$TAILSCALE_CI_OAUTH_CLIENT_ID" TAILSCALE_OAUTH_CLIENT_SECRET="$TAILSCALE_CI_OAUTH_CLIENT_SECRET" \
+  TAILSCALE_KEY_TAGS=tag:ci TAILSCALE_KEY_EPHEMERAL=true python3 -m sealedstack.tailscalekey)"
+unset TAILSCALE_CI_OAUTH_CLIENT_SECRET
 tailscale up --authkey="$key" --hostname="sealedstack-dev" --accept-dns=true --advertise-tags=tag:ci --timeout=60s >/dev/null
 unset key
 echo "dev-tailnet: joined the tailnet as sealedstack-dev (tag:ci)" >&2

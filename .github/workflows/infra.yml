@@ -259,7 +259,7 @@ jobs:
         run: |
           set -euo pipefail
           # Masked in the log, written to this step's outputs only.
-          for pair in "tailscale_oauth_client_id client_id" "tailscale_oauth_client_secret client_secret"; do
+          for pair in "tailscale_ci_oauth_client_id client_id" "tailscale_ci_oauth_client_secret client_secret"; do
             set -- $pair
             docker run --rm -v "$PWD:/infra" -w /infra -v "$GITHUB_OUTPUT:/ghout" \
               -e SEALEDSTACK_CONFIG=/infra/config -e BWS_ACCESS_TOKEN -e DOPPLER_TOKEN -e DOPPLER_TOKEN_APPS -e INFISICAL_CLIENT_ID -e INFISICAL_CLIENT_SECRET -e INFISICAL_TOKEN \

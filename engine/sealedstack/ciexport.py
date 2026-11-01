@@ -20,7 +20,17 @@ from typing import Mapping, Optional
 from . import config as config_mod
 from . import secrets as secrets_mod
 
-ALLOWED = ("tailscale_oauth_client_id", "tailscale_oauth_client_secret")
+ALLOWED = (
+    "tailscale_oauth_client_id", "tailscale_oauth_client_secret",
+    "tailscale_ci_oauth_client_id", "tailscale_ci_oauth_client_secret",
+)
+# D-072: a Tailscale OAuth client can only mint keys for exactly its own tag set, so the client that creates `tag:server`
+# keys (policy, bootstrap) cannot also join CI as `tag:ci`. The CI join reads its own client; users with a single
+# client keep working (it is then the same pair, which only suits a client whose tags are exactly [tag:ci]).
+CI_FALLBACK = {
+    "tailscale_ci_oauth_client_id": "tailscale_oauth_client_id",
+    "tailscale_ci_oauth_client_secret": "tailscale_oauth_client_secret",
+}
 
 
 def export_tailscale_oidc(config: config_mod.Config, output: Path) -> int:
@@ -62,11 +72,13 @@ def export(
         return 2
     source = source or secrets_mod.build_source(config.stack, config.config_dir, dict(env))
     result = secrets_mod.lookup(source, config, logical)
+    if not result.found and logical in CI_FALLBACK:
+        result = secrets_mod.lookup(source, config, CI_FALLBACK[logical])
     if not result.found:
-        print(
-            f"sealedstack: {secrets_mod.describe(config, logical)} not found in the '{source.kind}' source",
-            file=sys.stderr,
-        )
+        wanted = secrets_mod.describe(config, logical)
+        if logical in CI_FALLBACK:
+            wanted += f" (or {secrets_mod.describe(config, CI_FALLBACK[logical])})"
+        print(f"sealedstack: {wanted} not found in the '{source.kind}' source", file=sys.stderr)
         return 1
     if "\n" in result.value or "\r" in result.value:
         print("sealedstack: refusing to export a multi-line value", file=sys.stderr)

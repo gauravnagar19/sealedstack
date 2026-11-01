@@ -224,3 +224,24 @@ def test_the_scheduled_drift_workflow_stays_off_unless_enabled():
     """D-059: drift.yml only runs when SEALEDSTACK_DRIFT_ENABLED is 'true'."""
     doc = load("drift.yml")
     assert doc["jobs"]["plan"]["if"] == "${{ vars.SEALEDSTACK_DRIFT_ENABLED == 'true' }}"
+
+
+# -- D-072: the CI join has its own Tailscale OAuth client ---------------------------------------------------------
+def test_the_ci_client_names_fall_back_to_the_shared_client(tmp_path):
+    from sealedstack.secrets import EnvSource
+
+    config = fqdn_config(tmp_path)
+    out = tmp_path / "o"
+    shared = EnvSource({"TAILSCALE_OAUTH_CLIENT_ID": "shared-id", "TAILSCALE_OAUTH_CLIENT_SECRET": "shared-secret"})
+    own = EnvSource({"TAILSCALE_OAUTH_CLIENT_ID": "shared-id", "TAILSCALE_CI_OAUTH_CLIENT_ID": "ci-id"})
+    assert ciexport.export(config, {}, "tailscale_ci_oauth_client_id", "client_id", out, source=shared, out=io.StringIO()) == 0
+    assert "client_id=shared-id" in out.read_text()
+    out2 = tmp_path / "o2"
+    assert ciexport.export(config, {}, "tailscale_ci_oauth_client_id", "client_id", out2, source=own, out=io.StringIO()) == 0
+    assert "client_id=ci-id" in out2.read_text()
+
+
+def test_the_infra_workflow_asks_for_the_ci_client_not_the_server_key_client():
+    text = (REPO / ".github" / "workflows" / "infra.yml").read_text(encoding="utf-8")
+    assert "tailscale_ci_oauth_client_id client_id" in text and "tailscale_ci_oauth_client_secret client_secret" in text
+    assert '"tailscale_oauth_client_id client_id"' not in text
