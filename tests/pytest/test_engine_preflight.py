@@ -210,10 +210,15 @@ def test_check_cloudflare_permissions_via_mock(tmp_path):
         .add("rulesets?per_page=1", Route(json_body={"success": True}))
         .add("/bot_management", Route(json_body={"success": True}))
         .add("http_request_dynamic_redirect", Route(json_body={"success": True}))
+        .add("http_response_headers_transform", Route(status=404, json_body={"success": False}))  # no ruleset yet (D-078)
+        .add("settings/min_tls_version", Route(status=403, json_body={"success": False}))  # D-079
         .add("access/organizations", Route(json_body={"success": True}))
     )
     ctx = make_ctx(tmp_path, config, env={"CLOUDFLARE_API_TOKEN": "abc"}, http=http)
     results = by_id(preflight.check_cloudflare(ctx))
+    assert results["cloudflare.perm.headers_edit"].status == "ok"  # a 404 on an empty phase is not a missing permission
+    assert results["cloudflare.perm.zone_settings_edit"].status == "fail"
+    assert "Zone Settings: Edit" in results["cloudflare.perm.zone_settings_edit"].fix
     assert results["cloudflare.token"].status == "ok"
     assert results["cloudflare.zone"].status == "ok"
     assert results["cloudflare.perm.dns_edit"].status == "ok"

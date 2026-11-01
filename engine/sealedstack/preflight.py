@@ -647,6 +647,9 @@ def check_cloudflare(ctx: CheckContext) -> list[Result]:
             continue
         if response.status == 200:
             results.append(Result(f"cloudflare.perm.{permission_id}", "cloudflare", "ok", detail=f"{label}: ok"))
+        elif response.status == 404 and "/rulesets/phases/" in path:
+            # A zone with no ruleset in this phase yet has no entrypoint; the call was authorised, there is just nothing there.
+            results.append(Result(f"cloudflare.perm.{permission_id}", "cloudflare", "ok", detail=f"{label}: ok (no ruleset yet)"))
         elif response.status in (401, 403):
             results.append(
                 Result(
