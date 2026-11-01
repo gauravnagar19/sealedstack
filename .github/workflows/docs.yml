@@ -2,7 +2,7 @@ name: docs
 
 # Build the documentation site (mkdocs-material). ci.yml calls this workflow when
 # docs/**, mkdocs.yml or the CI files change, so the site is built once per run and
-# that same build is the Pages artifact (D-082); a manual dispatch also works.
+# that same build is the Pages artifact (D-083); a manual dispatch also works.
 # Deploying to GitHub Pages is gated twice (D-053): the repository must be public
 # AND the owner must have set the repository variable PUBLIC_RELEASE_CONFIRMED to
 # 'true'. Until both hold, this workflow only builds. A pull request never uploads

@@ -1,4 +1,4 @@
-"""D-082: ci.yml is one job graph; what it may and may not do is enforced here."""
+"""D-083: ci.yml is one job graph; what it may and may not do is enforced here."""
 from __future__ import annotations
 
 import subprocess
@@ -16,7 +16,7 @@ def ci() -> dict:
 
 
 def test_the_pipeline_is_one_workflow_and_the_old_ones_are_gone():
-    assert ci()["name"] == "ci"  # release.yml looks up the run by this file name (D-081)
+    assert ci()["name"] == "ci"  # release.yml looks up the run by this file name (D-082)
     assert not (WORKFLOWS / "reference-app.yml").exists()
     assert set(ci()["jobs"]) == {"prepare", "lint", "tests", "tofu", "docs", "reference-app"}
 

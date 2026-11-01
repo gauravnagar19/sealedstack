@@ -73,7 +73,7 @@ def test_no_legacy_tailscale_api_key_anywhere():
     assert hits == [], f"TAILSCALE_API_KEY still present in {hits}"
 
 
-# -- D-081: the release waits for, and requires, a green ci run for the dispatched commit ---------
+# -- D-082: the release waits for, and requires, a green ci run for the dispatched commit ---------
 def _gate_script() -> str:
     step = _release()["jobs"]["ci-gate"]["steps"][0]
     return step["run"]

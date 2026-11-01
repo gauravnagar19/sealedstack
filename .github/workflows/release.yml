@@ -16,7 +16,7 @@ name: release
 #
 # On a manual dispatch (the only trigger — D-052/B2) it:
 #   0. checks the dispatcher is in the repo variable `RELEASE_APPROVERS`, and that the
-#      `ci` workflow succeeded for the dispatched commit (D-081; it waits for a run
+#      `ci` workflow succeeded for the dispatched commit (D-082; it waits for a run
 #      that is still going, because scripts/release.sh dispatches right after its push),
 #   1. builds the toolbox and captures its manifest digest,
 #   2. builds the tool image FROM that toolbox digest (amd64 + arm64),
@@ -60,7 +60,7 @@ jobs:
           fi
 
   ci-gate:
-    # D-081: a release must not ship a commit whose `ci` run is red, unfinished or
+    # D-082: a release must not ship a commit whose `ci` run is red, unfinished or
     # missing (0.6.15 went out with a failed ci run). Fails closed: any API error,
     # no run, or a run that did not succeed stops the release before anything is built.
     needs: authorize

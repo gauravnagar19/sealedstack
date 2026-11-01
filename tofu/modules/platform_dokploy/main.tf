@@ -73,8 +73,9 @@ resource "dokploy_compose" "app" {
 
   lifecycle {
     # The app's CI owns releases (D-015/D-032): never reset the released compose
-    # file (ci) or Git branch (server) on apply (N9). apply seeds both once.
-    ignore_changes = [raw, git]
+    # file (ci) or Git branch (server) on apply (N9). apply seeds both once. Env is owned by
+    # dokploy_environment_variables and the release; the provider would plan `env -> null` (live run 2026-11-01).
+    ignore_changes = [raw, git, env]
   }
 }
 
@@ -89,6 +90,12 @@ resource "dokploy_compose" "image" {
   compose_type   = "docker-compose"
   auto_deploy    = false # releases are owned by the app's CI (D-015)
   raw            = { compose_file = local.image_compose }
+
+  lifecycle {
+    # Env belongs to dokploy_environment_variables.app and the release (APP_VERSION). The provider reads it back on this
+    # resource and plans `env -> null` on every later apply, which would erase DATABASE_URL and the version.
+    ignore_changes = [env]
+  }
 }
 
 locals {

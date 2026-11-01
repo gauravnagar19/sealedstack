@@ -445,6 +445,24 @@ jobs:
           for spec in (compose.get("services") or {}).values():
               if isinstance(spec, dict):
                   spec.pop("build", None)
+          # The managed database is a Swarm service on dokploy-network. Dokploy joins only the service with the domain to it,
+          # so every service that reads a platform variable (needs.*.env, e.g. DATABASE_URL) must join it too.
+          names = {str(s["env"]) for s in (manifest.get("needs") or {}).values() if isinstance(s, dict) and s.get("env")}
+          attached = False
+          for spec in (compose.get("services") or {}).values():
+              if not isinstance(spec, dict) or not any(n in str(spec.get("environment") or "") + str(spec.get("env_file") or "") for n in names):
+                  continue
+              nets = spec.get("networks")
+              if nets is None:
+                  spec["networks"] = ["default", "dokploy-network"]
+              elif isinstance(nets, list):
+                  if "dokploy-network" not in nets:
+                      nets.append("dokploy-network")
+              elif isinstance(nets, dict):
+                  nets.setdefault("dokploy-network", None)
+              attached = True
+          if attached and isinstance(compose.setdefault("networks", {}), dict):
+              compose["networks"].setdefault("dokploy-network", {"external": True})
           os.makedirs(".build", exist_ok=True)
           with open(".build/deploy-compose.yml", "w", encoding="utf-8") as handle:
               yaml.safe_dump(compose, handle, sort_keys=False)

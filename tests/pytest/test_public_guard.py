@@ -371,7 +371,7 @@ def test_scan_repo_finds_a_planted_violation(tmp_path):
 
 
 def test_docs_workflow_is_only_called_or_dispatched_and_a_pull_request_never_deploys():
-    # ci.yml calls docs.yml (D-082); it has no trigger of its own that a PR or a push could use.
+    # ci.yml calls docs.yml (D-083); it has no trigger of its own that a PR or a push could use.
     data = yaml.safe_load((REPO / ".github" / "workflows" / "docs.yml").read_text(encoding="utf-8"))
     triggers = data.get("on", data.get(True))
     assert set(triggers) == {"workflow_dispatch", "workflow_call"}

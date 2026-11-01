@@ -155,7 +155,7 @@ def repo_slug(repo: str) -> str:
     return repo.rsplit("/", 1)[-1]
 
 
-def resolve_registry(stack: dict) -> dict:
+def resolve_registry(stack: dict, apps: dict | None = None) -> dict:
     """The rendered `registry` slot config (spec 4.5, D-033).
 
     The file ``config/providers/registry_<impl>.yaml`` wins over the stack.yaml
@@ -171,6 +171,14 @@ def resolve_registry(stack: dict) -> dict:
     merged = {**block, **file_cfg}
 
     owner = merged.get("owner") or merged.get("namespace") or merged.get("username") or ""
+    if not owner and impl == "ghcr":
+        # No owner configured: use the GitHub owner of the first app with its own repository (images are pushed as
+        # ghcr.io/<owner>/<repo>-<service>), so a private-repo user does not have to repeat it in providers.registry_ghcr.
+        for _name, entry in sorted(((apps or {}).get("apps") or {}).items()):
+            repo = str((entry.get("source") or {}).get("repo") or "")
+            if "/" in repo and entry.get("enabled", True):
+                owner = repo.split("/", 1)[0].lower()
+                break
     url = merged.get("url") or REGISTRY_URLS.get(impl, "")
     image_prefix = f"{url}/{owner}" if url and owner else ""
     return {
@@ -212,7 +220,9 @@ def render_deploy_compose(
         owner=registry.get("owner", ""),
         repo=slug,
     )
-    rendered = yaml.safe_dump(lint_compose.strip_build(compose), sort_keys=False)
+    rendered = yaml.safe_dump(
+        lint_compose.attach_platform_network(lint_compose.strip_build(compose), manifest), sort_keys=False
+    )
     return rendered, problems
 
 
@@ -287,7 +297,7 @@ def render_all(*, allow_unresolved: bool = False) -> dict:
     stack = load_yaml(CONFIG / "stack.yaml")
     servers = load_yaml(CONFIG / "servers.yaml")
     apps = load_yaml(CONFIG / "apps.yaml")
-    registry = resolve_registry(stack)
+    registry = resolve_registry(stack, apps)
 
     rendered_apps: dict[str, dict] = {}
     disabled: list[str] = []

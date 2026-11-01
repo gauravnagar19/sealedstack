@@ -172,6 +172,24 @@ def _result(result_id: str, area: str, problems: list[str], *, warn: bool = Fals
 # --------------------------------------------------------------------------- #
 # config
 # --------------------------------------------------------------------------- #
+def _shared_network_collisions(rendered: dict, lint: Any = None) -> list[str]:
+    """Warn when two apps on one server publish the same service name on dokploy-network (they can reach each other)."""
+    if lint is None:
+        lint = _load_script_modules(Path(__file__).resolve().parents[2])[3]
+    claims: dict[tuple[str, str], list[str]] = {}
+    for name, app in rendered.items():
+        if app.get("_disabled") or app.get("_unresolved") or not app.get("_compose"):
+            continue
+        for service in lint.shared_network_services(app["_compose"], app.get("manifest"), app.get("web")):
+            for server in app.get("servers") or []:
+                claims.setdefault((server, service), []).append(name)
+    return [
+        f"apps {', '.join(sorted(apps))} both have a service named '{service}' on dokploy-network of {server}: "
+        "Docker may resolve the name to the other app's container; rename the service in one of them"
+        for (server, service), apps in sorted(claims.items()) if len(apps) > 1
+    ]
+
+
 def check_config(ctx: CheckContext) -> list[Result]:
     try:
         validate, registry_mod, render_mod, lint = _load_script_modules(ctx.config.code_root)
@@ -271,6 +289,7 @@ def check_config(ctx: CheckContext) -> list[Result]:
                 compose_warnings.extend(f"app '{name}': {p}" for p in lint.lint(app["_compose"], app.get("needs")))
                 security_problems.extend(f"app '{name}': {p}" for p in lint.lint_security(app["_compose"]))
             render_problems.extend(f"app '{name}': {p}" for p in (app.get("_build_problems") or []))
+        compose_warnings.extend(_shared_network_collisions(rendered, lint))
 
     results.append(
         _result(
@@ -1387,6 +1406,67 @@ def check_bot(ctx: CheckContext) -> list[Result]:
     ]
 
 
+PULL_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=read:packages&description=sealedstack-pull"
+PULL_TOKEN_HOWTO = (
+    f"create a classic personal access token with only the read:packages scope ({PULL_TOKEN_URL}) and add it to the "
+    "secret source as {key}; fine-grained tokens do not work with ghcr.io"
+)
+PACKAGE_SCOPES = ("read:packages", "write:packages", "delete:packages", "repo")
+
+
+def check_registry(ctx: CheckContext) -> list[Result]:
+    """The server can pull the private images that apps with their own repository build in CI (D-033).
+
+    Only checked when such an app exists. The token is probed, not just looked up: ghcr.io accepts only classic tokens
+    with a package scope, and a fine-grained token passes GitHub's login but gets a 403 on every image (live run 2026-11-01).
+    """
+    impl = str((ctx.config.stack.get("slots") or {}).get("registry") or "ghcr")
+    apps = [
+        (name, repo) for name, repo in _app_repos(ctx.config.apps)
+        if not ((ctx.config.apps.get("apps") or {}).get(name) or {}).get("_disabled")
+        and ((ctx.config.apps.get("apps") or {}).get(name) or {}).get("enabled", True)
+    ]
+    if impl != "ghcr" or not apps:
+        return []
+    from . import secrets as secrets_mod
+
+    key = ctx.config.secret_key("registry_pull_token")
+    names = ", ".join(name for name, _repo in apps)
+    found = secrets_mod.lookup(ctx.secrets, ctx.config, "registry_pull_token")
+    if found.errored or not found.found:
+        return [Result(
+            "registry.pull_token", "registry", "fail",
+            detail=f"{names} pull private images from ghcr.io, but {key} is not in the {ctx.secrets.kind} source",
+            fix=PULL_TOKEN_HOWTO.format(key=key), docs=DOCS_SECRETS,
+        )]
+    token = found.value
+    try:
+        response = ctx.http.request("GET", f"{GITHUB_API}/user", headers={"Authorization": f"Bearer {token}"})
+    except Exception as exc:  # noqa: BLE001
+        return [Result("registry.pull_token", "registry", "warn", detail=f"could not reach GitHub to test {key}: {exc}", fix="re-run when online", docs=DOCS_SECRETS)]
+    if response.status in (401, 403):
+        return [Result(
+            "registry.pull_token", "registry", "fail",
+            detail=f"GitHub rejects {key} (HTTP {response.status}): expired, revoked or mistyped",
+            fix=PULL_TOKEN_HOWTO.format(key=key), docs=DOCS_SECRETS,
+        )]
+    headers = {str(k).lower(): str(v) for k, v in (response.headers or {}).items()}
+    scopes = [item.strip() for item in headers.get("x-oauth-scopes", "").split(",") if item.strip()]
+    if token.startswith("github_pat_") or "x-oauth-scopes" not in headers:
+        return [Result(
+            "registry.pull_token", "registry", "fail",
+            detail=f"{key} is a fine-grained token; ghcr.io accepts only classic tokens with a package scope, so the server cannot pull {names}'s images",
+            fix=PULL_TOKEN_HOWTO.format(key=key), docs=DOCS_SECRETS,
+        )]
+    if not any(scope in PACKAGE_SCOPES for scope in scopes):
+        return [Result(
+            "registry.pull_token", "registry", "fail",
+            detail=f"{key} has the scopes {', '.join(scopes) or 'none'}; it needs read:packages",
+            fix=PULL_TOKEN_HOWTO.format(key=key), docs=DOCS_SECRETS,
+        )]
+    return [Result("registry.pull_token", "registry", "ok", detail=f"{key}: classic token with {', '.join(s for s in scopes if s in PACKAGE_SCOPES)}; the server can pull {names}'s images")]
+
+
 AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
     check_config,
     check_secrets,
@@ -1394,6 +1474,7 @@ AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
     check_cloudflare,
     check_tailscale,
     check_forge,
+    check_registry,
     check_bot,
     check_servers,
 )

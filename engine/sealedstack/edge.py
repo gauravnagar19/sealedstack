@@ -107,16 +107,22 @@ def run(
     if rc != 0:
         return rc
 
-    if action == "apply":
+    if action in ("plan", "apply"):
         out = Path(config.code_root) / ".build" / "edge-outputs.json"
-        out.parent.mkdir(parents=True, exist_ok=True)
         capture = output_runner or (
             lambda argv: _capture(argv, child_env)
         )
         rc, stdout = capture(["tofu", "-chdir", str(edge_dir), "output", "-json"])
-        if rc != 0:
-            return rc
-        out.write_text(json.dumps(plain_outputs(stdout)), encoding="utf-8")
+        outputs = plain_outputs(stdout) if rc == 0 else {}
+        if action == "apply":
+            if rc != 0:
+                return rc
+        elif not outputs:
+            # A plan only reads what the last apply left in the state. Nothing there (first run, or the read failed) is
+            # not an error: the platform plan falls back to "no edge yet", as it always did.
+            return 0
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(outputs), encoding="utf-8")
         print(f"edge outputs -> {out.relative_to(Path(config.code_root))}")
     return 0
 

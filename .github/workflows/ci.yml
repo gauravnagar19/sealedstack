@@ -1,6 +1,6 @@
 name: ci
 
-# One job graph (D-082):
+# One job graph (D-083):
 #
 #   prepare ─┬─ lint + validate ──────────────┐
 #            ├─ tests + tool image            │ every job that needs the toolbox pulls the
@@ -11,7 +11,7 @@ name: ci
 # `prepare` works out what changed (a docs-only commit skips tofu and the Docker
 # jobs; the tests and hygiene checks still run because they read docs/) and finds the
 # published toolbox for this exact toolbox/ content. Skipped jobs show as skipped and
-# the run still succeeds: the release workflow gates on this run's conclusion (D-081).
+# the run still succeeds: the release workflow gates on this run's conclusion (D-082).
 #
 # Nothing here publishes anything (D-053): the toolbox is only pulled, never pushed,
 # so a pull request cannot put an image in GHCR. toolbox.yml publishes on main and in
