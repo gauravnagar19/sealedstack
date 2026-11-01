@@ -105,9 +105,10 @@ and `release_audience` must be set as soon as any app has its own repository
 be published (row `forge.release_vars.<repo>`); if they are missing, run `apply`,
 or, if the credential does not exist yet, create it first as described here.
 
-> `tailscale/github-action@v3` is used in the examples (matching
-> `examples/app-template/.github/workflows/release.yml`). v4 exists; the inputs
-> below are unchanged.
+> The OIDC (`audience`) join needs `tailscale/github-action@v4`: v3 has no `audience`
+> input and ignores it, so the job fails with "OAuth identity empty". The OAuth-client
+> fallback (`oauth-secret`) works with v3 and v4. sealedstack's own workflows use v4 for
+> the OIDC steps (found in the first live release, 0.6.23).
 
 ### ACL: what not to do
 

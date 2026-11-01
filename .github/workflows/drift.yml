@@ -47,7 +47,7 @@ jobs:
 
       - name: Join the tailnet as tag:ci (OIDC)
         if: steps.ts.outputs.mode == 'oidc'
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ vars.SEALEDSTACK_TS_OAUTH_CLIENT_ID }}
           audience: ${{ vars.SEALEDSTACK_TS_AUDIENCE }}

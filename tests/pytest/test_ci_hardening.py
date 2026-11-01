@@ -207,3 +207,14 @@ def test_the_documented_oidc_subject_matches_a_job_without_an_environment():
     assert not re.search(r"^\s{4}environment:", workflow, re.M)  # no job-level environment
     for doc in ("docs/ci-cd.md", "docs/user-experience.md", "engine/sealedstack/setupjob.py"):
         assert ":environment:production" not in (REPO / doc).read_text(encoding="utf-8"), doc
+
+
+def test_a_tailscale_join_with_an_audience_uses_the_action_version_that_has_that_input():
+    """Live run 2026-11-01: `tailscale/github-action@v3` has no `audience` input; the OIDC join failed with 'OAuth identity empty'."""
+    for name in ("app.yml", "infra.yml", "drift.yml"):
+        data = yaml.safe_load((REPO / ".github" / "workflows" / name).read_text(encoding="utf-8"))
+        for job in (data.get("jobs") or {}).values():
+            for step in job.get("steps") or []:
+                uses = str(step.get("uses") or "")
+                if uses.startswith("tailscale/github-action@") and "audience" in (step.get("with") or {}):
+                    assert uses.split("@", 1)[1].startswith("v4"), f"{name}: {step.get('name')} uses {uses}"
