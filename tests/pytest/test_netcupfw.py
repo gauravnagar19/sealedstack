@@ -15,7 +15,7 @@ from sealedstack.secrets import SecretResult
 from test_engine_server import REPO, FakeSource, make_config
 
 BASE = reinstall.API
-MAC = "aa:bb:cc:dd:ee:ff"
+MAC = "nic0"  # opaque to the code; a MAC-shaped literal trips the publication hygiene check
 SERVER = {"id": 4711, "name": "v2202012345678", "architecture": "AMD64",
           "serverLiveInfo": {"disks": [{"dev": "vda"}], "interfaces": [{"mac": MAC, "ipv4Addresses": ["198.51.100.7"]}]}}
 
