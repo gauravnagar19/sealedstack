@@ -24,12 +24,33 @@ COMMANDS = {
     "add-app",
     "reinstall",
     "status",
+    "backup",
     "restore",
     "drill",
     "drift",
     "verify",
     "approve",
 }
+
+# D-085: the `backup` noun's verbs -> the one command name CI resolves, gates and runs.
+# `restore`/`drill` stay the canonical names (the approval gate, the workflow's docker
+# socket and the weekly cron key on them); `backup list` is a read with no older alias.
+BACKUP_VERBS = {"check": "drill", "restore": "restore", "list": "backup list"}
+
+
+def canonical(command: str, args: str) -> tuple[str, str]:
+    """The canonical ``(command, args)`` for a comment or dispatched command (D-085).
+
+    ``backup check demo-app`` -> ``("drill", "demo-app")``, ``backup restore demo-app`` ->
+    ``("restore", "demo-app")``, ``backup list`` -> ``("backup list", "")``. Anything else is
+    returned unchanged, including ``backup`` without a known verb (callers refuse it).
+    """
+    if command != "backup":
+        return command, args
+    verb, _, rest = (args or "").strip().partition(" ")
+    if verb not in BACKUP_VERBS:
+        return command, args
+    return BACKUP_VERBS[verb], rest.strip()
 
 
 @dataclass

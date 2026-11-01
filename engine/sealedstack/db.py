@@ -6,15 +6,20 @@ throwaway container on the app's primary server, attached to the Dokploy network
 so the managed hostname resolves. The connection URL carries the password, so it
 never reaches argv on either host: the libpq variables go into a 0600 file on the
 server, and only non-secret names (database) are in argv (H10).
+
+Backups never pass through the machine running the engine (D-085): the server fetches the object itself with a short-lived
+presigned URL that travels on ssh's stdin (never argv) and streams it through ``gunzip`` into the consumer.
 """
 from __future__ import annotations
 
 import gzip
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Optional
 
@@ -22,6 +27,7 @@ from . import config as config_mod
 from . import dokploy as dokploy_mod
 from . import platformstate as platformstate_mod
 from . import r2 as r2_mod
+from . import s3 as s3_mod
 from . import secrets as secrets_mod
 
 
@@ -88,6 +94,7 @@ class Transport:
 
     def aws(self, args: list, stdin: Optional[bytes] = None) -> tuple[int, bytes]:
         env = dict(os.environ)
+        env["TZ"] = "UTC"  # `s3 ls` prints local time; backup ages are computed in UTC
         if self.access_key:
             env["AWS_ACCESS_KEY_ID"] = self.access_key
             env["AWS_SECRET_ACCESS_KEY"] = self.secret_key
@@ -239,20 +246,26 @@ class Db:
         """The full key of the newest dump of the app's database, or "" (see ``latest_backup_entry``)."""
         return self.latest_backup_entry(app)[0]
 
-    def latest_backup_entry(self, app: str) -> tuple:
-        """``(key, size in bytes)`` of the newest dump of the app's database, or ``("", 0)``.
+    def latest_backup_entry(self, app: str) -> tuple[str, int, str]:
+        """``(key, size in bytes, "YYYY-MM-DD HH:MM:SS" UTC)`` of the newest dump of the app's database, or ``("", 0, "")``.
 
         Dokploy writes a scheduled backup to ``<its database name>/<prefix><time>.sql.gz`` (live run 2026-11-01:
         ``demo-app-db-lxunsb/demo-app/demoapp/2026-11-01T08-53-44-451Z.sql.gz``), and a rebuild gives the database a new
         name, so the dumps that matter after a rebuild sit under the *old* name. Looking only under ``<app>/<db>/`` never
         found one (the first restore drill failed with "no backups"). Dumps are matched by their ``<app>/<db>/`` directory
         under any first-level name, and the newest by the listing's date and time wins."""
-        wanted = f"{app}/{self.db_name(app)}/"
+        listing = self._bucket_listing()
+        return self._newest_in(listing, app) if listing is not None else ("", 0, "")
+
+    def _bucket_listing(self) -> Optional[str]:
+        """The recursive ``s3 ls`` of the backup bucket, or None when it failed."""
         rc, out = self.t.aws(["s3", "ls", f"s3://{self.bucket}/", "--recursive"])
-        if rc != 0:
-            return "", 0
+        return out.decode("utf-8", "replace") if rc == 0 else None
+
+    def _newest_in(self, listing: str, app: str) -> tuple[str, int, str]:
+        wanted = f"{app}/{self.db_name(app)}/"
         best: tuple = ()
-        for line in out.decode("utf-8", "replace").splitlines():
+        for line in listing.splitlines():
             parts = line.split(None, 3)
             if len(parts) < 4:
                 continue
@@ -265,7 +278,49 @@ class Db:
                 size = 0
             candidate = (parts[0], parts[1], parts[3], size)
             best = max(best, candidate) if best else candidate
-        return (best[2], best[3]) if best else ("", 0)
+        return (best[2], best[3], f"{best[0]} {best[1]}") if best else ("", 0, "")
+
+    def list_backups(self, now: Optional[datetime] = None) -> list[dict]:
+        """The newest backup of every app with a managed database (one bucket listing for all of them).
+
+        Each row has ``app``, ``key`` ("" when there is none), ``size`` (bytes), ``stamp`` (UTC, as listed) and
+        ``age_hours`` (None when there is no backup or the stamp does not parse)."""
+        now = now or datetime.now(timezone.utc)
+        listing = self._bucket_listing() or ""
+        rows = []
+        for app in sorted(self._output("database_urls")):
+            key, size, stamp = self._newest_in(listing, app)
+            rows.append({"app": app, "key": key, "size": size, "stamp": stamp, "age_hours": _age_hours(stamp, now)})
+        return rows
+
+    def presigned(self, key: str, expires: int = 900) -> str:
+        """A presigned GET URL for one object in the backup bucket, valid ``expires`` seconds. It grants read access while
+        it lives: never print, log or put it in argv."""
+        endpoint = str(getattr(self.t, "endpoint", "") or "")
+        if "://" not in endpoint:
+            raise DbError("no R2 endpoint to presign the backup URL with (cloudflare.account_id in config/stack.yaml)")
+        client = s3_mod.S3Client(endpoint, self.bucket, str(getattr(self.t, "access_key", "") or ""),
+                                 str(getattr(self.t, "secret_key", "") or ""))
+        return client.presign_get(key, expires=expires)
+
+    def stream_to(
+        self, server: str, consumer: str, key: str, *, timeout_s: int = 0, pipefail: bool = True,
+    ) -> tuple[int, bytes, bytes]:
+        """Run ``curl <presigned url> | gunzip | <consumer>`` on ``server``: the backup goes from R2 straight to the
+        server, never through this machine (D-085). The URL, fresh per call, is the first line of stdin, read by the
+        remote shell, so it is in no argv on either host. ``pipefail=False`` is for consumers that stop reading early
+        (``pg_restore --list``), where curl and gunzip then die of SIGPIPE. Returns ``(rc, stdout, stderr)``."""
+        script = f'IFS= read -r u; curl -fsS --retry 2 --connect-timeout 20 "$u" | gunzip | {consumer}'
+        argv = ["bash", "-o", "pipefail", "-c", script] if pipefail else ["bash", "-c", script]
+        if timeout_s and timeout_s > 0:
+            argv = ["timeout", f"{int(timeout_s)}s", *argv]
+        remote = shlex.join(argv)
+        stdin = (self.presigned(key) + "\n").encode("utf-8")
+        run = getattr(self.t, "ssh_full", None)
+        if run is not None:
+            return run(server, remote, stdin=stdin)
+        rc, out = self.t.ssh(server, remote, stdin=stdin)
+        return rc, out, b""
 
     def s3_download(self, key: str) -> bytes:
         rc, out = self.t.aws(["s3", "cp", f"s3://{self.bucket}/{key}", "-"])
@@ -334,6 +389,23 @@ class Db:
         self._remote_env_cleanup(server, directory)
         if rc != 0:
             raise DbError(f"pg_restore failed for {app}")
+
+    def pg_restore_stream(self, app: str, url: str, database: str, key: str) -> None:
+        """``pg_restore`` the backup object ``key`` on the app's server, fetched by the server itself (``stream_to``)."""
+        server = self.primary_server(app)
+        image = self.pg_image(app)
+        directory = self._remote_env(server, url)
+        consumer = (
+            f"docker run --rm -i --network dokploy-network --env-file '{directory}/env' "
+            f"{image} pg_restore --no-owner --no-acl --clean --if-exists -d '{database}'"
+        )
+        try:
+            rc, _out, err = self.stream_to(server, consumer, key)
+        finally:
+            self._remote_env_cleanup(server, directory)
+        if rc != 0:
+            detail = (err or b"").decode("utf-8", "replace").strip().splitlines()
+            raise DbError(f"pg_restore failed for {app}" + (f": {' | '.join(detail[:5])}" if detail else ""))
 
     def pg_dump(self, app: str, url: str) -> bytes:
         server = self.primary_server(app)
@@ -410,25 +482,27 @@ class Db:
         else:
             print(f"==> {app}: no deployment yet; restoring without stopping", file=self.out)
 
-        print(f"==> restoring s3://{self.bucket}/{key} into {app}", file=self.out)
+        print(f"==> restoring s3://{self.bucket}/{key} into {app} (fetched by {self.primary_server(app)})", file=self.out)
         try:
-            dump = gzip.decompress(self.s3_download(key))
-            self.pg_restore(app, url, self.db_name(app), dump)
+            self.pg_restore_stream(app, url, self.db_name(app), key)
         finally:
             restart()
         print("==> done", file=self.out)
         return 0
 
-    def drill(self, app: str, table: str = "", level: str = "") -> int:
-        """Rehearse restoring the newest backup (see ``drill.py``)."""
+    def drill(self, app: str, table: str = "", level: str = "", where: str = "") -> int:
+        """Rehearse restoring the newest backup (see ``drill.py``); ``where`` is ``server``, ``runner`` or "" (default)."""
         from . import drill as drill_mod
 
         try:
-            return drill_mod.Drill(self, self.out, self.sleep).run(app, level=level, tables=[table] if table else [])
+            outcome = drill_mod.Drill(self, self.out, self.sleep).run(
+                app, level=level, where=where, tables=[table] if table else [])
         except drill_mod.DrillError as exc:
             raise DbError(str(exc)) from exc
+        drill_mod.print_report(outcome, self.out, self.env.get("GITHUB_ACTIONS") == "true")
+        return drill_mod.exit_code(outcome)  # 0 passed or skipped, 1 failed
 
-    def drill_all(self, table: str = "", level: str = "") -> int:
+    def drill_all(self, table: str = "", level: str = "", where: str = "") -> int:
         """Drill every app with a managed database (not those with ``drill.enabled: false``); non-zero if any fails."""
         entries = (self.config.apps.get("apps") or {})
         apps = [a for a in sorted(self._output("database_urls")) if (entries.get(a) or {}).get("drill", {}).get("enabled", True)]
@@ -439,7 +513,8 @@ class Db:
         for app in apps:
             print(f"==> drill {app}", file=self.out)
             try:
-                self.drill(app, table, level)
+                if self.drill(app, table, level, where) != 0:
+                    failed.append(app)
             except DbError as exc:
                 print(f"sealedstack: {app}: {exc}", file=self.out)
                 failed.append(app)
@@ -494,6 +569,60 @@ def _move_footer(app: str, to_server: str, from_server: str, key: str, dump_file
     return "\n".join(lines)
 
 
+def _age_hours(stamp: str, now: datetime) -> Optional[float]:
+    try:
+        then = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return round((now - then).total_seconds() / 3600, 1)
+
+
+def _human_size(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "KiB", "MiB"):
+        if value < 1024:
+            return f"{int(value)} B" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} GiB"
+
+
+def format_backup_rows(rows: list) -> list[str]:
+    """One line per app for ``db list``."""
+    lines = []
+    for row in rows:
+        if not row["key"]:
+            lines.append(f"{row['app']}: no backup yet")
+            continue
+        age = row["age_hours"]
+        age_text = f"{age:.1f}h old" if age is not None else f"listed {row['stamp']}"
+        lines.append(f"{row['app']}: {row['key']} ({_human_size(row['size'])}, {age_text})")
+    return lines
+
+
+DRILL_WHERE = ("server", "runner")
+
+
+def _parse_drill_args(args: list) -> tuple[list, str, str]:
+    """``<app|all> [table] [--level x | --level=x] [--where server|runner | --where=x]`` -> ``(words, level, where)``."""
+    level = where = ""
+    words: list = []
+    it = iter(args)
+    for word in it:
+        if word == "--level":
+            level = next(it, "")
+        elif word.startswith("--level="):
+            level = word.split("=", 1)[1]
+        elif word == "--where":
+            where = next(it, "")
+        elif word.startswith("--where="):
+            where = word.split("=", 1)[1]
+        else:
+            words.append(word)
+    if where and where not in DRILL_WHERE:
+        raise DbError(f"--where must be one of {', '.join(DRILL_WHERE)} (got {where!r})")
+    return words, level, where
+
+
 def _parse_restore_args(args: list) -> tuple[str, str, bool]:
     app = key = ""
     force = False
@@ -523,21 +652,21 @@ def main(argv: Optional[list[str]] = None) -> int:
             restore_on_create = env.get("RESTORE_ON_CREATE") == "1"
             return db.restore(app, key, force=force, restore_on_create=restore_on_create)
         if action == "drill":
-            if not rest:
-                raise DbError("usage: db drill <app|all> [table] [--level verify|schema|sample|tables|full]")
-            level, words = "", []
-            it = iter(rest)
-            for word in it:
-                if word == "--level":
-                    level = next(it, "")
-                elif word.startswith("--level="):
-                    level = word.split("=", 1)[1]
-                else:
-                    words.append(word)
+            words, level, where = _parse_drill_args(rest)
+            if not words:
+                raise DbError(
+                    "usage: db drill <app|all> [table] [--level verify|schema|sample|tables|full] [--where server|runner]")
             table = words[1] if len(words) > 1 else ""
             if words[0] == "all" and "all" not in (config.apps.get("apps") or {}):
-                return db.drill_all(table, level)  # `drill all`: every app with a managed database
-            return db.drill(words[0], table, level)
+                return db.drill_all(table, level, where)  # `drill all`: every app with a managed database
+            return db.drill(words[0], table, level, where)
+        if action == "list":
+            rows = db.list_backups()
+            if not rows:
+                print("==> no app has a managed database", file=db.out)
+            for line in format_backup_rows(rows):
+                print(line, file=db.out)
+            return 0
         if action == "move":
             if len(rest) < 3:
                 raise DbError("usage: db move <app> <from-server> <to-server>")

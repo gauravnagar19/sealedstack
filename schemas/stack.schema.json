@@ -369,7 +369,7 @@
     "drill": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Restore drills (D-084): a rehearsal of restoring the newest database backup.",
+      "description": "Restore drills (D-084, D-085): a rehearsal of restoring the newest database backup.",
       "properties": {
         "scheduled": {
           "type": "boolean",
@@ -384,7 +384,7 @@
             "tables",
             "full"
           ],
-          "default": "tables",
+          "default": "schema",
           "description": "How much a drill restores: verify < schema < sample < tables < full."
         },
         "min_free_ratio": {
@@ -393,10 +393,56 @@
           "default": 1.2,
           "description": "Data levels need this many times the live database size free on the server, else they are skipped."
         },
-        "memory": {
+        "where": {
+          "enum": [
+            "server",
+            "runner"
+          ],
+          "default": "server",
+          "description": "Where the throwaway Postgres runs. `server`: on the app's server, the backup streams from R2 straight to it. `runner`: structure only (levels verify and schema), only the DDL text reaches the machine the engine runs on."
+        },
+        "max_backup_age": {
           "type": "string",
-          "default": "1g",
-          "description": "Memory limit of the throwaway Postgres container."
+          "pattern": "^[0-9]+[smhd]$",
+          "default": "48h",
+          "description": "Warn when the newest backup is older than this (90s, 30m, 2h, 48h)."
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Resource limits of a drill; a preflight that does not fit skips the drill instead of failing it.",
+          "properties": {
+            "memory": {
+              "type": "string",
+              "default": "1g",
+              "description": "Memory limit of the throwaway Postgres container (the host needs twice this available)."
+            },
+            "cpus": {
+              "type": [
+                "string",
+                "number"
+              ],
+              "default": "1",
+              "description": "CPU limit of the throwaway container."
+            },
+            "timeout": {
+              "type": "string",
+              "pattern": "^[0-9]+[smhd]$",
+              "default": "30m",
+              "description": "Overall deadline of a drill; leftovers older than this are removed."
+            },
+            "max_load": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.7,
+              "description": "Skip when the server's 1-minute load per core is above this."
+            },
+            "allow_image_pull": {
+              "type": "boolean",
+              "default": false,
+              "description": "Let the server pull the Postgres image when it is not present."
+            }
+          }
         }
       }
     }

@@ -91,7 +91,7 @@ it touches Dokploy. Know what this is and is not:
 
 ## The state lock (D-062)
 
-CI write commands (`apply`, `up`, `restore`, `add-server`, `server sync`, `reinstall`) and
+CI write commands (`apply`, `up`, `backup restore`, `add-server`, `server sync`, `reinstall`) and
 `--break-glass` runs take **one lock**, the object `sealedstack/<infra name>/state.lock`
 in your R2 state bucket, with a conditional write, so they exclude each other.
 It records the holder, the CI run URL and an expiry (2 hours). Reads (`check`,
@@ -255,7 +255,7 @@ base image either: pass `--build-arg TOOLBOX_IMAGE=...` (the release workflow an
 **Background.** On a **private** repository on the **GitHub Free** plan, GitHub doesn't
 offer branch protection, rulesets, or environment protection rules (required
 reviewers, deployment-branch limits). sealedstack therefore enforces its own gate
-(D-052) for every write command (`apply`, `up`, `restore`, `add-server`,
+(D-052) for every write command (`apply`, `up`, `backup restore`, `add-server`,
 `server sync`). A write runs only when **all** of these hold:
 
 1. the run is on the default branch (`refs/heads/main`) **and** its commit is the
@@ -319,6 +319,22 @@ These are tracked in status (private) and verification log (private):
 - **Nothing has run live.** The end-to-end apply, the backup/restore drill and
   the Ansible roles have not executed against a real server or account. See
   status (private).
+
+## Backups and restore drills
+
+What a drill does and does not prove is in [backups and restore drills](restore-drill.md) (D-085). The limits:
+
+- **Plain Postgres in the throwaway container.** A drill uses the plain Postgres image of the app's major version. An app that
+  needs an extension the image does not ship (PostGIS, for example) fails at `schema`. That is the finding, not a bug: the
+  backup cannot be restored there as it is.
+- **`where: runner` tests the structure only.** Only `verify` and `schema` run there, because only the structure (no rows)
+  leaves the server. To prove that data loads, run `sample`, `tables` or `full` on the server.
+- **Each step streams the backup again.** A level with several steps downloads the backup from R2 once per step, so a drill
+  moves about the backup size times the number of steps.
+- **Approvers only.** Only the users in `stack.yaml: approvers` can run a drill, by hand or comment; other collaborators get a
+  refusal.
+- **Off by default.** Nothing checks the backups on a schedule until you set `drill.scheduled: true`.
+- **Not yet run live.** Both places, every level and the scheduled path still need a live run and a pipeline run (D-085, Open).
 
 ## Two apps with the same service name on one server
 

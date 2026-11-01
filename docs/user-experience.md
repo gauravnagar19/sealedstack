@@ -62,7 +62,7 @@ on:
     inputs:
       command:
         type: choice
-        options: [setup, check, plan, apply, up, add-server, add-app, reinstall, status, restore, drill, drift, verify]
+        options: [setup, check, plan, apply, up, add-server, add-app, reinstall, status, backup, restore, drill, drift, verify]
       args:
         description: "e.g. --name server-1 (IP and root password come from the secret source)"
         required: false
@@ -73,7 +73,7 @@ on:
     types: [created]
   schedule:
     - cron: "17 * * * *"          # hourly status (+ drift if SEALEDSTACK_DRIFT_ENABLED=true)
-    - cron: "0 3 * * 0"           # weekly restore drill (Sunday 03:00 UTC)
+    - cron: "0 3 * * 0"           # weekly restore drill (Sunday 03:00 UTC), only if drill.scheduled: true
 jobs:
   sealedstack:
     uses: <owner>/sealedstack/.github/workflows/infra.yml@v0.6.0
@@ -291,24 +291,28 @@ Merge it when ready. Nothing upgrades on its own. The Status issue warns if you'
 
 | Backups | Newest | Last restore drill |
 |---|---|---|
-| example-app/example | 🟢 3h ago | 🟢 Sun 03:00 OK |
+| example-app/example | 🟢 3h ago | 🟢 Sun 03:00 · schema · server · passed |
 
 Drift: 🟢 none · Advisories: 🟢 none
 ```
+
+The backup rows (D-085): **Newest** is the age of the newest backup, with a warning when it is older than `drill.max_backup_age`
+(default 48 hours). **Last restore drill** is the newest drill result for that app: when, level, place (`server` or `runner`)
+and outcome (`passed`, `failed` or `skipped`); `—` until a drill has run.
 
 **Problems are posted as comments,** so you get an email or a phone notification. Each comment states the cause and the fix:
 
 | Event | Comment says | You do |
 |---|---|---|
 | **Drift** (someone changed something by hand) | What differs; "run `apply` to restore, or adopt the change in a PR" | Merge a PR, or run Up |
-| **Backup older than 2 intervals** | Which DB; the last error | Follow the fix; `drill` to verify |
+| **Backup older than `max_backup_age`** (default 48 hours) | Which DB; the last error | Follow the fix; `backup check` to verify |
 | **Server offline** | Last seen; whether the apps are still serving | Provider console; `up` after recovery |
 | **Health check failing** | App, status code, last release | Roll back (§7) |
-| **Restore drill failed** | Error | Investigate before you need the backup |
+| **Restore drill failed** | App, level, place, what failed and what was not tested | Investigate before you need the backup ([drills](restore-drill.md#results)) |
 
 ### Restore a database
 
-**Run workflow → `restore`** with `--app example-app [--backup <key>]`. Approve in `production`, then **type the app name to confirm**. It refuses a non-empty database unless you add `--force`. The app is stopped during the restore and restarted after.
+**Run workflow → `backup`** with args `restore example-app [<backup-key>]`. Approve in `production`, then **type the app name to confirm**. It refuses a non-empty database unless you add `--force`. The app is stopped during the restore and restarted after. The backup streams from R2 to the server through a short-lived presigned URL, never through the runner ([backups](restore-drill.md#restore-a-backup)). The command `restore` is an alias for one release (D-085).
 
 ### Break-glass (GitHub or CI is down)
 
@@ -359,12 +363,14 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 | `reinstall` | Run workflow only | `production` + typed name | Yes: erases the server's disk (Netcup only, [how](netcup-reinstall.md)) |
 | `status` | Hourly + after every apply | — | Updates the Status issue |
 | `drift` | Run workflow / `/sealedstack drift` any time; hourly right after `status` only when the repository variable `SEALEDSTACK_DRIFT_ENABLED` is `true` (D-059) | — | No: a problem becomes a Status-issue comment |
-| `restore` | Run workflow | `production` + typed name | Yes |
-| `drill` | Run workflow; weekly only if `drill.scheduled: true` ([restore drills](restore-drill.md)) | — | Throwaway container only |
+| `backup list` | Run workflow / `/sealedstack backup list` | — | No |
+| `backup check` (a restore drill) | Run workflow / `/sealedstack backup check <app>`; weekly only if `drill.scheduled: true` ([backups and restore drills](restore-drill.md)) | approvers only, no plan step | Throwaway container only |
+| `backup restore` | Run workflow | `production` + typed name | Yes |
+| `drill`, `restore` | Aliases of `backup check` and `backup restore` for one release (D-085) | as above | as above |
 
-**Comment commands** run only for users with **write** access to the repo; others get a polite refusal.
+**Comment commands** run only for users with **write** access to the repo; others get a polite refusal. A restore drill (`backup check`, `drill`) runs only for the approvers in `stack.yaml: approvers`, by hand or comment: it uses the server's resources and reads a production backup.
 
-**Approval (D-052).** Write commands (`apply`, `up`, `restore`, `add-server`, `server sync`, `reinstall`) run only when the commit is merged through a PR (a direct push to `main` is refused) **and** an approver has agreed — either the run was dispatched by a user in `stack.yaml: approvers`, or an approver commented **`/sealedstack approve`** on the PR after the latest plan comment. This is enforced by the engine, so it works on private GitHub Free repos where the `production` environment has no required reviewers; the environment is still used as a second gate where your plan supports it.
+**Approval (D-052).** Write commands (`apply`, `up`, `backup restore`, `add-server`, `server sync`, `reinstall`) run only when the commit is merged through a PR (a direct push to `main` is refused) **and** an approver has agreed — either the run was dispatched by a user in `stack.yaml: approvers`, or an approver commented **`/sealedstack approve`** on the PR after the latest plan comment. This is enforced by the engine, so it works on private GitHub Free repos where the `production` environment has no required reviewers; the environment is still used as a second gate where your plan supports it.
 
 ### 12.2 What lives where (user view)
 
@@ -401,9 +407,11 @@ Config, state, servers, Cloudflare and Bitwarden are unchanged. The same journey
 |---|---|
 | Infra CI file name | `.github/workflows/sealedstack.yml` (GitHub), `.gitlab-ci.yml` include (GitLab) |
 | Approval environment name | `production` |
-| Status schedule | Hourly (minute 17); restore drill weekly, Sunday 03:00 UTC |
+| Status schedule | Hourly (minute 17) |
+| Restore drill schedule | Off. The weekly cron (Sunday 03:00 UTC) is in the workflow template and runs `backup check all` only when `drill.scheduled: true`. An approver can run a drill by hand at any time (D-085) |
+| Restore drill level and place | `schema` on the app's server (`drill.level`, `drill.where`) |
 | Scheduled drift | Off. The hourly run does `status` only; set the repository variable `SEALEDSTACK_DRIFT_ENABLED=true` to add `drift` right after it (D-059). Manual `drift` is always available |
-| Backup alert | Newest backup older than 2× its schedule |
+| Backup alert | Newest backup older than `drill.max_backup_age` (48 hours), a warning |
 | Version-age warning | > 6 months, or any applicable advisory |
 | Comment command prefix | `/sealedstack` |
 | Bot name | `sealedstack-bot` (a fine-grained personal access token for now, D-058; a user-owned GitHub App later, D-039) |

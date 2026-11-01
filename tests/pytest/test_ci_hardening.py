@@ -80,9 +80,11 @@ def test_a_dispatched_command_outside_the_allow_list_is_refused(tmp_path):
 
 def test_every_listed_command_still_dispatches(tmp_path):
     f, c = make_forge(), make_config(tmp_path)
-    for command in sorted(infraci.DISPATCH_COMMANDS):
+    for command in sorted(infraci.DISPATCH_COMMANDS - {"backup"}):
         assert infraci.resolve(ev("workflow_dispatch", actor="you", command=command), f, c).command == command
-    assert infraci.DISPATCH_COMMANDS == {"setup", "check", "plan", "apply", "up", "add-server", "add-app", "reinstall", "status", "restore", "drill", "drift", "verify"}
+    # D-085: `backup` dispatches through its verb, resolved to the canonical name
+    assert infraci.resolve(ev("workflow_dispatch", actor="you", command="backup", args="check demo-app"), f, c).command == "drill"
+    assert infraci.DISPATCH_COMMANDS == {"setup", "check", "plan", "apply", "up", "add-server", "add-app", "reinstall", "status", "backup", "restore", "drill", "drift", "verify"}
 
 
 def test_the_outputs_file_only_ever_carries_a_known_command(tmp_path):

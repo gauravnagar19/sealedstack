@@ -30,8 +30,8 @@ import yaml
 CI_MARKERS = ("GITHUB_ACTIONS", "GITLAB_CI", "SEALEDSTACK_CI")
 
 # Commands that change infrastructure or data. Locally they are refused unless
-# --break-glass is given (spec 6.6, D-045). `db drill` is read-only (throwaway
-# database) and is deliberately absent.
+# --break-glass is given (spec 6.6, D-045). `db drill` / `backup check` are read-only
+# (throwaway database) and `backup list` only reads, so they are deliberately absent.
 WRITE_COMMANDS = frozenset(
     {
         "apply",
@@ -40,6 +40,7 @@ WRITE_COMMANDS = frozenset(
         "server sync",
         "server reinstall",
         "db restore",
+        "backup restore",  # D-085: the same restore under the `backup` noun
     }
 )
 

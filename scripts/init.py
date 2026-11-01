@@ -172,7 +172,7 @@ on:
     inputs:
       command:
         type: choice
-        options: [setup, check, plan, apply, up, add-server, add-app, reinstall, status, restore, drill, drift, verify]
+        options: [setup, check, plan, apply, up, add-server, add-app, reinstall, status, backup, restore, drill, drift, verify]
       args:
         description: "e.g. --name server-1 (IP and root password come from the secret source)"
         required: false

@@ -21,7 +21,9 @@ from typing import Mapping, Optional, Sequence
 
 from . import forge as forge_mod
 
-WRITE_COMMANDS = ("apply", "up", "restore", "add-server", "server sync", "reinstall")
+# `backup restore` is `restore` under the D-085 noun; CI resolves it to `restore` first,
+# but the gate holds for either spelling.
+WRITE_COMMANDS = ("apply", "up", "restore", "backup restore", "add-server", "server sync", "reinstall")
 APPROVE_PREFIX = "/sealedstack approve"
 PLAN_MARKER = "<!-- sealedstack:plan -->"
 

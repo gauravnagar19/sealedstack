@@ -575,6 +575,20 @@ def checklist_items(
         (config.stack.get("slots") or {}).get("user_auth") == "clerk")
     if not uses_clerk:
         add("skip", "Optional: Clerk keys", "not needed yet (no app uses Clerk)")
+
+    # 12. restore drills (D-085): off by default, never a blocker
+    drill_how = (
+        "An approver can run one by hand at any time: Run workflow, command `backup`, args `check <app>` "
+        "(or comment `/sealedstack backup check <app>`); the default level `schema` proves the structure restores. "
+        "For a weekly run (Sunday 03:00 UTC), set `drill.scheduled: true` in `config/stack.yaml`. "
+        + link("Details", "restore-drill.md#turn-on-the-weekly-drill")
+    )
+    if (config.stack.get("drill") or {}).get("scheduled") is True:
+        add("skip", "Restore drills: weekly", "`drill.scheduled: true`: every Sunday 03:00 UTC, `backup check all`",
+            link("Details", "restore-drill.md#turn-on-the-weekly-drill"))
+    else:
+        add("skip", "Restore drills: off", "Dokploy backs up each managed database to R2; no drill checks them on its own",
+            drill_how)
     return items
 
 

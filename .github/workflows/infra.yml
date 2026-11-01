@@ -312,7 +312,15 @@ jobs:
           SEALEDSTACK_RESOLVED_FOLLOW: ${{ needs.resolve.outputs.follow }}
         run: |
           set -euo pipefail
+          # D-085: a drill may restore into a throwaway Postgres on this runner
+          # (`backup check --where runner`), so only `drill` gets the runner's Docker socket.
+          # Every other command runs with exactly the flags below.
+          docker_extra=()
+          if [ "${SEALEDSTACK_RESOLVED_COMMAND:-}" = "drill" ]; then
+            docker_extra+=(-v /var/run/docker.sock:/var/run/docker.sock)
+          fi
           docker run --rm -i --network host \
+            ${docker_extra[@]+"${docker_extra[@]}"} \
             -v "$PWD:/infra" -w /infra \
             -v "$GITHUB_EVENT_PATH:/event.json:ro" \
             -e SEALEDSTACK_CONFIG=/infra/config \
@@ -350,7 +358,15 @@ jobs:
           SEALEDSTACK_CI_SECRETS: ${{ toJSON(secrets) }}
         run: |
           set -euo pipefail
+          # D-085: a drill may restore into a throwaway Postgres on this runner
+          # (`backup check --where runner`), so only `drill` gets the runner's Docker socket.
+          # Every other command runs with exactly the flags below.
+          docker_extra=()
+          if [ "${SEALEDSTACK_RESOLVED_COMMAND:-}" = "drill" ]; then
+            docker_extra+=(-v /var/run/docker.sock:/var/run/docker.sock)
+          fi
           docker run --rm -i --network host \
+            ${docker_extra[@]+"${docker_extra[@]}"} \
             -v "$PWD:/infra" -w /infra \
             -v "$GITHUB_EVENT_PATH:/event.json:ro" \
             -e SEALEDSTACK_CONFIG=/infra/config \

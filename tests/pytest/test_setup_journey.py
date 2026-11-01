@@ -449,3 +449,47 @@ def test_tag_release_row_is_not_duplicated_by_the_generic_failure_rows(tmp_path)
 
 def test_no_tag_release_row_when_the_mesh_is_not_checked(tmp_path):
     assert _checklist(tmp_path, []) == []
+
+
+# ---------------------------------------------------------------- the restore drills row (D-085)
+def test_setup_checklist_says_restore_drills_are_off_and_how_to_run_or_schedule_one(tmp_path):
+    f = new_forge()
+    rc, _ = run_setup(tmp_path, f)
+    assert rc == 0
+    comment = f.comments[(SLUG, f.prs[0]["number"])][0].body
+    row = _row(comment, "Restore drills: off")
+    assert row.startswith("| — |")  # information, never a blocker: not counted in the progress
+    for field in (
+        "Dokploy backs up each managed database to R2",
+        "command `backup`, args `check <app>`",
+        "`/sealedstack backup check <app>`",
+        "`drill.scheduled: true`",
+        "Sunday 03:00 UTC",
+        "docs/restore-drill.md#turn-on-the-weekly-drill",
+    ):
+        assert field in row, field
+
+
+def _drill_items(tmp_path, stack_extra=None):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    stack = {"name": "my-infra", "domain": "example.com", "slots": {"mesh": "tailscale", "secrets": "env"}, **(stack_extra or {})}
+    (config_dir / "stack.yaml").write_text(yaml.safe_dump(stack))
+    (config_dir / "servers.yaml").write_text("servers: {}\n")
+    (config_dir / "apps.yaml").write_text("apps: {}\n")
+    config = cfg.load_config(config_dir, REPO, {})
+    items = setupjob.checklist_items([], config, repo=SLUG, owner="you", version="0.6.0")
+    return [i for i in items if i.label.startswith("Restore drills")]
+
+
+def test_the_restore_drills_row_reads_weekly_once_scheduled_is_on(tmp_path):
+    (off,) = _drill_items(tmp_path / "off")
+    assert off.label == "Restore drills: off" and off.status == "skip"
+    (on,) = _drill_items(tmp_path / "on", {"drill": {"scheduled": True}})
+    assert on.label == "Restore drills: weekly" and on.status == "skip" and "backup check all" in on.detail
+
+
+def test_the_restore_drills_link_resolves_to_a_real_heading():
+    text = (REPO / "docs" / "restore-drill.md").read_text(encoding="utf-8")
+    heads = {re.sub(r"[^a-z0-9 -]", "", h.lower()).strip().replace(" ", "-") for h in re.findall(r"^#+ (.+)$", text, re.M)}
+    assert "turn-on-the-weekly-drill" in heads

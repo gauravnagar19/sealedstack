@@ -65,7 +65,7 @@ on:
     inputs:
       command:
         type: choice
-        options: [setup, check, plan, apply, up, add-server, add-app, reinstall, status, restore, drill, drift, verify]
+        options: [setup, check, plan, apply, up, add-server, add-app, reinstall, status, backup, restore, drill, drift, verify]
       args:
         description: "e.g. --name server-1 (IP and root password come from the secret source)"
         required: false
@@ -76,7 +76,7 @@ on:
     types: [created]
   schedule:
     - cron: "17 * * * *"          # hourly status (+ drift if SEALEDSTACK_DRIFT_ENABLED=true)
-    - cron: "0 3 * * 0"           # weekly restore drill (Sunday 03:00 UTC)
+    - cron: "0 3 * * 0"           # weekly restore drill (Sunday 03:00 UTC), only if drill.scheduled: true
 jobs:
   sealedstack:
     uses: <owner>/sealedstack/.github/workflows/infra.yml@v<version>
@@ -199,6 +199,25 @@ When the first run is green, **close TCP 22 at the provider firewall** and delet
 `SERVER_IP_SERVER_1` and `ROOT_PASSWORD_SERVER_1` from Bitwarden. The server is
 reached only by its tailnet name from then on.
 
+## 7. Backups and restore drills
+
+Dokploy backs up each app's managed Postgres database to your R2 bucket, on the
+schedule in the app's settings (for example every 6 hours). The `hello` app has
+no database, so there is nothing to back up yet.
+
+A **restore drill** restores the newest backup into a throwaway Postgres
+container and reports what it proved. Drills are **off**: none runs on its own.
+An approver can run one by hand at any time: **Run workflow, command `backup`,
+args `check example-app`** (or comment `/sealedstack backup check example-app`). The
+default level, `schema`, proves that the structure restores; heavier levels are
+opt-in.
+
+To run a drill every Sunday at 03:00 UTC, set `drill.scheduled: true` in
+`config/stack.yaml` in a pull request. A drill runs on the server by default, so
+no backup data leaves it; `where: runner` moves the work to the GitHub runner
+but sends it the table structure (names and columns, no rows). Details:
+[backups and restore drills](restore-drill.md).
+
 ## Optional: scheduled drift detection
 
 The hourly run always does `status`. To add drift detection right after it, set the
@@ -216,7 +235,7 @@ at any time (Run workflow, or `/sealedstack drift`) whatever the variable says
 | Release or roll back an app | In the app repo: Actions, release, Run workflow, tag `v0.0.N` | [journey D](user-experience.md#7-journey-d-release-and-roll-back-app-developer) |
 | Change configuration | Edit `config/` in a pull request, read the plan comment, merge, approve | [journey E](user-experience.md#8-journey-e-day-2-changes) |
 | Upgrade sealedstack | Merge the bot's version-bump PR | [journey F](user-experience.md#9-journey-f-upgrade-sealedstack) |
-| Recover from a problem or restore a database | Follow the Status issue comment; `restore` and `drill` | [journey G](user-experience.md#10-journey-g-when-something-goes-wrong) |
+| Recover from a problem or restore a database | Follow the Status issue comment; `backup check` and `backup restore` | [journey G](user-experience.md#10-journey-g-when-something-goes-wrong), [backups](restore-drill.md) |
 | Use GitLab instead | Swap the workflow file for the CI include | [journey H](user-experience.md#11-journey-h-moving-to-gitlab) |
 
 ## Optional: a terminal in a Codespace
@@ -231,7 +250,7 @@ sealedstack plan       # read-only
 sealedstack status     # read-only
 ```
 
-Writes (`apply`, `up`, `server add`, `db restore`) are refused outside CI unless
+Writes (`apply`, `up`, `server add`, `backup restore`) are refused outside CI unless
 you pass `--break-glass`, which also requires a clean checkout equal to
 `origin/main`, takes the state lock, asks you to type the infra name and posts an
 audit line to the Status issue

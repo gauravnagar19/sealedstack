@@ -1518,6 +1518,115 @@ def check_registry(ctx: CheckContext) -> list[Result]:
     return [Result("registry.pull_token", "registry", "ok", detail=f"{key}: classic token with {', '.join(s for s in scopes if s in PACKAGE_SCOPES)}; the server can pull {names}'s images")]
 
 
+# --------------------------------------------------------------------------- #
+# backup (restore drill settings, D-085 R10)
+# --------------------------------------------------------------------------- #
+DOCS_DRILL = "docs/restore-drill.md#settings"
+DRILL_DEFAULT_LEVEL = "schema"  # D-085 (D2): the light default
+DRILL_RUNNER_LEVELS = ("verify", "schema")  # R5, variant B: only the structure reaches the runner
+_TABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
+_DURATION = re.compile(r"^(\d+[smhd])+$")
+
+
+def _drill_duration_problem(where: str, name: str, value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if isinstance(value, str) and _DURATION.match(text) and any(int(n) for n in re.findall(r"\d+", text)):
+        return ""
+    return f"{where}: {name} '{value}' is not a duration like 30m or 48h (units s, m, h, d)"
+
+
+def _drill_block_problems(where: str, block: Mapping[str, Any]) -> list[str]:
+    """The rules of one ``drill:`` block that the JSON schema cannot express."""
+    problems = []
+    limits = block.get("limits") if isinstance(block.get("limits"), Mapping) else {}
+    for problem in (
+        _drill_duration_problem(where, "limits.timeout", limits.get("timeout")),
+        _drill_duration_problem(where, "max_backup_age", block.get("max_backup_age")),
+    ):
+        if problem:
+            problems.append(problem)
+    tables = block.get("tables")
+    if tables is not None:
+        if not isinstance(tables, list):
+            problems.append(f"{where}: tables must be a list of table names, like [notes]")
+        else:
+            bad = [str(t) for t in tables if not (isinstance(t, str) and _TABLE_NAME.match(t))]
+            if bad:
+                problems.append(
+                    f"{where}: tables {', '.join(repr(t) for t in bad)} do not look like table names "
+                    "(letters, digits and _, optionally schema.table)"
+                )
+    return problems
+
+
+def _has_managed_database(ctx: CheckContext, name: str, entry: Mapping[str, Any]) -> Optional[bool]:
+    """True/False from apps.yaml or the rendered manifest (needs.postgres); None when nothing says."""
+    if ((entry.get("needs") or {}) if isinstance(entry.get("needs"), Mapping) else {}).get("postgres"):
+        return True
+    path = Path(ctx.build_dir) / "apps" / f"{name}.json"
+    try:
+        rendered = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except (OSError, ValueError):
+        return None
+    needs = ((rendered.get("manifest") or {}).get("needs") or rendered.get("needs") or {})
+    return bool(needs.get("postgres"))
+
+
+def check_drill_settings(ctx: CheckContext) -> list[Result]:
+    """The ``drill:`` settings beyond the JSON schema (D-085, R10).
+
+    ``where: runner`` only with ``verify`` or ``schema`` (for the stack and each app's effective level),
+    table names that look like table names, durations that parse, and a warning when the weekly drill
+    is on but there is nothing to drill. Settings are read with ``.get()``: the schema is still moving.
+    """
+    stack_drill = ctx.config.stack.get("drill") if isinstance(ctx.config.stack.get("drill"), Mapping) else {}
+    apps = {
+        name: entry for name, entry in ((ctx.config.apps.get("apps") or {}).items())
+        if isinstance(entry, Mapping) and not entry.get("_disabled") and entry.get("enabled", True)
+    }
+    app_drills = {name: entry.get("drill") for name, entry in apps.items() if isinstance(entry.get("drill"), Mapping)}
+    if not stack_drill and not app_drills:
+        return []  # nothing configured: drills are off (R1) and there is nothing to validate
+
+    problems = _drill_block_problems("stack.yaml drill", stack_drill)
+    stack_where = str(stack_drill.get("where") or "server")
+    stack_level = str(stack_drill.get("level") or DRILL_DEFAULT_LEVEL)
+    if stack_where == "runner" and stack_level not in DRILL_RUNNER_LEVELS:
+        problems.append(
+            f"stack.yaml drill: where: runner supports level verify or schema, not {stack_level} "
+            "(data levels always run on the server)"
+        )
+    for name in sorted(apps):
+        mine = app_drills.get(name) or {}
+        problems += _drill_block_problems(f"apps.yaml {name}.drill", mine)
+        where = str(mine.get("where") or stack_where)
+        level = str(mine.get("level") or stack_level)
+        if where == "runner" and level not in DRILL_RUNNER_LEVELS and (mine.get("where") or mine.get("level")):
+            problems.append(
+                f"apps.yaml {name}.drill: level {level} cannot run with where: runner "
+                "(runner: verify or schema only); set where: server for this app or a lighter level"
+            )
+
+    results = [_result(
+        "backup.drill", "backup", problems,
+        fix="correct the drill: settings in config/stack.yaml / config/apps.yaml", docs=DOCS_DRILL,
+    )]
+    if stack_drill.get("scheduled") is True:
+        known = {name: _has_managed_database(ctx, name, entry) for name, entry in apps.items()}
+        drillable = [name for name, has in known.items() if has and (app_drills.get(name) or {}).get("enabled", True)]
+        # Only warn when the apps were rendered (or there are none): an unrendered app may have a database.
+        if not drillable and (not known or any(has is not None for has in known.values())):
+            results.append(Result(
+                "backup.drill_scheduled", "backup", "warn",
+                detail="drill.scheduled is true, but no app has a managed database (needs.postgres), so the weekly drill has nothing to check",
+                fix="set drill.scheduled: false in config/stack.yaml, or add needs.postgres to an app's sealedstack.yaml",
+                docs=DOCS_DRILL,
+            ))
+    return results
+
+
 AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
     check_config,
     check_secrets,
@@ -1528,6 +1637,7 @@ AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
     check_registry,
     check_bot,
     check_servers,
+    check_drill_settings,  # after check_config, which renders the manifests it reads
 )
 
 

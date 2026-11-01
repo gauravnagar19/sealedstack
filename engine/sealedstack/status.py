@@ -1,15 +1,16 @@
-"""Native ``status`` (spec 6.4): health, versions, apps and drift, as markdown
-or ``--json``. Read-only. The pinned Status *issue* is written by the forge
-adapter (M7); this computes and renders the content it would post.
+"""Native ``status`` (spec 6.4): health, versions, apps, backups and drift, as
+markdown or ``--json``. Read-only. The pinned Status *issue* is written by the
+forge adapter (M7); this computes and renders the content it would post.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from . import config as cfg
+from . import drillrecord
 from . import preflight
 
 
@@ -28,7 +29,18 @@ def _summary(config: cfg.Config) -> list[tuple[str, str]]:
     return rows
 
 
-def render_markdown(config: cfg.Config, engine_version: str, health: list) -> str:
+def load_drills(config: cfg.Config, env: dict, loader: Optional[Callable] = None) -> dict:
+    """The newest drill result per app (D-085, R8), best effort: a store that cannot be read
+    gives ``{"apps": {}, "unavailable": reason}``, never an exception."""
+    loader = loader or drillrecord.load_for_status
+    try:
+        data = loader(config, env)
+    except Exception as exc:  # noqa: BLE001 - status must render without the state bucket
+        return {"apps": {}, "unavailable": str(exc).splitlines()[0] if str(exc) else type(exc).__name__}
+    return data if isinstance(data, dict) else {"apps": {}}
+
+
+def render_markdown(config: cfg.Config, engine_version: str, health: list, drills: Optional[dict] = None) -> str:
     lines = ["# sealedstack status", ""]
     lines.append(f"engine `{engine_version}`")
     lines.append("")
@@ -46,10 +58,12 @@ def render_markdown(config: cfg.Config, engine_version: str, health: list) -> st
         lines.append(
             f"| {icon.get(result.status, '?')} | {result.area} | `{result.id}` | {result.detail} |"
         )
+    lines += ["", "## Backups", ""]
+    lines += drillrecord.render_rows(drills if drills is not None else {"apps": {}})
     return "\n".join(lines)
 
 
-def render_json(config: cfg.Config, engine_version: str, health: list) -> str:
+def render_json(config: cfg.Config, engine_version: str, health: list, drills: Optional[dict] = None) -> str:
     return json.dumps(
         {
             "command": "status",
@@ -63,6 +77,7 @@ def render_json(config: cfg.Config, engine_version: str, health: list) -> str:
                 {"id": r.id, "area": r.area, "status": r.status, "detail": r.detail}
                 for r in health
             ],
+            "backups": drills if drills is not None else {"apps": {}},
         },
         indent=2,
     )
@@ -77,7 +92,9 @@ def run(
     tcp_probe=None,
     json_output: bool = False,
     stream=None,
+    drills_loader: Optional[Callable] = None,
 ) -> int:
+    """``drills_loader(config, env) -> dict`` reads the drill results (tests inject a fake)."""
     import os
 
     env = dict(os.environ) if env is None else dict(env)
@@ -89,10 +106,11 @@ def run(
         config, env=env, http=http, secrets=secrets, version=version, tcp_probe=tcp_probe
     )
     health = preflight.run_checks(ctx)
+    drills = load_drills(config, env, drills_loader)
     if json_output:
-        print(render_json(config, version, health), file=out)
+        print(render_json(config, version, health, drills), file=out)
     else:
-        print(render_markdown(config, version, health), file=out)
+        print(render_markdown(config, version, health, drills), file=out)
     return 0
 
 

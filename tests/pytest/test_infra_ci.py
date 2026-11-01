@@ -185,7 +185,7 @@ def test_drift_is_a_writers_only_comment_command(tmp_path):
 def test_the_dispatch_choice_lists_in_docs_and_init_offer_drift():
     for rel in ("docs/getting-started.md", "docs/user-experience.md", "scripts/init.py"):
         text = (REPO / rel).read_text(encoding="utf-8")
-        assert "options: [setup, check, plan, apply, up, add-server, add-app, reinstall, status, restore, drill, drift, verify]" in text, rel
+        assert "options: [setup, check, plan, apply, up, add-server, add-app, reinstall, status, backup, restore, drill, drift, verify]" in text, rel
 
 
 def test_the_outputs_tell_the_workflow_what_to_do(tmp_path):

@@ -128,6 +128,13 @@
                     "full"
                   ]
                 },
+                "where": {
+                  "enum": [
+                    "server",
+                    "runner"
+                  ],
+                  "description": "Where this app's throwaway Postgres runs; `runner` is structure only (levels verify and schema)."
+                },
                 "tables": {
                   "type": "array",
                   "items": {

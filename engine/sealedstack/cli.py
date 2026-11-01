@@ -80,8 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
             "  server sync [name]    re-assert the host baseline\n"
             "  server reinstall      wipe a Netcup server and install a fresh OS (guarded, CI only)\n"
             "  app add               onboard an app\n"
-            "  db restore <app>      restore a database backup\n"
-            "  db drill <app>        restore into a throwaway database and check it\n"
+            "  backup list           each app's newest backup\n"
+            "  backup check <app|all> [table] [--level L] [--where server|runner]\n"
+            "                        restore into a throwaway database and check it (a drill)\n"
+            "  backup restore <app> [key] [--force]   restore a database backup (guarded write)\n"
+            "                        `drill`/`db drill` and `restore`/`db restore` are aliases (D-085)\n"
             "  debug render|publish|providers|onboard|ci-export|init   internals (init = the interactive wizard)\n"
             "\n"
             "run `sealedstack <command> --help` for a command's options.\n"
@@ -129,6 +132,15 @@ def build_parser() -> argparse.ArgumentParser:
     for verb in ("render", "publish", "providers", "onboard", "ci-export", "init"):
         _leaf(debug_sub, verb, verb).add_argument("extras", nargs="*")
 
+    # D-085: one noun for backups; `drill`/`restore` (and `db drill`/`db restore`) stay as aliases.
+    backup = _leaf(sub, "backup", "database backups: list, check (drill), restore")
+    backup_sub = backup.add_subparsers(dest="verb", title="backup commands")
+    _leaf(backup_sub, "list", "each app's newest backup").add_argument("extras", nargs="*")
+    for verb, help in (("check", "restore into a throwaway database and check it"), ("restore", "restore a database backup")):
+        leaf = _leaf(backup_sub, verb, help)
+        leaf.add_argument("app")
+        leaf.add_argument("extras", nargs="*")
+
     db = _leaf(sub, "db", "databases")
     db_sub = db.add_subparsers(dest="verb", title="db commands")
     for verb, help in (("restore", "restore a database backup"), ("drill", "restore into a throwaway database")):
@@ -141,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_server.add_argument("name")
     _leaf(sub, "add-app", "alias for `app add`").add_argument("extras", nargs="*")
     _leaf(sub, "reinstall", "alias for `server reinstall`").add_argument("extras", nargs="*")
-    for verb, help in (("restore", "alias for `db restore`"), ("drill", "alias for `db drill`")):
+    for verb, help in (("restore", "alias for `backup restore`"), ("drill", "alias for `backup check`")):
         leaf = _leaf(sub, verb, help)
         leaf.add_argument("app")
         leaf.add_argument("extras", nargs="*")
@@ -169,6 +181,10 @@ PASSTHROUGH = {
     "drill": 1,
     "db restore": 1,
     "db drill": 1,
+    # D-085: --level/--where/--force (and a drill's table) reach `sealedstack.db` untouched.
+    "backup list": 0,
+    "backup check": 1,
+    "backup restore": 1,
 }
 _GLOBAL_WITH_VALUE = {"--config", "--force-unlock"}
 _GLOBAL_FLAGS = {"--json", "--break-glass"}
@@ -195,7 +211,7 @@ def split_passthrough(argv: Sequence[str]) -> tuple[list[str], list[str]]:
     if i >= len(tokens):
         return tokens, []
     noun = tokens[i]
-    verb = tokens[i + 1] if i + 1 < len(tokens) and noun in ("app", "db", "debug", "server", "ci") else ""
+    verb = tokens[i + 1] if i + 1 < len(tokens) and noun in ("app", "backup", "db", "debug", "server", "ci") else ""
     command = f"{noun} {verb}".strip() if verb else noun
     if command not in PASSTHROUGH:
         return tokens, []
@@ -215,7 +231,7 @@ def canonical(args: argparse.Namespace) -> str:
     if noun in ALIASES:
         return ALIASES[noun]
     verb = getattr(args, "verb", None)
-    if noun in ("server", "app", "db", "debug", "ci") and verb:
+    if noun in ("server", "app", "backup", "db", "debug", "ci") and verb:
         return f"{noun} {verb}"
     return noun
 
@@ -458,10 +474,12 @@ def plan_action(args: argparse.Namespace, *, code_root: Path) -> Action:
         return Action(command, handler=_reinstall_handler(extras))
     if command == "app add":
         return Action(command, argv=[[python, "-m", "sealedstack.appadd", *extras]])
-    if command == "db restore":
+    if command in ("db restore", "backup restore"):
         return Action(command, argv=[[python, "-m", "sealedstack.db", "restore", args.app, *extras]])
-    if command == "db drill":
+    if command in ("db drill", "backup check"):
         return Action(command, argv=[[python, "-m", "sealedstack.db", "drill", args.app, *extras]])
+    if command == "backup list":
+        return Action(command, argv=[[python, "-m", "sealedstack.db", "list", *extras]])
     if command == "debug render":
         return Action(command, argv=[[python, _script(code_root, "render.py"), *extras]])
     if command == "debug publish":

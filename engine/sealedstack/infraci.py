@@ -40,9 +40,13 @@ from . import planreport
 from . import setupjob
 from . import statusissue
 
-# Comment commands (`/sealedstack <cmd>`).
-COMMENT_READ = ("check", "plan", "status", "drill", "drift", "verify")
+# Comment commands (`/sealedstack <cmd>`), by canonical name (`commands.canonical`, D-085).
+COMMENT_READ = ("check", "plan", "status", "drill", "drift", "verify", "backup list")
 COMMENT_WRITE = ("up", "apply")
+
+# D-085 (R7): a restore drill reads a production backup and starts a throwaway database, so
+# only an approver may start one by hand (dispatch or comment); the weekly cron is unaffected.
+APPROVER_ONLY = frozenset({"drill"})
 
 # The second cron of the workflow template (weekly, Sunday 03:00 UTC) runs the restore drill for every app with a database.
 DRILL_CRON = "0 3 * * 0"
@@ -213,7 +217,13 @@ def resolve(
             # FR-4: the caller's choice list is not trusted to be the allow-list; the same
             # commands as the comment path (minus approve) are the only ones that run.
             return _skip(f"'{_printable(command)}' is not a sealedstack command (allowed: {', '.join(sorted(DISPATCH_COMMANDS))})")
-        return Resolution(command=command, args=event.input_args, note=f"dispatched: {command}")
+        # D-085: `backup check|restore|list` resolve to the names every gate below keys on.
+        command, args = commands_mod.canonical(command, event.input_args)
+        if command == "backup":
+            return _skip(f"backup needs a verb: {', '.join(sorted(commands_mod.BACKUP_VERBS))} (e.g. args 'check demo-app')")
+        if command in APPROVER_ONLY and event.actor not in approvers:
+            return _skip(f"'{_printable(event.actor)}' may not start '{command}': only the approvers listed in stack.yaml: approvers can (D-085)")
+        return Resolution(command=command, args=args, note=f"dispatched: {command}")
 
     if name == "pull_request":
         pr = event.payload.get("pull_request") or {}
@@ -279,14 +289,18 @@ def _resolve_comment(
     if parsed is None:
         return _skip("not a /sealedstack command")
     actor = str((comment.get("user") or {}).get("login") or event.actor)
-    command, args = parsed.command, " ".join(parsed.args)
+    # D-085: gate on the canonical name (`backup check` is `drill`), but answer in the words used.
+    shown = parsed.command
+    if parsed.command == "backup" and parsed.args[:1] and parsed.args[0] in commands_mod.BACKUP_VERBS:
+        shown = f"backup {parsed.args[0]}"  # only a known verb is echoed back, never free text
+    command, args = commands_mod.canonical(parsed.command, " ".join(parsed.args))
     is_pr = bool(issue.get("pull_request"))
 
     writer = commands_mod.authorize(forge, event.repo, actor)
     if not writer:
         return _refuse(
             forge, event, number,
-            f"@{actor} thanks! Only users with write access can run `/sealedstack {command}`.",
+            f"@{actor} thanks! Only users with write access can run `/sealedstack {shown}`.",
         )
 
     if is_pr and command != "approve":
@@ -298,10 +312,19 @@ def _resolve_comment(
         if not pr_info or head_repo != event.repo:
             return _refuse(
                 forge, event, number,
-                f"@{actor} `/sealedstack {command}` is not run on a pull request from a fork "
+                f"@{actor} `/sealedstack {shown}` is not run on a pull request from a fork "
                 f"({head_repo or 'unknown repository'}): the job would check out code from outside this repository "
                 "while it holds your secrets. Copy the branch into this repository (a branch here, not a fork) and comment again.",
             )
+
+    if command == "backup":
+        return _refuse(
+            forge, event, number,
+            f"@{actor} `/sealedstack backup` needs a verb: {', '.join(f'`{v}`' for v in sorted(commands_mod.BACKUP_VERBS))}.",
+        )
+
+    if command in APPROVER_ONLY and actor not in approvers:
+        return _refuse(forge, event, number, f"@{actor} only the approvers listed in `stack.yaml: approvers` can run `/sealedstack {shown}` (D-085).")
 
     if command == "approve":
         if actor not in approvers:
@@ -331,11 +354,11 @@ def _resolve_comment(
                           note=f"comment by {actor}: {command}")
     if command in COMMENT_WRITE:
         if actor not in approvers:
-            return _refuse(forge, event, number, f"@{actor} only the approvers listed in `stack.yaml: approvers` can run `/sealedstack {command}`.")
+            return _refuse(forge, event, number, f"@{actor} only the approvers listed in `stack.yaml: approvers` can run `/sealedstack {shown}`.")
         return Resolution(command=command, args=args, pr=number if is_pr else 0, note=f"comment by {actor}: {command}")
     return _refuse(
         forge, event, number,
-        f"@{actor} `/sealedstack {command}` can only be started from Actions, Run workflow "
+        f"@{actor} `/sealedstack {shown}` can only be started from Actions, Run workflow "
         "(it needs typed input or confirmation).",
     )
 
