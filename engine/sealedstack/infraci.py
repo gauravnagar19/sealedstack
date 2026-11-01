@@ -493,6 +493,26 @@ def execute(
                 print(f"sealedstack ci: warning: could not release the state lock ({exc}); it expires on its own", file=out)
 
 
+def _is_drill(command: str, args: str) -> bool:
+    words = args.split()
+    return command == "drill" or (command == "backup" and bool(words) and words[0] == "check")
+
+
+def _post_drill_failure(forge: forge_mod.Forge, event: Event, args: str, output: str) -> None:
+    """A failed drill (exit 1) notifies the owner on the Status issue; one comment per app, edited in place."""
+    words = [w for w in args.split() if not w.startswith("-")]
+    words = words[1:] if words and words[0] == "check" else words
+    app = words[0] if words else "all"
+    tail = "\n".join(planreport.strip_ansi(output).strip().splitlines()[-12:]).replace("```", "'''")
+    marker = f"<!-- sealedstack:drill-failed:{app} -->"
+    try:
+        statusissue.post_problem(
+            forge, event.repo,
+            f"🔴 backup drill failed for {app}: the newest backup could not be restored.\n\n```\n{tail}\n```", marker=marker)
+    except Exception as exc:  # noqa: BLE001 - reporting must never mask the drill's own exit code
+        print(f"sealedstack ci: could not post the drill failure ({exc})", file=sys.stderr)
+
+
 def _run_one(
     command: str,
     args: str,
@@ -534,6 +554,8 @@ def _run_one(
             else:
                 items = checklist.from_results(results)
             forge.upsert_comment(event.repo, pr, checklist.render(items), marker=checklist.MARKER)
+    elif _is_drill(command, args) and rc != 0:
+        _post_drill_failure(forge, event, args, output)
     elif command in ("apply", "up") and pr:
         mark = f"{RESULT_MARKER}<!-- {command} {event.sha[:12]} -->"
         icon = "✅" if rc == 0 else "❌"

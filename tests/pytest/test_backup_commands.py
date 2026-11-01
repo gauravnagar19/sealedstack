@@ -219,3 +219,27 @@ def test_only_a_drill_gets_the_runner_docker_socket(tmp_path):
         for other in ("plan", "restore", "backup list", "apply", ""):
             args = docker_args(tmp_path, step["run"], other)
             assert args == without_sock, other  # every other command keeps exactly its flags
+
+
+# -- a failed drill notifies the owner on the Status issue ----------------------------
+def _drill_failure(tmp_path, command, args, rc):
+    from test_infra_ci import SLUG, ev, make_config, make_forge, runner_for
+    from sealedstack import infraci, statusissue
+
+    f, c = make_forge(), make_config(tmp_path)
+    statusissue.publish(f, SLUG, f"{statusissue.MARKER}\nstatus body")
+    event = ev("workflow_dispatch", command=command, args=args)
+    for _ in range(2):  # a repeat edits the one comment
+        infraci._run_one(command, args, 0, event, f, runner_for("pg_restore: error: boom", rc=rc), status_fn=None, env={}, config=c)
+    return f.comments.get((SLUG, statusissue.issue_number(f, SLUG)), [])
+
+
+def test_a_failed_drill_posts_one_status_comment_per_app(tmp_path):
+    comments = _drill_failure(tmp_path, "backup", "check demo-app --level schema", 1)
+    assert len(comments) == 1 and "demo-app" in comments[0].body and "boom" in comments[0].body
+    assert len(_drill_failure(tmp_path, "drill", "demo-app", 1)) == 1
+
+
+def test_a_passed_or_skipped_drill_posts_no_comment(tmp_path):
+    assert _drill_failure(tmp_path, "backup", "check demo-app", 0) == []
+    assert _drill_failure(tmp_path, "backup", "list", 1) == []
