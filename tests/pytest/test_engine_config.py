@@ -92,32 +92,32 @@ def test_guard_allows_writes_in_ci():
     runtime.guard_write("apply", "example-infra")  # no raise
 
 
-def test_break_glass_refuses_dirty_tree():
-    runtime = cfg.Runtime(REPO, {}, git_runner(clean=False))
+def test_break_glass_refuses_dirty_tree(tmp_path):
+    runtime = cfg.Runtime(REPO, {"SEALEDSTACK_WORKDIR": str(tmp_path)}, git_runner(clean=False))
     with pytest.raises(cfg.BreakGlassError, match="clean working tree"):
         runtime.guard_write("apply", "example-infra", break_glass=True, confirm_fn=lambda _p: "example-infra")
 
 
-def test_break_glass_refuses_out_of_date_checkout():
-    runtime = cfg.Runtime(REPO, {}, git_runner(head="aaa", origin="bbb"))
+def test_break_glass_refuses_out_of_date_checkout(tmp_path):
+    runtime = cfg.Runtime(REPO, {"SEALEDSTACK_WORKDIR": str(tmp_path)}, git_runner(head="aaa", origin="bbb"))
     with pytest.raises(cfg.BreakGlassError, match="origin/main"):
         runtime.guard_write("apply", "example-infra", break_glass=True, confirm_fn=lambda _p: "example-infra")
 
 
-def test_break_glass_refuses_without_stack_name():
-    runtime = cfg.Runtime(REPO, {}, git_runner())
+def test_break_glass_refuses_without_stack_name(tmp_path):
+    runtime = cfg.Runtime(REPO, {"SEALEDSTACK_WORKDIR": str(tmp_path)}, git_runner())
     with pytest.raises(cfg.BreakGlassError, match="requires stack.yaml:name"):
         runtime.guard_write("apply", "", break_glass=True, confirm_fn=lambda _p: "")
 
 
-def test_break_glass_refuses_wrong_confirmation():
-    runtime = cfg.Runtime(REPO, {}, git_runner())
+def test_break_glass_refuses_wrong_confirmation(tmp_path):
+    runtime = cfg.Runtime(REPO, {"SEALEDSTACK_WORKDIR": str(tmp_path)}, git_runner())
     with pytest.raises(cfg.BreakGlassError, match="did not match"):
         runtime.guard_write("apply", "example-infra", break_glass=True, confirm_fn=lambda _p: "nope")
 
 
-def test_break_glass_emits_audit_line():
-    runtime = cfg.Runtime(REPO, {"USER": "admin"}, git_runner())
+def test_break_glass_emits_audit_line(tmp_path):
+    runtime = cfg.Runtime(REPO, {"USER": "admin", "SEALEDSTACK_WORKDIR": str(tmp_path)}, git_runner())
     seen = []
     runtime.guard_write(
         "apply",

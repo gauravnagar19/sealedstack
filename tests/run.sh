@@ -18,4 +18,14 @@ if ! python3 -c 'import pytest' >/dev/null 2>&1; then
   exit 1
 fi
 
-python3 -m pytest tests/pytest -q "$@"
+# The suite is CPU-bound once the fake servers stopped sleeping, so spread it over the
+# cores when pytest-xdist is installed (it is in the toolbox). An explicit -n wins.
+parallel=()
+if python3 -c 'import xdist' >/dev/null 2>&1; then
+  case " $* " in
+    *" -n"*) ;;
+    *) parallel=(-n auto) ;;
+  esac
+fi
+
+python3 -m pytest tests/pytest -q ${parallel[@]+"${parallel[@]}"} "$@"
