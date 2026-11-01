@@ -82,6 +82,21 @@ def test_hook_refuses_main_with_personal_email(tmp_path):
     assert "no-reply" in result.stderr
 
 
+def test_hook_allows_githubs_web_flow_committer_on_a_merge_but_not_a_lookalike(tmp_path):
+    import os
+
+    repo = _make_repo(tmp_path)
+    _commit(repo, "octocat", NO_REPLY)
+    env = {**os.environ, "GIT_COMMITTER_NAME": "GitHub", "GIT_COMMITTER_EMAIL": "noreply@github.com"}
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "merge", "--author", f"octocat <{NO_REPLY}>"], env=env, check=True)
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert _run_hook(repo, f"refs/heads/main {head} refs/heads/main {ZERO}\n").returncode == 0
+    env["GIT_COMMITTER_EMAIL"] = "noreply@github.com.evil.example"
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "other", "--author", f"octocat <{NO_REPLY}>"], env=env, check=True)
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert _run_hook(repo, f"refs/heads/main {head} refs/heads/main {ZERO}\n").returncode != 0
+
+
 # -- scripts/gitleaks-history.sh: a scan that could not read the repository must not pass ---------
 def _history_scan(tmp_path: Path, stub_body: str, commits: int = 2):
     """Run the wrapper in a throwaway repo with a stub `gitleaks` first on PATH."""
@@ -166,3 +181,18 @@ def test_history_scan_does_not_expect_merge_commits_to_be_scanned(tmp_path):
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
     result = subprocess.run(["bash", str(REPO / "scripts" / "gitleaks-history.sh"), str(repo)], capture_output=True, text=True, env=env)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_metadata_accepts_githubs_web_flow_committer_but_not_other_noreply_names(tmp_path):
+    # A merge made with GitHub's merge button is committed by "GitHub <noreply@github.com>".
+    import os
+
+    repo = _make_repo(tmp_path)
+    _commit(repo, "octocat", NO_REPLY)
+    env = {**os.environ, "GIT_COMMITTER_NAME": "GitHub", "GIT_COMMITTER_EMAIL": "noreply@github.com"}
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "web merge", "--author", f"octocat <{NO_REPLY}>"], env=env, check=True)
+    assert _metadata(repo).returncode == 0
+    env["GIT_COMMITTER_NAME"] = "Someone Else"
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "other", "--author", f"octocat <{NO_REPLY}>"], env=env, check=True)
+    result = _metadata(repo)
+    assert result.returncode != 0 and "non-neutral committer" in (result.stdout + result.stderr)

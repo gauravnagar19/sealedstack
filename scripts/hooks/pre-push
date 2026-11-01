@@ -3,7 +3,8 @@
 # clean. Refuses to push
 #   - any ref other than refs/heads/main, refs/heads/feat/* and refs/tags/v*,
 #   - any commit or tag whose author, committer or tagger email is not a GitHub
-#     no-reply address (@users.noreply.github.com) or a known CI bot.
+#     no-reply address (@users.noreply.github.com), GitHub's own web-flow
+#     noreply@github.com, or a known CI bot.
 #
 # Installed by scripts/install-hooks.sh. Bypass with `git push --no-verify`
 # only if you know exactly why.
@@ -27,6 +28,7 @@ email_ok() {
   case "${email}" in
     *@users.noreply.github.com) return 0 ;;
     *dependabot*|*github-actions*) return 0 ;;
+    noreply@github.com) return 0 ;;  # GitHub's web-flow committer for a merge made in the web UI; no personal data
     *) return 1 ;;
   esac
 }
@@ -39,8 +41,8 @@ check_emails() {
       echo "pre-push: refusing ${label}: ${type} email '${email}' is not a GitHub no-reply address" >&2
       status=1
     fi
-  done < <(git log --format='%ae %ae' "${range}" 2>/dev/null | sed 's/^/author /' ; \
-           git log --format='%ce %ce' "${range}" 2>/dev/null | sed 's/^/committer /')
+  done < <(git log --format='%ae' "${range}" 2>/dev/null | sed 's/^/author /' ; \
+           git log --format='%ce' "${range}" 2>/dev/null | sed 's/^/committer /')
 }
 
 while read -r local_ref local_oid remote_ref remote_oid; do

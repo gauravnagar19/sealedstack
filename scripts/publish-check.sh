@@ -289,6 +289,10 @@ def neutral(name, email):
         return True
     if "github-actions" in name_l or "github-actions" in email_l:
         return True
+    # GitHub's own web-flow committer on a commit made in the web UI (a merge, squash or "Update branch"
+    # button). It is a fixed system identity with no personal data, and it stays in history once merged.
+    if (name_l, email_l) == ("github", "noreply@github.com"):
+        return True
     return name_l == "sealedstack maintainers"
 
 
