@@ -159,12 +159,18 @@ class Db:
 
     # -- per-app ------------------------------------------------------------
     def primary_server(self, app: str) -> str:
+        """The app's first server: from the rendered manifest when there is one, else from apps.yaml.
+
+        A CI ``drill`` or ``restore`` job does not render first, and an empty name made ssh fail with "could not write the
+        remote env file on " (live run 2026-11-01)."""
         path = Path(self.config.code_root) / ".build" / "apps" / f"{app}.json"
         if path.exists():
             data = json.loads(path.read_text(encoding="utf-8") or "{}")
             servers = data.get("servers") or []
-            return str(servers[0]) if servers else ""
-        return ""
+            if servers:
+                return str(servers[0])
+        servers = ((self.config.apps.get("apps") or {}).get(app) or {}).get("servers") or []
+        return str(servers[0]) if servers else ""
 
     def pg_image(self, app: str) -> str:
         path = Path(self.config.code_root) / ".build" / "apps" / f"{app}.json"

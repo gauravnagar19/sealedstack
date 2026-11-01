@@ -160,3 +160,11 @@ def test_no_matching_dump_or_a_failed_listing_gives_nothing(tmp_path):
     assert db.latest_backup("demo-app") == ""
     db.t.aws = lambda args, stdin=None: (1, b"")
     assert db.latest_backup("demo-app") == ""
+
+
+def test_the_primary_server_comes_from_apps_yaml_when_nothing_was_rendered(tmp_path):
+    """Live run 2026-11-01: a CI `drill` job does not render; the empty server name made ssh fail."""
+    db = make_db(tmp_path)
+    db.config.apps["apps"] = {"shop": {"servers": ["web-1", "web-2"]}}
+    assert db.primary_server("shop") == "web-1"
+    assert db.primary_server("unknown") == ""
