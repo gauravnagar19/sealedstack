@@ -177,6 +177,11 @@ def show_admin(config, env, source, *, generated: Optional[Generated] = None, ou
     if not break_glass:
         print("sealedstack: --show-dokploy-admin needs --break-glass (a local, guarded session).", file=sys.stderr)
         return 2
+    kept = secrets_mod.lookup(source, config, "dokploy_admin_password")
+    if kept.found:
+        print(f"Dokploy admin: {config.stack.get('owner_email', '')}", file=out)
+        print(f"The password is the one you keep in the secret source: {secrets_mod.describe(config, 'dokploy_admin_password')}.", file=out)
+        return 0
     gen = generated or shared(config, env, source)
     state = gen.ensure()
     if gen.values().get("admin_shown"):

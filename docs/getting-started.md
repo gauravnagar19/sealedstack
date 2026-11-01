@@ -174,6 +174,12 @@ in the encrypted state. If you ever need the admin login, run
 `sealedstack status --show-dokploy-admin --break-glass` in a local session (it is
 refused in CI and shows the password once).
 
+To choose the admin password yourself instead, add `DOKPLOY_ADMIN_PASSWORD` (at least 12
+characters) to the secret source before `up`. `up` then creates the admin with it, or moves an
+existing admin from the generated password to yours, and `--show-dokploy-admin` has nothing to
+reveal. The admin email is `owner_email` from `config/stack.yaml`; the panel is at
+`http://<control server>.<tailnet>:3000`, reachable over Tailscale only.
+
 ## 6. Verify
 
 `up` verifies this itself and prints the result. To check by hand:

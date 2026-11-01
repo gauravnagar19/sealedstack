@@ -25,7 +25,8 @@ NEW_KEY = "dk_example_created_key"
 class FakeDokploy(HttpClient):
     """The slice of Dokploy v0.30.8 the bootstrap uses."""
 
-    def __init__(self, *, admin_exists=False, admin_password=ADMIN_PASSWORD, ready_after=0):
+    def __init__(self, *, admin_exists=False, admin_password=ADMIN_PASSWORD, ready_after=0, refuse_change=False):
+        self.refuse_change = refuse_change
         self.admin_exists = admin_exists
         self.admin_password = admin_password
         self.keys = set()
@@ -55,6 +56,11 @@ class FakeDokploy(HttpClient):
             if self.admin_exists and json_body["password"] == self.admin_password:
                 return ok({"ok": 1}, ["better-auth.session_token=tok456; Path=/"])
             return Response(401, {}, b"{}", url)
+        if path == "/api/auth/change-password":
+            if "Cookie" not in headers or json_body["currentPassword"] != self.admin_password or self.refuse_change:
+                return Response(400, {}, b"{}", url)
+            self.admin_password = json_body["newPassword"]
+            return ok({"status": True})
         if path == "/api/user.session":
             if "Cookie" not in headers:
                 return ok(None)
@@ -295,3 +301,78 @@ def test_platform_tfvars_take_the_worker_key_from_the_state(tmp_path):
 def test_bootstrap_checks_the_keyed_login_with_the_ci_identity():
     text = (REPO / "ansible" / "playbooks" / "bootstrap.yml").read_text()
     assert "admin_ssh_identity" in text and "IdentitiesOnly=yes" in text
+
+
+# -- D-076: the admin password can come from the secret source ---------------------------------------------------------
+CHOSEN = "my-own-long-password-1234"
+
+
+def source_with(password=CHOSEN, **extra):
+    return EnvSource({"DOKPLOY_ADMIN_PASSWORD": password, **extra} if password else dict(extra))
+
+
+def test_a_fresh_panel_gets_its_admin_with_the_password_from_the_secret_source(tmp_path):
+    config, http, gen = make_config(tmp_path), FakeDokploy(), fake_generated()
+    result, log = run(config, http, gen, source=source_with())
+    sign_up = next(c for c in http.calls if c[1] == "/api/auth/sign-up/email")
+    assert sign_up[3]["password"] == CHOSEN and http.admin_password == CHOSEN
+    assert "from the secret source: created" in log and CHOSEN not in log
+
+
+def test_an_existing_admin_is_moved_from_the_generated_password_to_the_chosen_one(tmp_path):
+    config, http, gen = make_config(tmp_path), FakeDokploy(admin_exists=True), fake_generated()
+    http.admin_password = ADMIN_PASSWORD  # what sealedstack generated
+    _, log = run(config, http, gen, source=source_with())
+    assert http.admin_password == CHOSEN and "from the secret source: changed" in log
+    assert CHOSEN not in log and ADMIN_PASSWORD not in log
+    change = next(c for c in http.calls if c[1] == "/api/auth/change-password")
+    assert change[3]["currentPassword"] == ADMIN_PASSWORD and change[3]["newPassword"] == CHOSEN and "Cookie" in change[2]
+
+
+def test_when_the_chosen_password_already_works_nothing_is_changed(tmp_path):
+    config, http, gen = make_config(tmp_path), FakeDokploy(admin_exists=True, admin_password=CHOSEN), fake_generated()
+    _, log = run(config, http, gen, source=source_with())
+    assert "from the secret source: unchanged" in log
+    assert not any(c[1] == "/api/auth/change-password" for c in http.calls)
+    assert http.admin_password == CHOSEN
+
+
+def test_a_short_password_is_refused_before_anything_is_sent(tmp_path):
+    config, http, gen = make_config(tmp_path), FakeDokploy(admin_exists=True), fake_generated()
+    with pytest.raises(dokploybootstrap.BootstrapError, match="at least 12"):
+        run(config, http, gen, source=source_with("short"))
+    assert not any(c[1].startswith("/api/auth/") for c in http.calls)
+
+
+def test_an_admin_nobody_knows_the_password_of_is_reported_with_the_fix(tmp_path):
+    config, http, gen = make_config(tmp_path), FakeDokploy(admin_exists=True, admin_password="someone-elses-password-123"), fake_generated()
+    with pytest.raises(dokploybootstrap.BootstrapError, match="neither the one in the secret source"):
+        run(config, http, gen, source=source_with())
+
+
+def test_a_refused_change_says_how_to_finish_by_hand(tmp_path):
+    config, http, gen = make_config(tmp_path), FakeDokploy(admin_exists=True, refuse_change=True), fake_generated()
+    http.admin_password = ADMIN_PASSWORD
+    with pytest.raises(dokploybootstrap.BootstrapError, match="refused to change the admin password"):
+        run(config, http, gen, source=source_with())
+
+
+def test_without_the_secret_the_generated_password_is_used_exactly_as_before(tmp_path):
+    config, http, gen = make_config(tmp_path), FakeDokploy(), fake_generated()
+    run(config, http, gen, source=EnvSource({}))
+    assert http.admin_password == ADMIN_PASSWORD and not any(c[1] == "/api/auth/change-password" for c in http.calls)
+
+
+def test_the_api_key_still_works_after_the_password_moved(tmp_path):
+    config, http, gen = make_config(tmp_path), FakeDokploy(admin_exists=True), fake_generated()
+    http.admin_password = ADMIN_PASSWORD
+    result, _ = run(config, http, gen, source=source_with())
+    assert result == "created" and gen.api_key() == NEW_KEY
+
+
+def test_show_admin_points_at_the_secret_source_instead_of_revealing_anything(tmp_path):
+    config, gen = make_config(tmp_path), fake_generated()
+    out = io.StringIO()
+    rc = generated_mod.show_admin(config, {}, source_with(), generated=gen, out=out, break_glass=True)
+    assert rc == 0 and "secret source" in out.getvalue() and CHOSEN not in out.getvalue() and ADMIN_PASSWORD not in out.getvalue()
+    assert not gen.values().get("admin_shown")  # it stays available if the secret is removed later
