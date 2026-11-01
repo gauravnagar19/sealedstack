@@ -132,7 +132,7 @@ ALLOWED_V6 = [ipaddress.ip_network(n) for n in (
     "fe80::/10",                                           # link-local
 )]
 ALLOWED_EMAIL_DOMAINS = {"example.com", "example.org", "users.noreply.github.com", "dokploy.invalid"}  # .invalid is reserved (RFC 2606): the scoped Dokploy members
-ALLOWED_EMAILS = {"noreply@anthropic.com"}
+ALLOWED_EMAILS = {"noreply@anthropic.com", "noreply@github.com"}
 ALLOWED_MACS = {"00:00:00:00:00:00"}
 
 RE_V4 = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d.])")
@@ -289,6 +289,8 @@ def neutral(name, email):
         return True
     if "github-actions" in name_l or "github-actions" in email_l:
         return True
+    if name_l == "github" and email_l == "noreply@github.com":
+        return True  # the committer GitHub records for a merge or squash made in its web UI
     return name_l == "sealedstack maintainers"
 
 

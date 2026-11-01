@@ -49,6 +49,19 @@ def test_metadata_passes_with_no_reply_identity(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_metadata_accepts_githubs_own_committer_identity_for_web_merges(tmp_path):
+    """A merge made in GitHub's UI is committed by `GitHub <noreply@github.com>` (it blocked every release, 2026-11-01)."""
+    repo = _make_repo(tmp_path)
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.name=octocat", "-c", f"user.email={NO_REPLY}", "commit", "-q", "-m", "x", "--author", f"octocat <{NO_REPLY}>")
+    (repo / "g.txt").write_text("b\n")
+    _git(repo, "add", "-A")
+    env_args = ["-c", "user.name=GitHub", "-c", "user.email=noreply@github.com"]
+    _git(repo, *env_args, "commit", "-q", "-m", "Merge pull request #3", "--author", f"octocat <{NO_REPLY}>")
+    result = _metadata(repo)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def _run_hook(repo: Path, stdin: str):
     return subprocess.run(
         ["bash", str(REPO / "scripts" / "hooks" / "pre-push")],
