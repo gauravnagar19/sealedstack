@@ -137,6 +137,13 @@ jobs:
       - uses: ./.github/actions/toolbox
         with:
           image: ${{ needs.prepare.outputs.image }}
+      - name: Build the tool image
+        # F2: the root Dockerfile is never otherwise built in CI, so a broken
+        # FROM/COPY would only surface at release time. Built, never pushed (D-053).
+        # Before any in-toolbox step: those run as root and leave a root-only .build/ in the
+        # checkout, which the Docker client cannot read to send the build context.
+        if: ${{ needs.prepare.outputs.images == 'true' }}
+        run: docker build -f Dockerfile --build-arg TOOLBOX_IMAGE=sealedstack-toolbox:ci .
       - name: config from examples
         # The repo ships no real config (D-022/F4); validate against the samples.
         run: |
@@ -176,11 +183,6 @@ jobs:
         run: in-toolbox scripts/gitleaks-history.sh /work
       # The Docker checks run only when something they read changed (`images` from prepare).
       # They are steps here, not a job: a 13s job still bills a minute.
-      - name: Build the tool image
-        # F2: the root Dockerfile is never otherwise built in CI, so a broken
-        # FROM/COPY would only surface at release time. Built, never pushed (D-053).
-        if: ${{ needs.prepare.outputs.images == 'true' }}
-        run: docker build -f Dockerfile --build-arg TOOLBOX_IMAGE=sealedstack-toolbox:ci .
       - name: Build the reference app image once
         # M3: the reference app (examples/app-template) is built, run and checked with no live
         # accounts. Nothing is pushed anywhere (D-053). Its unit tests, the registry check and

@@ -153,3 +153,12 @@ def test_removing_a_file_the_dockerfile_copies_still_runs_the_tool_image_build(t
     # ... but deleting or renaming one can
     assert run_changes(tmp_path / "d", BASE, {}, delete=["scripts/s.py"]) == {"docs": "false", "tofu": "true", "images": "true"}
     assert run_changes(tmp_path / "e", BASE, {}, delete=["docs/a.md"])["images"] == "true"
+
+
+def test_the_tool_image_is_built_before_any_in_toolbox_step_leaves_a_root_only_build_dir():
+    # in-toolbox runs as root; its render makes .build/ unreadable to the runner user, and the Docker
+    # client then fails sending the build context ("open .build: permission denied", seen on the first run).
+    steps = ci()["jobs"]["lint"]["steps"]
+    names = [st.get("name", "") for st in steps]
+    first_in_toolbox = next(i for i, st in enumerate(steps) if "in-toolbox" in st.get("run", ""))
+    assert names.index("Build the tool image") < first_in_toolbox
