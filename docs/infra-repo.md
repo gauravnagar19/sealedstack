@@ -42,6 +42,32 @@ that share those servers belong in the same infra repo, listed in its `apps.yaml
 they share the Tailscale policy, the state bucket and the deploy pipeline. Make a new
 infra repo only for a separate set of servers or a separate domain.
 
+## Naming
+
+Every app has one name: its key in `config/apps.yaml`, by default the app repo's name
+(`you/paisa` gives `paisa`). Everything sealedstack creates is named after it
+([D-089](maintainers/decisions.md)):
+
+| What | Name |
+|---|---|
+| Dokploy project and compose | `<name>` |
+| Cloudflare tunnel | `ss-<name>` |
+| Secrets provider and its Doppler project ([D-088](maintainers/decisions.md)) | `<name>` |
+| Hostname, when `add-app` is given none | `<name>.<domain>` |
+| Images | `<repo>-<service>`, without repeating the repo: service `paisa-web` in repo `paisa` is `paisa-web` |
+
+`add-app` needs only `--repo`: the name, the hostname and, when `stack.yaml` has exactly
+one gate policy, the access default from it, and its pull request lists the names. The
+`name` in the app's `sealedstack.yaml` is not used for anything; when it differs from the
+key, `check` warns (before 0.6.41 a different name made `env-sync` and `deploy-apps` skip
+the app).
+
+For existing apps, `check` has a `config.names.<app>` row that lists each difference and
+what changing it touches. Nothing is renamed for you. Images with the repeated prefix
+keep working; rename them in the app's compose and the next release pushes under the new
+name. Renaming the apps.yaml key itself recreates the app's Dokploy project, tunnel and
+database, so keep it for an existing app.
+
 ## Layout
 
 You create the repo (any name, e.g. `my-infra`, D-028) and commit two files, then

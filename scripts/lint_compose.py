@@ -24,8 +24,21 @@ def _services(compose: dict | None) -> dict:
     return (compose or {}).get("services") or {}
 
 
+def image_repo(repo: str, service: str) -> str:
+    """``<repo>-<service>``, without repeating the repo name (D-089): service ``paisa-web`` in repo ``paisa`` is
+    ``paisa-web``, not ``paisa-paisa-web``, and a service named like the repo is just the repo."""
+    if service == repo or service.startswith(f"{repo}-"):
+        return service
+    return f"{repo}-{service}"
+
+
 def expected_image(registry: str, owner: str, repo: str, service: str) -> str:
     """The image ref a ``ci``-mode service must pin (spec 4.2)."""
+    return f"{registry}/{owner}/{image_repo(repo, service)}:${{APP_VERSION}}"
+
+
+def legacy_image(registry: str, owner: str, repo: str, service: str) -> str:
+    """The form onboarding wrote before D-089 (``<repo>-<service>`` always); still accepted."""
     return f"{registry}/{owner}/{repo}-{service}:${{APP_VERSION}}"
 
 
@@ -93,7 +106,7 @@ def lint_build(
             continue
         if registry and owner and repo:
             want = expected_image(registry, owner, repo, service)
-            if image != want:
+            if image not in (want, legacy_image(registry, owner, repo, service)):
                 problems.append(
                     f"service '{service}': image '{image}' must be '{want}' "
                     "in build.mode 'ci'"

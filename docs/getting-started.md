@@ -268,7 +268,7 @@ at any time (Run workflow, or `/sealedstack drift`) whatever the variable says
 | I want to | Do this | Details |
 |---|---|---|
 | Add another server | Run workflow `add-server --name server-2` (existing machines) or add it to `servers.yaml` in a PR (API providers) | [user experience, journey B](user-experience.md#5-journey-b-add-another-server) |
-| Add an app | Run workflow `add-app --name example-app --repo you/example-app --host app.example.com --access owner-only`; merge the app PR first, then the infra PR | [journey C](user-experience.md#6-journey-c-add-an-app) |
+| Add an app | Run workflow `add-app --repo you/example-app` (name, hostname `<name>.<domain>` and a single gate policy are the defaults; pass `--name`, `--host`, `--access` to override); merge the app PR first, then the infra PR | [journey C](user-experience.md#6-journey-c-add-an-app) |
 | Release or roll back an app | In the app repo: Actions, release, Run workflow, tag `v0.0.N` | [journey D](user-experience.md#7-journey-d-release-and-roll-back-app-developer) |
 | Change configuration | Edit `config/` in a pull request, read the plan comment, merge, approve | [journey E](user-experience.md#8-journey-e-day-2-changes) |
 | Upgrade sealedstack | Merge the bot's version-bump PR | [journey F](user-experience.md#9-journey-f-upgrade-sealedstack) |

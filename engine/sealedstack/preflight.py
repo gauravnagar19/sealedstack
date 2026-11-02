@@ -1712,6 +1712,33 @@ def check_app_secrets(ctx: CheckContext) -> list[Result]:
     return results
 
 
+DOCS_NAMES = "docs/infra-repo.md#naming"
+
+
+def check_names(ctx: CheckContext) -> list[Result]:
+    """Where an app's names differ from "everything is named after the app" (D-089), and what changing it touches."""
+    from . import naming
+
+    results = []
+    apps_dir = Path(ctx.build_dir) / "apps"
+    for path in sorted(apps_dir.glob("*.json")):
+        try:
+            rendered = json.loads(path.read_text(encoding="utf-8") or "{}")
+        except (OSError, ValueError):
+            continue
+        if rendered.get("_disabled") or rendered.get("_pending") or rendered.get("_synthesized"):
+            continue
+        compose_path = apps_dir / f"{path.stem}.deploy-compose.yml"
+        compose = compose_path.read_text(encoding="utf-8") if compose_path.is_file() else ""
+        found = naming.deviations(path.stem, rendered, compose)
+        if not found:
+            results.append(Result(f"config.names.{path.stem}", "config", "ok", detail="everything is named after the app", docs=DOCS_NAMES))
+            continue
+        status = "warn" if any(level == "warn" for level, _ in found) else "info"
+        results.append(Result(f"config.names.{path.stem}", "config", status, detail="; ".join(text for _, text in found), docs=DOCS_NAMES))
+    return results
+
+
 AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
     check_config,
     check_secrets,
@@ -1724,6 +1751,7 @@ AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
     check_servers,
     check_drill_settings,  # after check_config, which renders the manifests it reads
     check_app_secrets,  # after check_config too
+    check_names,
 )
 
 

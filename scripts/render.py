@@ -212,7 +212,7 @@ def vault_spec(manifest: dict, name: str) -> dict:
     secrets = manifest.get("secrets")
     if not isinstance(secrets, dict):
         return {}
-    return {"provider": secrets.get("provider") or manifest.get("name", name), "keys": list(secrets.get("keys") or [])}
+    return {"provider": secrets.get("provider") or name, "keys": list(secrets.get("keys") or [])}
 
 
 def resolve_manifest(name: str, entry: dict, *, allow_unresolved: bool) -> tuple[dict, dict]:
@@ -274,7 +274,9 @@ def build_app(
     mode = build.get("mode") or "ci"
 
     rendered = {
-        "name": manifest.get("name", name),
+        # Always the apps.yaml key (D-089): OpenTofu keys every resource by it, and the engine looks composes,
+        # projects and env up by this field, so a different manifest name silently skipped the app.
+        "name": name,
         "source": source,
         "servers": entry.get("servers", []),
         "hostnames": entry.get("hostnames", []),

@@ -28,6 +28,7 @@ import yaml
 from . import __version__
 from . import config as config_mod
 from . import forge as forge_mod
+from . import naming
 from . import onboard as onboard_mod
 
 APP_BRANCH = "sealedstack/onboard"
@@ -241,7 +242,8 @@ def open_prs(
         branch=f"sealedstack/add-app-{name}",
         title=f"Add app {name}",
         body=render_infra_body(
-            name=name, app_repo=app_repo, hosts=hosts, servers=servers, access=access, manifest=manifest, app_pr=app_pr
+            name=name, app_repo=app_repo, hosts=hosts, servers=servers, access=access, manifest=manifest, app_pr=app_pr,
+            domain=str(config.stack.get("domain") or ""),
         ),
         files={"config/apps.yaml": new_apps},
         base=infra_base,
@@ -267,6 +269,7 @@ def render_infra_body(
     access: str,
     manifest: dict,
     app_pr: Optional[int],
+    domain: str = "",
 ) -> str:
     login = "anyone (public)" if access == "public" else access
     where = ", ".join(servers)
@@ -285,6 +288,9 @@ def render_infra_body(
         )
     if needs.get("redis"):
         lines.append("- Redis")
+    provider = str(((manifest or {}).get("secrets") or {}).get("provider") or "") if isinstance((manifest or {}).get("secrets"), dict) else ""
+    lines += ["", "Names (D-089: everything is named after the app):", "", "| What | Name |", "|---|---|"]
+    lines += [f"| {what} | `{value}` |" for what, value in naming.derived(name, repo=app_repo, domain=domain, provider=provider)]
     lines += ["", "The plan comment below is written by the plan workflow."]
     if app_pr is not None:
         lines += [
@@ -303,12 +309,12 @@ def render_infra_body(
 # --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="app-add", description="Place an app and open the onboarding pull requests.")
-    parser.add_argument("name", nargs="?", help="app name (or use --name)")
+    parser.add_argument("name", nargs="?", help="app name (or use --name; default: the repo name, D-089)")
     parser.add_argument("--name", dest="name_opt")
     parser.add_argument("--repo", required=True, help="the app repository, owner/name")
-    parser.add_argument("--host", action="append", default=[], dest="hosts", help="hostname (repeatable)")
+    parser.add_argument("--host", action="append", default=[], dest="hosts", help="hostname (repeatable; default: <name>.<domain>)")
     parser.add_argument("--server", action="append", default=[], dest="servers", help="server (repeatable; default: the control server)")
-    parser.add_argument("--access", required=True, help="'public' or a gate policy from stack.yaml")
+    parser.add_argument("--access", default="", help="'public' or a gate policy from stack.yaml (default: the only policy, if there is one)")
     parser.add_argument("--ref", default="main")
     parser.add_argument("--web-service", default="", help="compose service to route (default: detected)")
     parser.add_argument("--web-port", type=int, default=0, help="port that service listens on (default: detected)")
@@ -321,16 +327,23 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[list[str]] = None, *, env: Optional[Mapping[str, str]] = None, forge: Optional[forge_mod.Forge] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    name = args.name_opt or args.name
+    name = args.name_opt or args.name or naming.app_name_from_repo(args.repo)
     if not name:
         parser.error("the app name is required (positional or --name)")
-    if not args.hosts:
-        parser.error("--host is required (and repeatable)")
 
     env = dict(os.environ if env is None else env)
     code_root = config_mod.find_code_root(env)
     config_dir = config_mod.resolve_config_dir(env=env, code_root=code_root)
     config = config_mod.load_config(config_dir, code_root, env)
+    domain = str(config.stack.get("domain") or "")
+    if not args.hosts:
+        if not domain:
+            parser.error("--host is required: stack.yaml has no domain to build <name>.<domain> from")
+        args.hosts = [naming.default_hostname(name, domain)]
+    if not args.access:
+        args.access = naming.access_default(config.stack) or ""
+        if not args.access:
+            parser.error("--access is required: stack.yaml has no single gate policy to default to ('public' or a policy name)")
     infra_repo = args.infra_repo or env.get("GITHUB_REPOSITORY") or forge_mod.repo_from_git(config_dir)
     use_prs = not args.local and bool(infra_repo) and (forge is not None or bool(env.get("GH_TOKEN") or env.get("GITHUB_TOKEN")))
 

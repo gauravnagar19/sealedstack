@@ -25,6 +25,8 @@ from typing import Mapping, Optional
 
 import yaml
 
+from . import naming
+
 COMPOSE_CANDIDATES = ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
 OVERRIDE_PATH = "docker-compose.override.yml"
 RELEASE_WORKFLOW = ".github/workflows/release.yml"
@@ -464,7 +466,7 @@ def transform_compose(
         spec = services.get(service)
         if not isinstance(spec, dict) or "build" not in spec:
             continue
-        image = f"{registry_prefix}/{repo_slug}-{service}:${{APP_VERSION}}"
+        image = f"{registry_prefix}/{naming.image_repo(repo_slug, service)}:${{APP_VERSION}}"
         images[service] = image
         span = _service_spans(lines)[service]
         existing = _property(lines, span, "image")
@@ -482,8 +484,7 @@ def transform_compose(
         if len(pinned) == 1:
             shown = images[pinned[0]]
         else:
-            tail = ",".join(pinned)
-            shown = f"{registry_prefix}/{repo_slug}-{{{tail}}}:${{APP_VERSION}}"
+            shown = "`, `".join(images[service] for service in pinned)
         changes.append(f"added `image: {shown}` (`build:` kept for local development)")
 
     collapsed: list[str] = []
