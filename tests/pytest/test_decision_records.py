@@ -13,9 +13,9 @@ def test_decision_ids_are_unique():
     assert len(ids) == len(set(ids)) and "D-065" in ids
 
 
-def test_d065_is_recorded_as_planned_with_its_rationale():
+def test_d065_is_recorded_as_parked_with_its_rationale():
     section = DECISIONS.split("### D-065", 1)[1].split("\n### ", 1)[0]
-    assert "planned" in section.splitlines()[0] and "2026-10-31" in section.splitlines()[0]
+    assert "parked" in section.splitlines()[0] and "2026-10-31" in section.splitlines()[0]
     for phrase in ("hold **no** Dokploy credential", "tag:ci", "FR-1", "D-063", "after M4", "write access to an app repo"):
         assert phrase in section, phrase
 
