@@ -8,16 +8,36 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "this" {
 }
 
 locals {
-  # Every entry has the same shape (hostname, service, origin_request). `origin_request` is null unless the gate is
+  # Every entry has the same shape (hostname, path, service, origin_request). `origin_request` is null unless the gate is
   # cloudflare_access and supplied an audience tag for this hostname; a non-cloudflare gate (authentik, oauth2-proxy,
   # ...) has no aud tag, so the lookup is guarded. The audience tags only exist after the Access apps are created, so
   # the condition is unknown at plan time: choosing between "an object" and "an object with other attributes" made the
   # whole entry unknown and the provider then reported `service` as missing (first live `up`). Object-or-null keeps
   # `hostname` and `service` known.
+  #
+  # A gated hostname's rule makes cloudflared demand an Access JWT on every request. A request to a
+  # `user_auth.webhook_paths` path passes Access through its Bypass app and carries no JWT, so without a rule of its own
+  # cloudflared refused it with a bare 403 (paisa, 0.6.39; D-090). The path rule comes first (cloudflared takes the first
+  # match) and has no access check. Like the Access app paths, each declared path covers itself and everything under it.
+  webhook_paths = [for path in var.webhook_paths : trimsuffix(path, "/")]
+  webhook_regex = format("^(%s)(/.*)?$", join("|", [
+    for path in local.webhook_paths : replace(path, "/([.+*?()\\[\\]{}|^$\\\\])/", "\\$1")
+  ]))
+  webhook_rules = [
+    for hostname in var.hostnames : {
+      hostname       = hostname
+      path           = local.webhook_regex
+      service        = "http://dokploy-traefik:80"
+      origin_request = null
+    } if var.gated && length(local.webhook_paths) > 0
+  ]
+
   ingress = concat(
+    local.webhook_rules,
     [
       for hostname in var.hostnames : {
         hostname = hostname
+        path     = null
         service  = "http://dokploy-traefik:80"
         origin_request = var.gated && var.team_name != "" && lookup(var.aud_by_hostname, hostname, "") != "" ? {
           access = {
@@ -32,6 +52,7 @@ locals {
       # Catch-all: anything not matched above is refused.
       {
         hostname       = null
+        path           = null
         service        = "http_status:404"
         origin_request = null
       }

@@ -6,11 +6,13 @@ timeout, and they all run at once, so the whole step costs about as much as its 
 
 * each app hostname answers the way its gate says (Access redirect for a gated app, a normal answer for a public one);
 * a path from ``edge_security.blocked_paths`` is refused at the edge (403);
+* each ``user_auth.webhook_paths`` path takes an unauthenticated POST through to the app (D-090);
 * the public IP of each server has nothing listening on SSH, HTTP, HTTPS, the Dokploy panel or Postgres;
 * each app's compose in Dokploy finished its last deploy.
 """
 from __future__ import annotations
 
+import json
 import socket
 import sys
 import time
@@ -18,6 +20,7 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Mapping, Optional
 
 from . import config as config_mod
@@ -58,6 +61,20 @@ def fetch(url: str, timeout: float = HTTP_TIMEOUT) -> tuple[int, str]:
         return 0, str(exc)
 
 
+def post(url: str, timeout: float = HTTP_TIMEOUT) -> tuple[int, str]:
+    """(status, Location) of one unauthenticated POST with an empty JSON body, redirects not followed."""
+    opener = urllib.request.build_opener(_NoRedirect)
+    request = urllib.request.Request(url, data=b"{}", method="POST",
+                                     headers={"User-Agent": "sealedstack-verify", "Content-Type": "application/json"})
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            return response.status, response.headers.get("Location", "")
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.headers.get("Location", "") if exc.headers else ""
+    except Exception as exc:  # noqa: BLE001 - the reason is the detail
+        return 0, str(exc)
+
+
 def connects(host: str, port: int, timeout: float = CONNECT_TIMEOUT) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
@@ -70,6 +87,24 @@ def _front_ok(gated: bool, status: int, location: str) -> bool:
     if gated:
         return status in (301, 302, 303, 307) and "cloudflareaccess.com" in location
     return 200 <= status < 400
+
+
+def _webhook_ok(status: int, location: str) -> bool:
+    """The app answered: any 2xx, or a 4xx other than 403 (a missing signature is usually 400 or 401).
+
+    A redirect is the Access login, a 403 is cloudflared refusing a request without an Access JWT (paisa, 0.6.39)."""
+    return 200 <= status < 300 or (400 <= status < 500 and status != 403)
+
+
+def _webhook_paths(config: config_mod.Config, app: str) -> list[str]:
+    """``user_auth.webhook_paths`` from the rendered app (``.build/apps/<app>.json``), or []."""
+    path = Path(config.code_root) / ".build" / "apps" / f"{app}.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except (OSError, ValueError):
+        return []
+    paths = ((data.get("manifest") or {}).get("user_auth") or {}).get("webhook_paths") or []
+    return [str(item) for item in paths if str(item).startswith("/")]
 
 
 def _twice(fetcher: Callable, url: str, good: Callable[[int, str], bool]) -> tuple[int, str]:
@@ -90,13 +125,14 @@ def _blocked_probe_path(config: config_mod.Config) -> str:
     return ""
 
 
-def edge_jobs(config: config_mod.Config, fetcher: Callable) -> list[Callable[[], Probe]]:
+def edge_jobs(config: config_mod.Config, fetcher: Callable, poster: Callable = post) -> list[Callable[[], Probe]]:
     jobs: list[Callable[[], Probe]] = []
     blocked = _blocked_probe_path(config)
     for app, spec in sorted((config.apps.get("apps") or {}).items()):
         if spec.get("enabled") is False:
             continue
         gated = str(spec.get("access") or "public") != "public"
+        webhooks = _webhook_paths(config, app)
         for host in spec.get("hostnames") or []:
             def front(app=app, host=host, gated=gated):
                 status, location = _twice(fetcher, f"https://{host}/", lambda s, loc: _front_ok(gated, s, loc))
@@ -114,6 +150,18 @@ def edge_jobs(config: config_mod.Config, fetcher: Callable) -> list[Callable[[],
                                  else f"{host}{blocked} should be refused with 403, got {status or 'no answer'}")
 
                 jobs.append(refused)
+            for webhook in webhooks:
+                def reaches_app(host=host, webhook=webhook):
+                    status, location = _twice(poster, f"https://{host}{webhook}", _webhook_ok)
+                    if _webhook_ok(status, location):
+                        return Probe(f"edge.{host}{webhook}", "ok", f"{host}{webhook} reaches the app without a login ({status})")
+                    why = ("is sent to the Access login" if 300 <= status < 400 and "cloudflareaccess.com" in location
+                           else "is refused at the edge (403: the tunnel still requires Access)" if status == 403
+                           else f"got {status or 'no answer'} {location}".strip())
+                    return Probe(f"edge.{host}{webhook}", "fail",
+                                 f"webhook {host}{webhook} should reach the app without a login, but {why}")
+
+                jobs.append(reaches_app)
     return jobs
 
 
@@ -169,6 +217,7 @@ def run(
     source: Optional[secrets_mod.SecretSource] = None,
     client=None,
     fetcher: Callable = fetch,
+    poster: Callable = post,
     connector: Callable = connects,
     out=None,
 ) -> int:
@@ -181,7 +230,7 @@ def run(
             client.timeout = DEPLOY_TIMEOUT
         except Exception:  # noqa: BLE001 - reported by the deploy probe below
             client = None
-    jobs = edge_jobs(config, fetcher) + port_jobs(config, source, connector) + deploy_jobs(config, client)
+    jobs = edge_jobs(config, fetcher, poster) + port_jobs(config, source, connector) + deploy_jobs(config, client)
     with ThreadPoolExecutor(max_workers=max(1, min(len(jobs), 16))) as pool:
         probes = list(pool.map(lambda job: job(), jobs))
     for probe in probes:

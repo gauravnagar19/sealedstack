@@ -287,6 +287,7 @@ module "ingress" {
   gated           = each.value.access != "public"
   team_name       = local.stack.cloudflare.team_name
   aud_by_hostname = local.use_cloudflare_gate ? module.gate[0].aud_by_hostname : {}
+  webhook_paths   = try(each.value.manifest.user_auth.webhook_paths, [])
 }
 
 module "ingress_ngrok" {

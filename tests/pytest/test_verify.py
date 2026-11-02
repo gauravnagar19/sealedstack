@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 import threading
 import time
 
@@ -130,3 +131,73 @@ def test_verify_is_a_cli_command_and_a_comment_command():
 
     assert "verify" in commands.COMMANDS and "verify" in infraci.COMMENT_READ
     assert cli.build_parser().parse_args(["verify"]).noun == "verify"
+
+
+def webhook_go(tmp_path, poster, *, access="owner-only", paths=("/api/webhooks/clerk", "/api/ingest/discord")):
+    """`verify` for an app whose rendered manifest declares `user_auth.webhook_paths` (D-090)."""
+    conf = config(tmp_path, access=access)
+    conf.code_root = tmp_path
+    (tmp_path / ".build" / "apps").mkdir(parents=True)
+    (tmp_path / ".build" / "apps" / "web.json").write_text(
+        json.dumps({"hostnames": ["web.example.com"], "manifest": {"user_auth": {"webhook_paths": list(paths)}}}))
+    posted = []
+
+    def recording(url, timeout=0):
+        posted.append(url)
+        return poster(url)
+
+    out = io.StringIO()
+    fetcher = good_fetch if access != "public" else (lambda url, timeout=0: (403, "") if url.endswith("/.env") else (200, ""))
+    rc = verify.run(conf, {}, source=EnvSource({"SERVER_IP_WEB_1": "203.0.113.5"}), client=Client(), fetcher=fetcher,
+                    poster=recording, connector=lambda host, port, timeout=0: False, out=out)
+    return rc, out.getvalue(), posted
+
+
+@pytest.mark.parametrize("status", [200, 202, 400, 401, 404, 405])
+def test_a_webhook_path_the_app_answers_passes(tmp_path, status):
+    rc, text, posted = webhook_go(tmp_path, lambda url: (status, ""))
+    assert rc == 0 and "❌" not in text
+    assert sorted(posted) == ["https://web.example.com/api/ingest/discord", "https://web.example.com/api/webhooks/clerk"]
+    assert f"web.example.com/api/webhooks/clerk reaches the app without a login ({status})" in text
+
+
+def test_a_webhook_path_refused_by_the_tunnel_fails(tmp_path):
+    """Today's paisa state: the Bypass app lets the request through Access, cloudflared still demands a JWT."""
+    rc, text, _ = webhook_go(tmp_path, lambda url: (403, ""))
+    assert rc == 1 and "web.example.com/api/webhooks/clerk should reach the app without a login" in text
+    assert "403: the tunnel still requires Access" in text
+
+
+def test_a_webhook_path_sent_to_the_access_login_fails(tmp_path):
+    rc, text, _ = webhook_go(tmp_path, lambda url: (302, ACCESS))
+    assert rc == 1 and "is sent to the Access login" in text
+
+
+def test_a_webhook_path_that_does_not_answer_fails(tmp_path):
+    rc, text, _ = webhook_go(tmp_path, lambda url: (0, "timed out"))
+    assert rc == 1 and "got no answer timed out" in text
+
+
+def test_a_public_app_with_webhook_paths_is_probed_too(tmp_path):
+    rc, text, posted = webhook_go(tmp_path, lambda url: (401, ""), access="public", paths=("/hook",))
+    assert rc == 0 and posted == ["https://web.example.com/hook"]
+
+
+def test_an_app_without_webhook_paths_posts_nothing(tmp_path):
+    rc, _, posted = webhook_go(tmp_path, lambda url: (403, ""), paths=())
+    assert rc == 0 and posted == []
+
+
+def test_the_webhook_probe_posts_without_credentials(monkeypatch):
+    sent = []
+
+    class Opener:
+        def open(self, request, timeout=0):
+            sent.append(request)
+            raise verify.urllib.error.HTTPError(request.full_url, 401, "no", None, None)
+
+    monkeypatch.setattr(verify.urllib.request, "build_opener", lambda *handlers: Opener())
+    assert verify.post("https://web.example.com/api/webhooks/clerk") == (401, "")
+    (request,) = sent
+    assert request.get_method() == "POST" and request.data == b"{}"
+    assert {name.lower() for name in request.headers} == {"user-agent", "content-type"}
