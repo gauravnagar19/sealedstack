@@ -33,3 +33,9 @@ variable "aud_by_hostname" {
   type        = map(string)
   default     = {}
 }
+
+variable "webhook_paths" {
+  description = "user_auth.webhook_paths of this app: gate-exempt paths that get their own ingress rule without the Access check."
+  type        = list(string)
+  default     = []
+}
