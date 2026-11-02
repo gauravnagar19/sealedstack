@@ -170,6 +170,7 @@ links the form with the name, owner, expiry and permissions pre-filled):
 | Contents | Read and write | Read files and branches, and write the Setup, onboarding and version-bump branches. |
 | Pull requests | Read and write | Open the Setup, onboarding and upgrade PRs; read PRs for the plan, approval and merge checks. |
 | Issues | Read and write | The pinned Status issue, the living checklist and plan comments (PR comments go through the Issues API). |
+| Actions (optional) | Read and write | Set each app repo's OIDC subject to the id form the tag:release credential matches (D-091). Skip it and set it by hand; `check` names the command. |
 | Variables | Read and write | Publish the deploy settings (compose ids, Dokploy URL, release trust ids, registry) to each app repo. |
 | Deployments | Read | Read each app repo's latest successful `production` deployment, the released version recorded by the app release workflow (D-060), to redeploy it after a server rebuild. |
 | Secrets | Read and write | Store the Dokploy API key as a repository secret in each app repo (the release job reads it; environment secrets are not available to private repos on GitHub Free). |

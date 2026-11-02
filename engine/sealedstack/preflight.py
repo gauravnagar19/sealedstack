@@ -1153,6 +1153,7 @@ def _check_github(ctx: CheckContext) -> list[Result]:
             if repo not in seen:
                 seen.add(repo)
                 results.append(_check_release_variables(ctx, headers, name, repo))
+                results.append(_check_oidc_subject(ctx, headers, name, repo))
     seen_keys: set[str] = set()
     for name, repo in _app_repos(ctx.config.apps):
         if repo not in seen_keys:
@@ -1186,6 +1187,35 @@ def _check_dokploy_key_secret(ctx: CheckContext, headers: Mapping[str, str], app
 
 
 DOKPLOY_KEY_SECRET = "SEALEDSTACK_DOKPLOY_API_KEY"
+
+
+def _check_oidc_subject(ctx: CheckContext, headers: Mapping[str, str], app: str, repo: str) -> Result:
+    """The app repo's Actions OIDC subject is the id form the tag:release credential matches (D-091)."""
+    rid = f"forge.oidc_subject.{repo}"
+    fix_cmd = f"gh api -X PUT repos/{repo}/actions/oidc/customization/sub -F use_default=true -F use_immutable_subject=true"
+    try:
+        response = ctx.http.request("GET", f"{GITHUB_API}/repos/{repo}/actions/oidc/customization/sub", headers=headers)
+    except Exception as exc:  # noqa: BLE001
+        return Result(rid, "forge", "warn", detail=f"{repo}: {exc}", fix="check network access", docs=DOCS_RELEASE_IDENTITY)
+    data = _json_or_none(response)
+    if response.status != 200:  # Actions is an optional bot permission: unknown, not wrong
+        return Result(
+            rid, "forge", "info",
+            detail=f"could not read the OIDC subject setting of {repo} (HTTP {response.status}); a new repo may still send "
+                   "the name-based subject, which the tag:release credential refuses",
+            fix=f"grant GH_TOKEN Actions: read and write on that repository (apply then sets it), or run: {fix_cmd}",
+            docs=DOCS_RELEASE_IDENTITY,
+        )
+    if data.get("use_default") and data.get("use_immutable_subject"):
+        return Result(rid, "forge", "ok", detail=f"{repo}: OIDC subject is the id form ({data.get('sub_claim_prefix', '')})")
+    form = "a custom subject" if not data.get("use_default") else "the name-based subject"
+    return Result(
+        rid, "forge", "warn",
+        detail=f"{repo} ({app}) sends {form}, but the tag:release credential matches the id form "
+               "(repo:owner@id/repo@id:...), so its release job gets HTTP 403 from Tailscale",
+        fix=f"apply sets it when GH_TOKEN has Actions: write on the repo; or run: {fix_cmd}",
+        docs=DOCS_RELEASE_IDENTITY,
+    )
 
 
 def _check_release_variables(ctx: CheckContext, headers: Mapping[str, str], app: str, repo: str) -> Result:

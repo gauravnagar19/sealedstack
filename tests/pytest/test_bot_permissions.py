@@ -50,11 +50,12 @@ def test_the_required_permissions_are_exactly_what_the_calls_need():
             needed[permission] = access
     listed = {p.name: p.access for p in botpermissions.PERMISSIONS}
     # `Workflows` is needed by file writes under .github/workflows (not a separate endpoint)
-    # and `Administration` only by environment creation, which is optional.
+    # `Administration` only by environment creation, and `Actions` only by the OIDC subject (D-091); both optional.
     assert listed.pop("Workflows") == "write"
     assert needed.pop("Administration") == "write" and listed.pop("Administration") == "write"
+    assert needed.pop("Actions") == "write" and listed.pop("Actions") == "write"
     assert listed == needed
-    assert [p.name for p in botpermissions.optional()] == ["Administration"]
+    assert [p.name for p in botpermissions.optional()] == ["Actions", "Administration"]
 
 
 def test_the_checked_workflow_paths_really_need_the_workflows_permission():

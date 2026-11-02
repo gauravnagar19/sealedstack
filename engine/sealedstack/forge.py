@@ -85,6 +85,10 @@ class Forge:
     def get_variable(self, repo: str, name: str) -> str:  # pragma: no cover
         raise NotImplementedError
 
+    def ensure_id_subject(self, repo: str) -> bool:  # pragma: no cover
+        """Make the repo's Actions OIDC subject the default, id-based form (D-091); ``True`` when it changed."""
+        raise NotImplementedError
+
     def set_secret(self, repo: str, name: str, value: str) -> None:  # pragma: no cover
         """Write a **repository** secret (visible to every job of the repo)."""
         raise NotImplementedError
@@ -388,6 +392,15 @@ class GitHubForge(Forge):
         data = self._request("GET", f"/repos/{repo}/actions/variables/{name}")
         return str((data or {}).get("value") or "")
 
+    def ensure_id_subject(self, repo: str) -> bool:
+        current = self._request("GET", f"/repos/{repo}/actions/oidc/customization/sub") or {}
+        if current.get("use_default") and current.get("use_immutable_subject"):
+            return False
+        self._request(
+            "PUT", f"/repos/{repo}/actions/oidc/customization/sub", json_body={"use_default": True, "use_immutable_subject": True}
+        )
+        return True
+
     def set_secret(self, repo: str, name: str, value: str) -> None:
         # GitHub requires a libsodium sealed box; inject a sealer (e.g. pynacl) or
         # fall back to `gh secret set`, which encrypts for you. Always a
@@ -587,6 +600,7 @@ class InMemoryForge(Forge):
     permissions: dict = field(default_factory=dict)
     environments: set = field(default_factory=set)
     no_environments: set = field(default_factory=set)  # repos whose plan has no environments
+    id_subjects: set = field(default_factory=set)  # repos whose OIDC subject is the id form
     commit_prs: dict = field(default_factory=dict)
     branch_heads: dict = field(default_factory=dict)
     pull_requests: dict = field(default_factory=dict)
@@ -697,6 +711,12 @@ class InMemoryForge(Forge):
 
     def get_variable(self, repo: str, name: str) -> str:
         return self.variables.get((repo, name), "")
+
+    def ensure_id_subject(self, repo: str) -> bool:
+        if repo in self.id_subjects:
+            return False
+        self.id_subjects.add(repo)
+        return True
 
     def set_secret(self, repo: str, name: str, value: str) -> None:
         self.secrets[(repo, name)] = value

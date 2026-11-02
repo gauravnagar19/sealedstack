@@ -95,6 +95,8 @@ def run(
         _set_variable(forge, repo, "SEALEDSTACK_TS_RELEASE_CLIENT_ID", ts_client_id, out)
         _set_variable(forge, repo, "SEALEDSTACK_TS_RELEASE_AUDIENCE", ts_audience, out)
         _set_variable(forge, repo, "SEALEDSTACK_REGISTRY", registry, out)
+        if ts_client_id:
+            _ensure_id_subject(forge, repo, out)
 
         # FR-2: always a repository secret. The release job declares no
         # `environment:`, so an environment secret would be invisible to it, and
@@ -119,6 +121,21 @@ def _set_variable(forge: forge_mod.Forge, repo: str, name: str, value: str, out)
         return
     forge.set_variable(repo, name, value)
     print(f"    variable {name}", file=out)
+
+
+def _ensure_id_subject(forge: forge_mod.Forge, repo: str, out) -> None:
+    """D-091: the tag:release trust credential matches the id-based subject (``repo:owner@123/app@456:...``); a repo
+    still on the name-based one gets HTTP 403 from Tailscale at release. Never fails the phase."""
+    try:
+        changed = forge.ensure_id_subject(repo)
+    except Exception as exc:  # noqa: BLE001 - the token may lack Actions: write
+        print(
+            f"    warn: could not check or set the OIDC subject of {repo} ({exc}); the release job needs the id form. "
+            f"Run: gh api -X PUT repos/{repo}/actions/oidc/customization/sub -F use_default=true -F use_immutable_subject=true",
+            file=out,
+        )
+        return
+    print(f"    OIDC subject: {'set to' if changed else 'already'} the id form", file=out)
 
 
 def main(argv: Optional[list[str]] = None) -> int:

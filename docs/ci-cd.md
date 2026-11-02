@@ -105,6 +105,13 @@ and `release_audience` must be set as soon as any app has its own repository
 be published (row `forge.release_vars.<repo>`); if they are missing, run `apply`,
 or, if the credential does not exist yet, create it first as described here.
 
+The id form above is what GitHub sends only when the app repo's OIDC subject setting
+uses it; a repo can still send the name-based `repo:<owner>/<app>:...`, and its release
+job then gets HTTP 403 from Tailscale. Row `forge.oidc_subject.<repo>` checks this
+([D-091](maintainers/decisions.md)), and `apply` switches a repo to the id form when the
+bot token has the optional **Actions: write** permission. Without it, run once per app repo:
+`gh api -X PUT repos/<owner>/<app>/actions/oidc/customization/sub -F use_default=true -F use_immutable_subject=true`.
+
 > The OIDC (`audience`) join needs `tailscale/github-action@v4`: v3 has no `audience`
 > input and ignores it, so the job fails with "OAuth identity empty". The OAuth-client
 > fallback (`oauth-secret`) works with v3 and v4. sealedstack's own workflows use v4 for
