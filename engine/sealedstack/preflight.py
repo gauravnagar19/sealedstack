@@ -276,6 +276,8 @@ def check_config(ctx: CheckContext) -> list[Result]:
             render_problems.append(f"render failed: {exc}")
     else:
         for name, app in rendered.items():
+            if app.get("_pending"):
+                compose_warnings.append(f"app '{name}' is pending: its repo has no sealedstack.yaml yet, so nothing is deployed for it")
             if app.get("_disabled"):
                 continue
             if app.get("_unresolved"):

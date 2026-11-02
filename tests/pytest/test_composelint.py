@@ -199,3 +199,30 @@ def test_check_fails_when_two_apps_share_a_service_name_on_one_server(tmp_path, 
 def test_check_passes_when_service_names_are_distinct(tmp_path, monkeypatch):
     config, ctx = render_modules(tmp_path, monkeypatch, {"services": {"web": {"image": "x"}}})
     assert by_id(preflight.check_config(ctx))["config.service_names"].status == "ok"
+
+
+def test_an_app_whose_repo_has_no_manifest_yet_is_pending_not_failing(tmp_path, monkeypatch):
+    config, ctx = render_modules(tmp_path, monkeypatch, {"services": {"web": {"image": "x"}}})
+    _, _, render_mod, _ = preflight._load_script_modules(REPO)
+    render_mod.CONFIG, render_mod.BUILD = config.config_dir, tmp_path / "build"
+
+    def missing(repo, ref):
+        raise render_mod.RenderError("GitHub API returned HTTP 404 for repos/o/shop/contents/sealedstack.yaml?ref=main")
+
+    monkeypatch.setattr(render_mod, "fetch_app_manifest", missing)
+    rendered = render_mod.render_all(allow_unresolved=False)  # strict: still no error
+    assert rendered["shop"]["_pending"] and rendered["shop"]["_disabled"]
+    assert not (tmp_path / "build" / "apps" / "shop.json").exists()
+
+
+def test_other_fetch_failures_still_fail_strict_render(tmp_path, monkeypatch):
+    config, ctx = render_modules(tmp_path, monkeypatch, {"services": {"web": {"image": "x"}}})
+    _, _, render_mod, _ = preflight._load_script_modules(REPO)
+    render_mod.CONFIG, render_mod.BUILD = config.config_dir, tmp_path / "build"
+
+    def offline(repo, ref):
+        raise render_mod.RenderError("could not reach the GitHub API: boom")
+
+    monkeypatch.setattr(render_mod, "fetch_app_manifest", offline)
+    with pytest.raises(render_mod.RenderError, match="could not fetch manifest"):
+        render_mod.render_all(allow_unresolved=False)

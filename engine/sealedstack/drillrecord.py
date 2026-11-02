@@ -82,7 +82,7 @@ def record(config, env, outcome: dict, *, client=None) -> bool:
     if client is None:
         _warn(f"drill result for {app} not recorded ({UNAVAILABLE_NO_CREDENTIALS}); it is in this job's log only")
         return False
-    key = record_key(getattr(config, "name", "") or "")
+    key = record_key(getattr(config, "state_prefix", "") or "")
     try:
         data = _read(client, key)
     except Exception as exc:  # noqa: BLE001 - recording never fails the drill
@@ -103,7 +103,7 @@ def load(config, env, *, client=None) -> dict:
     if client is None:
         return _empty()
     try:
-        return _read(client, record_key(getattr(config, "name", "") or ""))
+        return _read(client, record_key(getattr(config, "state_prefix", "") or ""))
     except Exception as exc:  # noqa: BLE001
         _warn(f"drill results unavailable: {_first_line(exc)}")
         return _empty()
@@ -117,7 +117,7 @@ def load_for_status(config, env, *, client=None) -> dict:
     if client is None:
         return {"apps": {}, "unavailable": UNAVAILABLE_NO_CREDENTIALS}
     try:
-        return _read(client, record_key(getattr(config, "name", "") or ""))
+        return _read(client, record_key(getattr(config, "state_prefix", "") or ""))
     except Exception as exc:  # noqa: BLE001
         return {"apps": {}, "unavailable": f"reading the state bucket failed: {_first_line(exc)}"}
 

@@ -288,7 +288,7 @@ def _state_lock(config, env, http=None, *, kind: str = "break-glass"):
         return None
     from . import lock as lock_mod
 
-    key = lock_mod.lock_key(config.name)
+    key = lock_mod.lock_key(config.state_prefix)
     return lock_mod.StateLock(
         lock_mod.S3LockBackend(client, key),
         owner=lock_mod.lock_owner(env, kind),
@@ -302,7 +302,7 @@ def _progress(config, env, command: str, workdir: str, *, client=None):
     from . import progress as progress_mod
 
     client = client if client is not None else _r2_client(config, env, purpose="remote progress record")
-    key = f"sealedstack/{(config.name if config else '') or 'sealedstack'}/progress-{command}.json"
+    key = f"sealedstack/{(config.state_prefix if config else '') or 'sealedstack'}/progress-{command}.json"
     stores = [progress_mod.S3Store(client, key) if client is not None else None,
               progress_mod.FileStore(Path(workdir) / f"phases-{command}.json")]
     commit = env.get("GITHUB_SHA") or env.get("SEALEDSTACK_COMMIT", "")

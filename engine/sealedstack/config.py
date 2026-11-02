@@ -159,6 +159,13 @@ class Config:
         return str(self.stack.get("name") or "")
 
     @property
+    def state_prefix(self) -> str:
+        """The R2 namespace of state, lock, progress and drill results: ``state.prefix``, else ``name``.
+
+        Set it to keep existing state when the infra repo is renamed."""
+        return str((self.stack.get("state") or {}).get("prefix") or self.name)
+
+    @property
     def domain(self) -> str:
         return str(self.stack.get("domain") or "")
 

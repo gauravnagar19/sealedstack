@@ -246,6 +246,9 @@ def main() -> int:
     manifest_problems = []
     compose_problems = []
     for name, app in rendered.items():
+        if app.get("_pending"):
+            print(f"  skip  app '{name}': pending, its repo has no sealedstack.yaml yet")
+            continue
         if app.get("_disabled"):
             print(f"  skip  app '{name}': disabled (enabled: false)")
             continue

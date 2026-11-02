@@ -190,6 +190,12 @@ def resolve_registry(stack: dict, apps: dict | None = None) -> dict:
     }
 
 
+def is_missing_manifest(exc: Exception) -> bool:
+    """True when the failure is "the repo has no sealedstack.yaml" (HTTP 404 on that file, or absent locally)."""
+    text = str(exc)
+    return "sealedstack.yaml" in text and ("HTTP 404" in text or "not found in the local checkout" in text)
+
+
 def resolve_manifest(name: str, entry: dict, *, allow_unresolved: bool) -> tuple[dict, dict]:
     """Return (manifest, flags). ``flags`` records how the manifest was obtained."""
     source = entry.get("source", {})
@@ -199,6 +205,10 @@ def resolve_manifest(name: str, entry: dict, *, allow_unresolved: bool) -> tuple
         manifest = fetch_app_manifest(source["repo"], source["ref"])
         return manifest, {"synthesized": False, "unresolved": False}
     except Exception as exc:  # noqa: BLE001 - surface any gh/network failure uniformly
+        if is_missing_manifest(exc):
+            # The app repo has no sealedstack.yaml yet: the app is pending, not broken, so the app PR and the
+            # infra PR from add-app can merge in either order.
+            return {}, {"synthesized": False, "unresolved": False, "pending": True, "reason": str(exc)}
         if not allow_unresolved:
             raise RenderError(f"{name}: could not fetch manifest: {exc}") from exc
         return {}, {"synthesized": False, "unresolved": True, "reason": str(exc)}
@@ -252,12 +262,13 @@ def build_app(
         "manifest": manifest,
         "_synthesized": flags["synthesized"],
         "_unresolved": flags["unresolved"],
+        "_pending": bool(flags.get("pending")),
         "_build_mode": mode,
         "_deploy_compose": "",
         "_build_problems": [],
         "_security_problems": [],
     }
-    if flags["unresolved"]:
+    if flags["unresolved"] or flags.get("pending"):
         rendered["_reason"] = flags["reason"]
 
     compose = None
@@ -302,6 +313,8 @@ def render_all(*, allow_unresolved: bool = False) -> dict:
     rendered_apps: dict[str, dict] = {}
     disabled: list[str] = []
     unresolved: list[str] = []
+    pending: list[str] = []
+    pending_reasons: dict[str, str] = {}
 
     # Resolve everything before writing, so a strict failure never leaves a
     # half-written .build that plan/apply could act on.
@@ -312,6 +325,11 @@ def render_all(*, allow_unresolved: bool = False) -> dict:
         rendered = build_app(
             name, entry, allow_unresolved=allow_unresolved, registry=registry
         )
+        if rendered.get("_pending"):
+            pending.append(name)
+            disabled.append(name)
+            pending_reasons[name] = rendered.get("_reason", "")
+            continue
         rendered["_disabled"] = False
         if rendered["_unresolved"]:
             unresolved.append(name)
@@ -360,6 +378,8 @@ def render_all(*, allow_unresolved: bool = False) -> dict:
 
     for name in disabled:
         rendered_apps[name] = {"name": name, "_disabled": True, "_unresolved": False}
+        if name in pending:
+            rendered_apps[name].update(_pending=True, _reason=pending_reasons.get(name, ""))
 
     return rendered_apps
 
@@ -387,7 +407,9 @@ def main() -> int:
         return 1
 
     for name, app in rendered.items():
-        if app.get("_disabled"):
+        if app.get("_pending"):
+            print(f"  {name}: pending (no sealedstack.yaml in its repo yet)")
+        elif app.get("_disabled"):
             print(f"  {name}: disabled (enabled: false)")
         elif app["_unresolved"]:
             print(f"  {name}: unresolved ({app.get('_reason', '')})")

@@ -97,7 +97,7 @@ def backend_config(
     # name comes from stack.yaml:name; e2e overrides it with
     # SEALEDSTACK_STATE_PREFIX so it can share the bucket without touching
     # production state (N8).
-    infra_name = env.get("SEALEDSTACK_STATE_PREFIX") or config.name or "sealedstack"
+    infra_name = env.get("SEALEDSTACK_STATE_PREFIX") or config.state_prefix or "sealedstack"
     stack = Path(stack_dir).name
     key = f"sealedstack/{infra_name}/{stack}.tfstate"
 
