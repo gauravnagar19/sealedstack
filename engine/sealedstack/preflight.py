@@ -1639,6 +1639,79 @@ def check_drill_settings(ctx: CheckContext) -> list[Result]:
     return results
 
 
+DOCS_APP_SECRETS = "docs/getting-started.md#app-secrets-from-the-apps-own-secrets-provider"
+
+
+def _vault_apps(ctx: CheckContext) -> list[tuple[str, str, list[str]]]:
+    """``(app, provider, keys)`` for each rendered app using its own secrets provider (D-087)."""
+    found = []
+    for path in sorted((Path(ctx.build_dir) / "apps").glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8") or "{}")
+        except (OSError, ValueError):
+            continue
+        vault = data.get("vault") or {}
+        if vault.get("provider") and not data.get("_pending"):
+            found.append((str(data.get("name") or path.stem), str(vault["provider"]), [str(k) for k in vault.get("keys") or []]))
+    return found
+
+
+def check_app_secrets(ctx: CheckContext) -> list[Result]:
+    """Whether apply can create each app's Doppler project and Dokploy provider (D-088), and which keys are unset.
+
+    Dokploy itself is not reachable from `check`, so a provider made by hand is not seen here; apply attaches it.
+    """
+    from . import appsecrets
+
+    apps = _vault_apps(ctx)
+    if not apps:
+        return []
+    token = secret_value(ctx, appsecrets.ADMIN_TOKEN)
+    names = ", ".join(app for app, _, _ in apps)
+    if not token:
+        return [Result(
+            "secrets.app_providers", "secrets", "info",
+            detail=f"{names}: no {appsecrets.ADMIN_TOKEN}, so each app's Dokploy secrets provider is created by hand "
+                   "(apply attaches an existing one to the project and prints the steps for a missing one)",
+            fix=f"add {appsecrets.ADMIN_TOKEN} (a Doppler personal token) to the secret source to create them automatically",
+            docs=DOCS_APP_SECRETS,
+        )]
+    try:
+        doppler = appsecrets.DopplerAdmin(token, http=ctx.http)
+    except appsecrets.AppSecretsError as exc:
+        return [Result("secrets.app_providers", "secrets", "fail", detail=str(exc), docs=DOCS_APP_SECRETS)]
+    results = []
+    for app, provider, keys in apps:
+        rid = f"secrets.app_provider.{app}"
+        try:
+            if not doppler.project_exists(provider):
+                results.append(Result(
+                    rid, "secrets", "ok",
+                    detail=f"apply creates Doppler project '{provider}' and its Dokploy provider"
+                           + (f"; then add {', '.join(keys)} in {provider}/{appsecrets.CONFIG}" if keys else ""),
+                    docs=DOCS_APP_SECRETS,
+                ))
+                continue
+            present = set(doppler.secret_names(provider, appsecrets.CONFIG))
+        except appsecrets.AppSecretsError as exc:
+            results.append(Result(rid, "secrets", "fail", detail=f"{app}: {exc}", docs=DOCS_APP_SECRETS))
+            continue
+        except Exception as exc:  # noqa: BLE001 - transport failure
+            results.append(Result(rid, "secrets", "fail", detail=f"{app}: could not reach Doppler ({exc})", docs=DOCS_APP_SECRETS))
+            continue
+        missing = [k for k in keys if k not in present]
+        if missing:
+            results.append(Result(
+                rid, "secrets", "warn",
+                detail=f"Doppler {provider}/{appsecrets.CONFIG} lacks {', '.join(missing)} (a missing key fails the deploy)",
+                fix=f"add them in Doppler project '{provider}', config '{appsecrets.CONFIG}'",
+                docs=DOCS_APP_SECRETS,
+            ))
+        else:
+            results.append(Result(rid, "secrets", "ok", detail=f"Doppler {provider}/{appsecrets.CONFIG} has every key", docs=DOCS_APP_SECRETS))
+    return results
+
+
 AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
     check_config,
     check_secrets,
@@ -1650,6 +1723,7 @@ AREA_CHECKS: tuple[Callable[[CheckContext], list[Result]], ...] = (
     check_bot,
     check_servers,
     check_drill_settings,  # after check_config, which renders the manifests it reads
+    check_app_secrets,  # after check_config too
 )
 
 

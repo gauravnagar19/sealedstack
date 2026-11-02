@@ -205,7 +205,8 @@ account the least access it needs: CI reads `infra` and `prod`, read-only.
 
 Set `slots.secrets: doppler` (or run Setup with `--secrets doppler`, [D-066](maintainers/decisions.md)).
 sealedstack reads your secrets from **one Doppler config** over Doppler's API with a
-**service token**; it never writes to Doppler, and no `doppler` program is needed.
+**service token**, and no `doppler` program is needed. It writes to Doppler only if you
+add the optional `DOPPLER_ADMIN_TOKEN` ([below](#optional-a-doppler-project-per-app-created-for-you)).
 
 **Create it once:**
 
@@ -229,6 +230,23 @@ keys) apart from the infra secrets, put them in another config of the same proje
 generate a read-only service token for it, and add that as the repository secret
 `DOPPLER_TOKEN_APPS`. When it is not set, app secrets are read from the same config as
 the infra secrets.
+
+### Optional: a Doppler project per app, created for you
+
+For apps that use [their own secrets provider](getting-started.md#app-secrets-from-the-apps-own-secrets-provider),
+apply can create the app's Doppler project and its Dokploy provider itself ([D-088](maintainers/decisions.md)).
+In Doppler open your account menu, **Tokens**, **Personal**, generate a token (it starts
+with `dp.pt.`), and add it to the infra Doppler config as **`DOPPLER_ADMIN_TOKEN`**, like
+`CLOUDFLARE_API_TOKEN`. A service-account token (`dp.sa.`, a paid Doppler feature) works
+too and is not tied to you.
+
+This token can create projects and tokens in your whole Doppler workplace, so it is
+read only by the approved `apply` phase `app-secrets`, never by app CI. With it, for each
+such app, apply creates the Doppler project `<app>` if it is missing, mints a read-only
+service token for its `prd` config, and creates the Dokploy provider `<app>` with that
+token, assigned to the app's project; the minted token goes from Doppler to Dokploy and
+nowhere else. Without it, apply attaches a provider you created by hand and prints the
+steps for a missing one.
 
 ### Doppler secret names
 

@@ -223,9 +223,12 @@ secrets:
   keys: [CLERK_SECRET_KEY, DATABASE_URL]
 ```
 
-Create the provider once in Dokploy (**Settings, Secrets providers**: Doppler,
-Infisical, Vault, AWS and others) with the same name, and assign it to the app's
-project. `env-sync` then writes `CLERK_SECRET_KEY=${{vault.paisa.CLERK_SECRET_KEY}}`
+With [`DOPPLER_ADMIN_TOKEN`](prerequisites.md#optional-a-doppler-project-per-app-created-for-you)
+in the infra secret source, apply creates the Doppler project `paisa` and the Dokploy
+provider `paisa` for you, assigned to the app's project; you then fill in the keys in
+Doppler `paisa` / `prd` (`check` lists the missing ones). Without it, create the provider
+once in Dokploy (**Settings, Secrets providers**: Doppler, Infisical, Vault, AWS and
+others) with the same name; apply assigns it to the app's project. `env-sync` then writes `CLERK_SECRET_KEY=${{vault.paisa.CLERK_SECRET_KEY}}`
 into the app's environment. These are references: Dokploy fetches the values at deploy
 time, so no secret value passes through sealedstack or its CI, and a missing secret
 fails the deploy. If the provider does not exist, `env-sync` stops and says what to

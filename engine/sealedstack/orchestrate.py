@@ -73,6 +73,8 @@ def phases(
             Phase("edge-apply", _mod("edge", "apply")),
             Phase("platform-apply", _mod("platform", "apply")),
             Phase("connector", _mod("connector")),
+            # Each app's own Dokploy secrets provider (D-088), before env-sync references it.
+            Phase("app-secrets", _mod("appsecrets")),
             Phase("post-apply", _mod("postapply")),
             Phase("publish", _mod("publishsettings")),
             Phase("verify", _mod("verify")),
@@ -91,6 +93,8 @@ def phases(
             Phase("dokploy-bootstrap", _mod("dokploybootstrap"), up_only=True),
             Phase("platform-apply", _mod("platform", "apply")),
             Phase("connector", _mod("connector")),
+            # Each app's own Dokploy secrets provider (D-088), before env-sync references it.
+            Phase("app-secrets", _mod("appsecrets")),
             Phase("post-apply", _mod("postapply")),
             Phase("publish", _mod("publishsettings")),
             Phase("status", _py(code_root, "status.py")),
