@@ -190,6 +190,17 @@ def resolve_registry(stack: dict, apps: dict | None = None) -> dict:
     }
 
 
+def repo_readable(repo: str) -> bool:
+    """True when the repository itself can be read (a local checkout counts), so a missing file means a missing file."""
+    if local_app_dir(repo) is not None:
+        return True
+    try:
+        gh_api_raw(f"repos/{repo}")
+        return True
+    except Exception:  # noqa: BLE001 - any failure to read the repo means we cannot say the file is absent
+        return False
+
+
 def is_missing_manifest(exc: Exception) -> bool:
     """True when the failure is "the repo has no sealedstack.yaml" (HTTP 404 on that file, or absent locally)."""
     text = str(exc)
@@ -213,10 +224,16 @@ def resolve_manifest(name: str, entry: dict, *, allow_unresolved: bool) -> tuple
         manifest = fetch_app_manifest(source["repo"], source["ref"])
         return manifest, {"synthesized": False, "unresolved": False}
     except Exception as exc:  # noqa: BLE001 - surface any gh/network failure uniformly
-        if is_missing_manifest(exc):
+        if is_missing_manifest(exc) and repo_readable(source["repo"]):
             # The app repo has no sealedstack.yaml yet: the app is pending, not broken, so the app PR and the
             # infra PR from add-app can merge in either order.
             return {}, {"synthesized": False, "unresolved": False, "pending": True, "reason": str(exc)}
+        if is_missing_manifest(exc):
+            # GitHub answers 404 for a private repo the token cannot see, so a 404 on the file alone is not "no manifest".
+            exc = RenderError(
+                f"GH_TOKEN cannot read {source['repo']} (GitHub answers 404 for a private repo a token cannot see): add the "
+                "repo to the token's repository access with Contents: read"
+            )
         if not allow_unresolved:
             raise RenderError(f"{name}: could not fetch manifest: {exc}") from exc
         return {}, {"synthesized": False, "unresolved": True, "reason": str(exc)}

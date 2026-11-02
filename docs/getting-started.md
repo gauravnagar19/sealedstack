@@ -210,6 +210,8 @@ the app under the variable named by `needs.postgres.env` (for example
 `apply` stops with an error instead of deploying an empty one. Backups and restore
 drills of that database are the provider's job, not sealedstack's.
 
+A fine-grained `GH_TOKEN` only sees the repositories selected for it: when you add an app, add its repository to the token's access (Contents: read) first, or `check` reports that the token cannot read it.
+
 ## App secrets from the app's own secrets provider
 
 An app can keep its secrets in its own store instead of the infra secret source. In

@@ -210,6 +210,7 @@ def test_an_app_whose_repo_has_no_manifest_yet_is_pending_not_failing(tmp_path, 
         raise render_mod.RenderError("GitHub API returned HTTP 404 for repos/o/shop/contents/sealedstack.yaml?ref=main")
 
     monkeypatch.setattr(render_mod, "fetch_app_manifest", missing)
+    monkeypatch.setattr(render_mod, "repo_readable", lambda repo: True)
     rendered = render_mod.render_all(allow_unresolved=False)  # strict: still no error
     assert rendered["shop"]["_pending"] and rendered["shop"]["_disabled"]
     assert not (tmp_path / "build" / "apps" / "shop.json").exists()
@@ -237,3 +238,23 @@ def test_the_manifest_schema_takes_a_secrets_provider_and_keeps_the_list_form():
     ok = lambda secrets: not list(jsonschema.Draft202012Validator(schema).iter_errors({**base, "secrets": secrets}))  # noqa: E731
     assert ok(["A_KEY"]) and ok({"keys": ["A_KEY"]}) and ok({"provider": "paisa", "keys": ["A_KEY"]})
     assert not ok({"provider": "bad name", "keys": ["A_KEY"]}) and not ok({"provider": "p"})
+
+
+def test_a_404_on_a_repo_the_token_cannot_read_is_an_access_error_not_pending(tmp_path, monkeypatch):
+    config, ctx = render_modules(tmp_path, monkeypatch, {"services": {"web": {"image": "x"}}})
+    _, _, render_mod, _ = preflight._load_script_modules(REPO)
+    render_mod.CONFIG, render_mod.BUILD = config.config_dir, tmp_path / "build"
+
+    def missing(repo, ref):
+        raise render_mod.RenderError("GitHub API returned HTTP 404 for repos/o/shop/contents/sealedstack.yaml?ref=main")
+
+    def unreadable(endpoint):
+        raise render_mod.RenderError(f"GitHub API returned HTTP 404 for {endpoint}")
+
+    monkeypatch.setattr(render_mod, "fetch_app_manifest", missing)
+    monkeypatch.setattr(render_mod, "gh_api_raw", unreadable)
+    monkeypatch.setattr(render_mod, "local_app_dir", lambda repo: None)
+    with pytest.raises(render_mod.RenderError, match="GH_TOKEN cannot read .*Contents: read"):
+        render_mod.render_all(allow_unresolved=False)
+    offline = render_mod.render_all(allow_unresolved=True)  # offline check mode reports it as unresolved, not pending
+    assert offline["shop"]["_unresolved"] and not offline["shop"].get("_pending")
