@@ -173,7 +173,7 @@ def _result(result_id: str, area: str, problems: list[str], *, warn: bool = Fals
 # config
 # --------------------------------------------------------------------------- #
 def _shared_network_collisions(rendered: dict, lint: Any = None) -> list[str]:
-    """Warn when two apps on one server publish the same service name on dokploy-network (they can reach each other)."""
+    """Name the services that two apps on one server both publish the same service name on dokploy-network (they can reach each other)."""
     if lint is None:
         lint = _load_script_modules(Path(__file__).resolve().parents[2])[3]
     claims: dict[tuple[str, str], list[str]] = {}
@@ -264,6 +264,7 @@ def check_config(ctx: CheckContext) -> list[Result]:
 
     render_problems: list[str] = []
     compose_warnings: list[str] = []
+    collision_problems: list[str] = []
     security_problems: list[str] = []
     try:
         rendered = render_mod.render_all(allow_unresolved=True)
@@ -290,7 +291,7 @@ def check_config(ctx: CheckContext) -> list[Result]:
                 compose_warnings.extend(f"app '{name}': {p}" for p in lint.lint(app["_compose"], app.get("needs")))
                 security_problems.extend(f"app '{name}': {p}" for p in lint.lint_security(app["_compose"]))
             render_problems.extend(f"app '{name}': {p}" for p in (app.get("_build_problems") or []))
-        compose_warnings.extend(_shared_network_collisions(rendered, lint))
+        collision_problems.extend(_shared_network_collisions(rendered, lint))
 
     results.append(
         _result(
@@ -309,6 +310,15 @@ def check_config(ctx: CheckContext) -> list[Result]:
             fix="remove the host-escape settings from the app's compose file (privileged, docker.sock or host paths, "
                 "host network/pid/ipc, extra capabilities, devices); use named volumes",
             docs="docs/limitations.md",
+        )
+    )
+    results.append(
+        _result(
+            "config.service_names",
+            "config",
+            collision_problems,
+            fix="rename the service in one of the apps (for example to <app>-<service>) and change the references to it",
+            docs="docs/providers.md",
         )
     )
     results.append(

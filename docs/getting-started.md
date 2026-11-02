@@ -199,6 +199,17 @@ When the first run is green, **close TCP 22 at the provider firewall** and delet
 `SERVER_IP_SERVER_1` and `ROOT_PASSWORD_SERVER_1` from Bitwarden. The server is
 reached only by its tailnet name from then on.
 
+## Adding an app that already has a database
+
+An app does not have to use the Postgres sealedstack provisions. In its
+`sealedstack.yaml`, set `needs.postgres.provider: neon` for a managed Postgres you
+already have (Neon, Supabase and similar). sealedstack then creates no database on
+the server and runs no Dokploy backups for it. It injects your connection string into
+the app under the variable named by `needs.postgres.env` (for example
+`DATABASE_URL`), taking the value from the secret source; if the value is missing,
+`apply` stops with an error instead of deploying an empty one. Backups and restore
+drills of that database are the provider's job, not sealedstack's.
+
 ## 7. Backups and restore drills
 
 Dokploy backs up each app's managed Postgres database to your R2 bucket, on the

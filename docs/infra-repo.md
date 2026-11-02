@@ -35,6 +35,13 @@ Links point one way (D-023): the infra repo's `apps.yaml` names app repos; app
 repos never name an infra repo. Anything app CI needs is **published by the
 infra repo** into the app repo's GitHub variables and secrets.
 
+## One infra repo per cluster
+
+Keep **one infra repo for each group of servers and domain that run together**. Apps
+that share those servers belong in the same infra repo, listed in its `apps.yaml`:
+they share the Tailscale policy, the state bucket and the deploy pipeline. Make a new
+infra repo only for a separate set of servers or a separate domain.
+
 ## Layout
 
 You create the repo (any name, e.g. `my-infra`, D-028) and commit two files, then

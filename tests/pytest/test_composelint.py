@@ -187,3 +187,15 @@ def test_validate_reports_it_as_an_error(tmp_path, monkeypatch):
 
     assert lint_compose.lint_security({"services": {"web": {"image": "x", "devices": ["/dev/kvm"]}}})
     assert lint_compose.lint_security({"services": {"web": {"image": "x"}}}) == []
+
+
+def test_check_fails_when_two_apps_share_a_service_name_on_one_server(tmp_path, monkeypatch):
+    config, ctx = render_modules(tmp_path, monkeypatch, {"services": {"web": {"image": "x"}}})
+    monkeypatch.setattr(preflight, "_shared_network_collisions", lambda rendered, lint=None: ["apps a, b both have a service named 'api'"])
+    row = by_id(preflight.check_config(ctx))["config.service_names"]
+    assert row.status == "fail" and "'api'" in row.detail and "<app>-<service>" in row.fix
+
+
+def test_check_passes_when_service_names_are_distinct(tmp_path, monkeypatch):
+    config, ctx = render_modules(tmp_path, monkeypatch, {"services": {"web": {"image": "x"}}})
+    assert by_id(preflight.check_config(ctx))["config.service_names"].status == "ok"
