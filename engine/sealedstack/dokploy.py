@@ -62,6 +62,11 @@ class DokployClient:
     def compose_deploy(self, compose_id: str) -> Any:
         return self.post("/api/compose.deploy", {"composeId": compose_id})
 
+    # -- secrets providers (Dokploy >= 0.30, router ``vaultProvider``) --------
+    def vault_providers(self) -> list:
+        """The organisation's secrets providers (config masked)."""
+        return self.get("/api/vaultProvider.all") or []
+
     def deployments(self, compose_id: str) -> list:
         data = self.get(f"/api/deployment.allByCompose?composeId={compose_id}")
         return data or []

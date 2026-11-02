@@ -406,3 +406,10 @@ Docs-only changes skip `tofu` and the Docker checks; changes outside the paths a
 **Why:** The paisa deployment renamed an infra repo and registered an app before its repo had a manifest; both were friction caused by design, not user error.
 **Rejected:** copying R2 state to a new prefix on rename (risky, needs a lock dance); treating every 404 as an error (made onboarding order-dependent).
 **Open:** a 404 can also mean the token cannot see a private repo, so a pending app is always shown as a warning, never silently hidden. Dokploy secrets providers for app secrets (replacing `DOPPLER_TOKEN_APPS`) are proposed, not built: the API exists (`vaultProvider.*`, assignments are sent on create/update) but was only read from source, not run.
+
+### D-087 — An app can read its secrets through its own Dokploy secrets provider · 2026-11-01 · accepted
+**Decision:** `sealedstack.yaml: secrets` may be `{provider, keys}` (the provider defaults to the app name). `env-sync` writes `KEY=${{vault.<provider>.KEY}}` reference lines only, preserving hand-set keys, and stops with instructions when `vaultProvider.all` does not list the provider; an older Dokploy without that router only produces a warning. `build-env` skips this form, so sealedstack never reads these values. The list form and `DOPPLER_TOKEN_APPS` keep working and are deprecated for new apps, not removed.
+**Why:** The infra repo should be infra only; apps own their secrets, and values then pass through neither CI (compatible with D-065 if it is revived).
+**Rejected:** removing the list form now (existing apps would break); storing values in Dokploy.
+**Open:** creating and assigning the provider through `vaultProvider.create/update` is not built (it needs the provider's own token and the API shape was read from source, not run); the owner creates it once per app. `check` does not yet verify the provider; only `env-sync` does.
+

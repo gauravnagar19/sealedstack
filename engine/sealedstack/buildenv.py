@@ -30,7 +30,16 @@ def app_secret_keys(data: dict) -> list[str]:
     keys = manifest.get("secrets")
     if keys is None:
         keys = data.get("secrets")
+    if isinstance(keys, dict):  # secrets: {provider, keys}: Dokploy resolves them, sealedstack never reads the values
+        return []
     return [str(key) for key in (keys or [])]
+
+
+def vault_references(data: dict) -> tuple[str, dict]:
+    """``(provider, {KEY: "${{vault.<provider>.KEY}}"})`` for an app that uses its own Dokploy secrets provider."""
+    vault = data.get("vault") or {}
+    provider = str(vault.get("provider") or "")
+    return provider, {str(key): "${{vault.%s.%s}}" % (provider, key) for key in (vault.get("keys") or [])}
 
 
 def build(

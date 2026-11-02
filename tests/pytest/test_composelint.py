@@ -226,3 +226,14 @@ def test_other_fetch_failures_still_fail_strict_render(tmp_path, monkeypatch):
     monkeypatch.setattr(render_mod, "fetch_app_manifest", offline)
     with pytest.raises(render_mod.RenderError, match="could not fetch manifest"):
         render_mod.render_all(allow_unresolved=False)
+
+
+def test_the_manifest_schema_takes_a_secrets_provider_and_keeps_the_list_form():
+    import json
+    import jsonschema
+
+    schema = json.loads((REPO / "schemas" / "sealedstack.schema.json").read_text())
+    base = {"name": "paisa", "web": {"service": "web", "port": 80}}
+    ok = lambda secrets: not list(jsonschema.Draft202012Validator(schema).iter_errors({**base, "secrets": secrets}))  # noqa: E731
+    assert ok(["A_KEY"]) and ok({"keys": ["A_KEY"]}) and ok({"provider": "paisa", "keys": ["A_KEY"]})
+    assert not ok({"provider": "bad name", "keys": ["A_KEY"]}) and not ok({"provider": "p"})

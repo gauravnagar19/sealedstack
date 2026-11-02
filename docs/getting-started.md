@@ -210,6 +210,27 @@ the app under the variable named by `needs.postgres.env` (for example
 `apply` stops with an error instead of deploying an empty one. Backups and restore
 drills of that database are the provider's job, not sealedstack's.
 
+## App secrets from the app's own secrets provider
+
+An app can keep its secrets in its own store instead of the infra secret source. In
+the app's `sealedstack.yaml`:
+
+```yaml
+secrets:
+  provider: paisa        # optional; defaults to the app name
+  keys: [CLERK_SECRET_KEY, DATABASE_URL]
+```
+
+Create the provider once in Dokploy (**Settings, Secrets providers**: Doppler,
+Infisical, Vault, AWS and others) with the same name, and assign it to the app's
+project. `env-sync` then writes `CLERK_SECRET_KEY=${{vault.paisa.CLERK_SECRET_KEY}}`
+into the app's environment. These are references: Dokploy fetches the values at deploy
+time, so no secret value passes through sealedstack or its CI, and a missing secret
+fails the deploy. If the provider does not exist, `env-sync` stops and says what to
+create. The older list form (`secrets: [KEY, ...]`) still reads the values from the
+infra secret source (`DOPPLER_TOKEN_APPS`); prefer the provider form for new apps.
+Needs Dokploy 0.30 or later, which the pinned version is.
+
 ## 7. Backups and restore drills
 
 Dokploy backs up each app's managed Postgres database to your R2 bucket, on the

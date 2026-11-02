@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from typing import Mapping, Optional
 
+from . import buildenv as buildenv_mod
 from . import config as config_mod
 from . import dokploy as dokploy_mod
 from . import platformstate as platformstate_mod
@@ -114,6 +115,25 @@ def merge_env(current: str, infra: Mapping[str, str], label: str = "") -> tuple[
     return "\n".join(out), unknown
 
 
+class ProviderMissing(RuntimeError):
+    """The app names a Dokploy secrets provider that does not exist."""
+
+
+def _require_provider(client, app: str, provider: str, out) -> None:
+    """Fail before writing references a deploy could not resolve (a missing provider fails every deploy)."""
+    try:
+        names = {str(p.get("name")) for p in client.vault_providers() if isinstance(p, dict)}
+    except Exception as exc:  # noqa: BLE001 - an older Dokploy has no such router; do not block, say so
+        print(f"    warn: {app}: could not list Dokploy secrets providers ({exc}); writing references anyway", file=out)
+        return
+    if provider not in names:
+        raise ProviderMissing(
+            f"{app}: Dokploy has no secrets provider named '{provider}'. In Dokploy open Settings, Secrets providers, "
+            f"create one named '{provider}' (for example Doppler with the app's service token) and assign it to the "
+            f"'{app}' project, then run again."
+        )
+
+
 def run(
     config: config_mod.Config,
     env: Optional[Mapping[str, str]] = None,
@@ -140,10 +160,15 @@ def run(
     compose_ids = state.output("compose_ids") or {}
 
     for path in files:
-        app = str(json.loads(path.read_text()).get("name") or path.stem)
+        data = json.loads(path.read_text())
+        app = str(data.get("name") or path.stem)
         if apps and app not in apps:
             continue
-        infra = app_env.get(app) or {}
+        infra = dict(app_env.get(app) or {})
+        provider, references = buildenv_mod.vault_references(data)
+        if references:
+            _require_provider(client, app, provider, out)
+            infra.update(references)  # references only, never values
         if not infra:
             print(f"==> {app}: no infra env keys; skipping", file=out)
             continue

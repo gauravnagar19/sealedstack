@@ -196,12 +196,39 @@
       }
     },
     "secrets": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {
-        "type": "string",
-        "pattern": "^[A-Z][A-Z0-9_]*$"
-      }
+      "description": "A list of key names resolved from the infra secret source (legacy), or {provider, keys}: the app's own Dokploy secrets provider, referenced as ${{vault.<provider>.<KEY>}} so no value passes through sealedstack.",
+      "oneOf": [
+        {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "keys"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$",
+              "description": "Name of the Dokploy secrets provider; defaults to the app name."
+            },
+            "keys": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              }
+            }
+          }
+        }
+      ]
     },
     "user_auth": {
       "type": "object",

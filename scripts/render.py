@@ -196,6 +196,14 @@ def is_missing_manifest(exc: Exception) -> bool:
     return "sealedstack.yaml" in text and ("HTTP 404" in text or "not found in the local checkout" in text)
 
 
+def vault_spec(manifest: dict, name: str) -> dict:
+    """``secrets: {provider, keys}`` -> ``{"provider": ..., "keys": [...]}``; empty when the app uses the list form."""
+    secrets = manifest.get("secrets")
+    if not isinstance(secrets, dict):
+        return {}
+    return {"provider": secrets.get("provider") or manifest.get("name", name), "keys": list(secrets.get("keys") or [])}
+
+
 def resolve_manifest(name: str, entry: dict, *, allow_unresolved: bool) -> tuple[dict, dict]:
     """Return (manifest, flags). ``flags`` records how the manifest was obtained."""
     source = entry.get("source", {})
@@ -258,7 +266,8 @@ def build_app(
         "user_auth": entry.get("user_auth"),
         "web": manifest.get("web", dict(DEFAULT_WEB)),
         "needs": manifest.get("needs", {}),
-        "secrets": manifest.get("secrets", []),
+        "secrets": manifest.get("secrets", []) if isinstance(manifest.get("secrets"), list) else [],
+        "vault": vault_spec(manifest, name),
         "manifest": manifest,
         "_synthesized": flags["synthesized"],
         "_unresolved": flags["unresolved"],
