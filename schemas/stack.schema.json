@@ -237,6 +237,15 @@
         },
         "catch_all": {
           "type": "boolean"
+        },
+        "public_hostnames": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Hostnames under the domain that are served outside sealedstack (for example a vendor's CNAME such as clerk.<domain>) and must not be denied by the catch-all: each gets a Bypass Access app."
         }
       }
     },
