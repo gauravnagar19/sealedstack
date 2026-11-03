@@ -38,6 +38,9 @@ gate:
   policies:
     owner-only: { emails: [you@example.com], session: 24h }
   catch_all: true
+  # Hostnames served outside sealedstack (a vendor's CNAME, e.g. clerk.example.com) that the
+  # catch-all must let through: each gets a Bypass Access app (D-092).
+  # public_hostnames: [clerk.example.com]
 
 edge_security:
   bot_fight_mode: true

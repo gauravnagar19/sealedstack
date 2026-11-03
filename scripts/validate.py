@@ -91,6 +91,22 @@ def check_cross_file(stack: dict, servers: dict, apps: dict) -> list[str]:
         if ((spec or {}).get("bootstrap") or {}).get("method") == "key":
             problems.append(f"server '{name}': bootstrap.method: key is not implemented yet; use password (D-061)")
 
+    # D-092: hostnames served outside sealedstack (a vendor CNAME) that the
+    # catch-all must not deny. They must be under the domain and not belong to an app.
+    app_hostnames = {
+        hostname
+        for entry in (apps.get("apps") or {}).values()
+        if entry.get("enabled") is not False
+        for hostname in entry.get("hostnames", [])
+    }
+    for hostname in (stack.get("gate") or {}).get("public_hostnames") or []:
+        if not hostname.endswith("." + domain):
+            problems.append(f"gate.public_hostnames: '{hostname}' is not a subdomain of '{domain}'")
+        if hostname in app_hostnames:
+            problems.append(
+                f"gate.public_hostnames: '{hostname}' belongs to an app; use the app's access: public instead"
+            )
+
     for name, entry in (apps.get("apps") or {}).items():
         # A paused app (enabled: false) is not rendered and must not be held to
         # the cross-file rules (hostnames, servers, policies).

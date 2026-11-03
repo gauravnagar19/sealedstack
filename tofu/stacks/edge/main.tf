@@ -148,10 +148,11 @@ locals {
   bypass = length(local.bypass_maps) > 0 ? merge(local.bypass_maps...) : {}
 
   # Public hostnames under the catch-all that need an explicit bypass (H4).
-  public_hostnames = flatten([
+  # Plus hostnames served outside sealedstack (D-092), e.g. a vendor CNAME.
+  public_hostnames = distinct(concat(flatten([
     for name, app in local.deployable :
     app.access == "public" ? [for hostname in app.hostnames : hostname] : []
-  ])
+  ]), try(local.stack.gate.public_hostnames, [])))
 
   redirects = flatten([
     for name, app in local.deployable : [
