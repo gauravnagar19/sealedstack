@@ -57,6 +57,38 @@ The Dokploy compose service is created by the platform stack
 ([design spec §9, for maintainers](maintainers/spec.md#9-platform-opentofu-stacksplatform)) with `auto-deploy`
 off. The CI only triggers the deploy of the **existing** compose service.
 
+### Skipping builds for unchanged services (D-093)
+
+By default every push builds every service that has `build:` in the compose file. A monorepo where most pushes touch one
+image can opt in to reuse the previous version's image for the others. Nothing changes unless the caller sets the inputs:
+
+```yaml
+    uses: <owner>/sealedstack/.github/workflows/app.yml@v0.6.44
+    with:
+      event: ${{ github.event_name }}
+      tag: ${{ inputs.tag }}
+      skip_unchanged_builds: dry-run        # off (default) | dry-run | on
+      build_inputs: >-                       # every file each image is built from
+        {"api": ["apps/api/**", "packages/**", "package.json", "pnpm-lock.yaml"],
+         "web": ["apps/ui/**", "packages/shared/**", "package.json", "pnpm-lock.yaml"]}
+      build_ignore: '["docs/**", "**/*.md", "tests/**"]'
+      build_version_only: '["apps/api/package.json"]'   # a bump of "version" alone is not a change
+```
+
+How it decides, in the `setup` job (the result is in the run's job summary):
+
+1. It diffs the new commit against the newest `v0.0.*` tag. Each changed file that is not in `build_ignore` marks the
+   services whose `build_inputs` globs match it.
+2. A changed file that no service claims, a service with no `build_inputs` entry, a head commit message containing
+   `[build-all]`, no previous version, or a previous image missing from the registry: build (everything, or that service).
+3. `dry-run` builds everything and only reports what `on` would reuse; run it for a while before trusting `on`.
+4. In `on`, one `reuse` job gives each unchanged service the new tag with `docker buildx imagetools create` (a registry-side
+   retag, no rebuild). The deploy still finds every image at the new version, and `prune` still applies.
+
+Limits: an image is not rebuilt for a newer base image until its own inputs change (add `[build-all]` or touch an input);
+build arguments that come from repository variables are not inputs, so changing one needs a `[build-all]` push.
+Rollback: set `skip_unchanged_builds: off`, or pin the earlier release.
+
 ## 2. Tailscale for CI: a trust credential and `tag:release`
 
 The job must reach the Dokploy panel, and only that. The edge stack already

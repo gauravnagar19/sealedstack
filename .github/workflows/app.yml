@@ -37,6 +37,33 @@ on:
         required: false
         type: boolean
         default: false
+      skip_unchanged_builds:
+        description: >-
+          Reuse the previous version's image for a service whose inputs did not change (D-093).
+          off (default): build every service. dry-run: build everything and only report what
+          would be reused. on: retag the previous image instead of building.
+        required: false
+        type: string
+        default: "off"
+      build_inputs:
+        description: >-
+          JSON object mapping each compose service name to the globs of every file its image
+          is built from (D-093). A service missing from it is always built.
+        required: false
+        type: string
+        default: "{}"
+      build_ignore:
+        description: JSON list of globs that never affect any image (docs, tests, workflows).
+        required: false
+        type: string
+        default: "[]"
+      build_version_only:
+        description: >-
+          JSON list of JSON files whose change only counts when something other than a
+          "version" key changed (a version bump alone is not a change).
+        required: false
+        type: string
+        default: "[]"
 
 permissions:
   contents: write
@@ -65,6 +92,11 @@ jobs:
       registry: ${{ steps.registry.outputs.prefix }}
       registry_host: ${{ steps.registry.outputs.host }}
       short_sha: ${{ steps.sha.outputs.short }}
+      previous: ${{ steps.version.outputs.previous }}
+      build_matrix: ${{ steps.plan.outputs.build_matrix }}
+      build_count: ${{ steps.plan.outputs.build_count }}
+      reuse_services: ${{ steps.plan.outputs.reuse_services }}
+      reuse_count: ${{ steps.plan.outputs.reuse_count }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,6 +129,8 @@ jobs:
             last="${latest##*.}"
             case "${last}" in '' | *[!0-9]*) last=-1 ;; esac
             echo "version=v0.0.$(( last + 1 ))" >> "$GITHUB_OUTPUT"
+            # The newest existing version: the image source for a service that is reused (D-093).
+            if [ "${last}" != "-1" ]; then echo "previous=v0.0.${last}" >> "$GITHUB_OUTPUT"; fi
           fi
 
       - name: Short commit SHA
@@ -178,16 +212,171 @@ jobs:
           print("count=" + str(len(include)))
           PY
 
+      - name: Log in to the registry (to look for the previous images)
+        if: ${{ inputs.event == 'push' && inputs.skip_unchanged_builds != 'off' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.registry.outputs.host }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Plan which images to build or reuse (D-093)
+        id: plan
+        env:
+          EVENT: ${{ inputs.event }}
+          MODE: ${{ inputs.skip_unchanged_builds }}
+          BUILD_INPUTS: ${{ inputs.build_inputs }}
+          BUILD_IGNORE: ${{ inputs.build_ignore }}
+          BUILD_VERSION_ONLY: ${{ inputs.build_version_only }}
+          PREVIOUS: ${{ steps.version.outputs.previous }}
+          REGISTRY: ${{ steps.registry.outputs.prefix }}
+          PACKAGE: ${{ steps.repo.outputs.package }}
+          MATRIX: ${{ steps.services.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import fnmatch
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+
+          env = os.environ
+          mode = env.get("MODE", "off")
+          matrix = json.loads(env["MATRIX"])
+          services = [entry["service"] for entry in matrix["include"]]
+
+
+          def finish(reuse, why, changed=None):
+              """Print the outputs (stdout is $GITHUB_OUTPUT) and a summary (stderr and the step summary)."""
+              will_reuse = reuse if mode == "on" else []
+              build = [entry for entry in matrix["include"] if entry["service"] not in will_reuse]
+              print("build_matrix=" + json.dumps({"include": build}))
+              print("build_count=" + str(len(build)))
+              print("reuse_services=" + " ".join(will_reuse))
+              print("reuse_count=" + str(len(will_reuse)))
+              lines = [f"### Image build plan ({mode})", "", f"Reason: {why}", "", "| service | decision |", "| --- | --- |"]
+              for name in services:
+                  if name in will_reuse:
+                      decision = f"reuse {env.get('PREVIOUS')}"
+                  elif name in reuse:
+                      decision = "would reuse (dry-run, building anyway)"
+                  else:
+                      decision = "build"
+                  lines.append(f"| {name} | {decision} |")
+              if changed is not None:
+                  lines += ["", f"{len(changed)} file(s) changed since {env.get('PREVIOUS')}."]
+              text = "\n".join(lines)
+              print(text, file=sys.stderr)
+              summary = env.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  with open(summary, "a", encoding="utf-8") as handle:
+                      handle.write(text + "\n")
+              raise SystemExit(0)
+
+
+          def build_all(why):
+              finish([], why)
+
+
+          if env.get("EVENT") != "push" or mode == "off":
+              build_all("skipping is off" if mode == "off" else "not a push")
+          if mode not in ("dry-run", "on"):
+              print(f"::error::skip_unchanged_builds must be off, dry-run or on, not {mode!r}", file=sys.stderr)
+              raise SystemExit(1)
+          previous = env.get("PREVIOUS", "")
+          if not previous:
+              build_all("no previous version to reuse")
+          try:
+              inputs = json.loads(env.get("BUILD_INPUTS") or "{}")
+              ignore = json.loads(env.get("BUILD_IGNORE") or "[]")
+              version_only = json.loads(env.get("BUILD_VERSION_ONLY") or "[]")
+          except ValueError as error:
+              print(f"::error::build_inputs, build_ignore and build_version_only must be JSON: {error}", file=sys.stderr)
+              raise SystemExit(1)
+          message = subprocess.run(["git", "log", "-1", "--format=%B"], capture_output=True, text=True).stdout
+          if "[build-all]" in message:
+              build_all("the head commit message contains [build-all]")
+          diff = subprocess.run(["git", "diff", "--name-only", previous, "HEAD"], capture_output=True, text=True)
+          if diff.returncode != 0:
+              build_all(f"cannot diff against {previous}")
+          changed = [line for line in diff.stdout.splitlines() if line]
+
+
+          def regex(glob):
+              out, i = "", 0
+              while i < len(glob):
+                  if glob.startswith("**/", i):
+                      out += "(?:.*/)?"
+                      i += 3
+                  elif glob.startswith("**", i):
+                      out += ".*"
+                      i += 2
+                  elif glob[i] == "*":
+                      out += "[^/]*"
+                      i += 1
+                  elif glob[i] == "?":
+                      out += "[^/]"
+                      i += 1
+                  else:
+                      out += re.escape(glob[i])
+                      i += 1
+              return re.compile(out + r"\Z")
+
+
+          def matches(path, globs):
+              return any(regex(g).match(path) for g in globs)
+
+
+          def strip_version(value):
+              if isinstance(value, dict):
+                  return {k: strip_version(v) for k, v in value.items() if k != "version"}
+              if isinstance(value, list):
+                  return [strip_version(v) for v in value]
+              return value
+
+
+          def only_version_changed(path):
+              old = subprocess.run(["git", "show", f"{previous}:{path}"], capture_output=True, text=True)
+              if old.returncode != 0 or not os.path.exists(path):
+                  return False
+              try:
+                  return strip_version(json.loads(old.stdout)) == strip_version(json.load(open(path, encoding="utf-8")))
+              except ValueError:
+                  return False
+
+
+          # A service whose inputs are not declared is always built. A changed file that no
+          # service claims and that is not ignored could feed any image: build everything.
+          rebuild = {name for name in services if name not in inputs}
+          for path in changed:
+              if matches(path, ignore) or (path in version_only and only_version_changed(path)):
+                  continue
+              claimed = [name for name in services if name in inputs and matches(path, inputs[name])]
+              if not claimed:
+                  build_all(f"{path} is not listed for any image, so every image could depend on it")
+              rebuild.update(claimed)
+          reuse = [name for name in services if name not in rebuild]
+
+          # A previous image that is not in the registry (pruned, failed run) cannot be reused.
+          for name in list(reuse):
+              ref = f"{env['REGISTRY']}/{env['PACKAGE']}-{name}:{previous}"
+              if subprocess.run(["docker", "buildx", "imagetools", "inspect", ref], capture_output=True).returncode != 0:
+                  reuse.remove(name)
+          finish(reuse, "changed files decide each image", changed)
+          PY
+
   # Build and push every built service in parallel with the GitHub Actions cache.
   build:
     needs: setup
     if: >-
       ${{ inputs.event == 'push' && needs.setup.outputs.mode != 'server'
-          && needs.setup.outputs.count != '0' }}
+          && needs.setup.outputs.build_count != '0' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.setup.outputs.build_matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -226,10 +415,40 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
+  # D-093: an image whose inputs did not change keeps its content; give it the new
+  # version tag in the registry (no rebuild, no pull). One job for all such services.
+  reuse:
+    needs: setup
+    if: >-
+      ${{ inputs.event == 'push' && needs.setup.outputs.mode != 'server'
+          && needs.setup.outputs.reuse_count != '0' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.setup.outputs.registry_host }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retag the previous images
+        env:
+          SERVICES: ${{ needs.setup.outputs.reuse_services }}
+          PREVIOUS: ${{ needs.setup.outputs.previous }}
+          VERSION: ${{ needs.setup.outputs.version }}
+          SHORT_SHA: ${{ needs.setup.outputs.short_sha }}
+          REGISTRY: ${{ needs.setup.outputs.registry }}
+          PACKAGE: ${{ needs.setup.outputs.package }}
+        run: |
+          set -euo pipefail
+          for service in ${SERVICES}; do
+            image="${REGISTRY}/${PACKAGE}-${service}"
+            docker buildx imagetools create -t "${image}:${VERSION}" -t "${image}:sha-${SHORT_SHA}" "${image}:${PREVIOUS}"
+            echo "${image}: ${PREVIOUS} reused as ${VERSION}"
+          done
+
   # Mint the git tag once every image is pushed. Runs even when there are no
   # built services (F8), so server-mode and no-build apps still get a version.
   tag:
-    needs: [setup, build]
+    needs: [setup, build, reuse]
     if: ${{ always() && inputs.event == 'push' && needs.setup.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
@@ -343,11 +562,13 @@ jobs:
   # rebuild), then update only the release-owned fields and wait for a NEW
   # deployment id to reach `done` (spec 4.3, N5).
   release:
-    needs: [setup, build, tag]
+    needs: [setup, build, reuse, tag]
     if: >-
       ${{ always() && (inputs.event == 'workflow_dispatch' ||
           (inputs.promote_on_push &&
-            (needs.build.result == 'success' || needs.setup.outputs.mode == 'server'))) }}
+            (needs.build.result == 'success' || needs.setup.outputs.mode == 'server' ||
+              (needs.build.result == 'skipped' && needs.reuse.result == 'success')) &&
+            needs.reuse.result != 'failure')) }}
     runs-on: ubuntu-latest
     steps:
       - name: Only the listed approvers may release
